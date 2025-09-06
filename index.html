@@ -92,8 +92,18 @@
       <div class="flex items-center justify-between mb-3">
         <div id="resultInfo" class="text-sm text-slate-600">Accedi per visualizzare il listino.</div>
         <div class="flex gap-1 text-sm">
-          <button id="viewListino" class="px-3 py-1.5 rounded-lg border bg-white">Vista listino</button>
-          <button id="viewCard" class="px-3 py-1.5 rounded-lg border bg-white">Vista card</button>
+         <button id="viewListino" type="button"
+        class="px-3 py-1.5 rounded-lg border bg-white"
+        onclick="window.setView && window.setView('listino')">
+  Vista listino
+</button>
+
+<button id="viewCard" type="button"
+        class="px-3 py-1.5 rounded-lg border bg-white"
+        onclick="window.setView && window.setView('card')">
+  Vista card
+</button>
+
         </div>
       </div>
 
