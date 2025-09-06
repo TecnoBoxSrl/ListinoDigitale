@@ -162,13 +162,13 @@ async function fetchProducts() {
       const media = p.product_media || [];
       const images = [];
       for (const m of media.filter(x => x.kind === 'image').sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))) {
-        const { data: blobData } = await supabase.storage.from('media').download(m.path);
+        const { data: blobData } = await supabase.storage.from('prodotti').download(m.path);
         if (blobData) images.push(URL.createObjectURL(blobData));
       }
       let videoUrl = null;
       const video = media.find(x => x.kind === 'video')?.path || null;
       if (video) {
-        const { data: vBlob } = await supabase.storage.from('media').download(video);
+        const { data: vBlob } = await supabase.storage.from('prodotti').download(video);
         if (vBlob) videoUrl = URL.createObjectURL(vBlob);
       }
       items.push({
