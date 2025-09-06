@@ -1,8 +1,8 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
 // === INSERISCI I TUOI VALORI ===
-const SUPABASE_URL = 'https://TUO-PROJECT-ID.supabase.co';
-const SUPABASE_ANON_KEY = 'LA_TUA_ANON_KEY';
+const SUPABASE_URL = 'https://tecnoboxsrl.github.io/ListinoDigitale/';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Helper: safe getElementById
