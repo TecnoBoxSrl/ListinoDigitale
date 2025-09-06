@@ -1,8 +1,8 @@
 // ================== CONFIG ==================
-const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co'; // tuo progetto
+const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
 const SITE_URL = 'https://tecnoboxsrl.github.io/ListinoDigitale/';
-const STORAGE_BUCKET = 'prodotti'; // o 'media'
+const STORAGE_BUCKET = 'prodotti';
 
 // Lazy init Supabase (tollerante)
 let _sb = null;
@@ -31,6 +31,7 @@ function toggleModal(id, show=true){
   el.classList.toggle('hidden', !show);
   document.body.classList.toggle('modal-open', show);
 }
+window.toggleModal = toggleModal; // <-- esposta globalmente
 
 // ================== BOOT ==================
 document.addEventListener('DOMContentLoaded', async () => {
@@ -147,6 +148,7 @@ async function sendMagicLink(){
   if (btn) { btn.disabled=false; btn.textContent='Invia link'; }
   msgEl && (msgEl.textContent = error ? ('Errore: '+error.message) : 'Email inviata. Controlla la casella e clicca il link di accesso.');
 }
+window.sendMagicLink = sendMagicLink; // <-- esposta globalmente
 
 async function signOut(){
   const sb = getSB();
@@ -174,7 +176,6 @@ async function fetchProducts(){
     const media = (p.product_media||[]).filter(m=>m.kind==='image').sort((a,b)=>(a.sort??0)-(b.sort??0));
     let imgUrl='';
     if (media[0]){
-      // tollera chi ha messo "prodotti/..." nel path
       let key = media[0].path || '';
       key = key.replace(/^prodotti\//, '');
       const { data: signed } = await sb.storage.from(STORAGE_BUCKET).createSignedUrl(key, 60*10);
