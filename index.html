@@ -32,7 +32,7 @@
           <option value="newest">Ultimi</option>
         </select>
 
-        <!-- Fallback inline: apre sempre la modale anche se JS non parte -->
+        <!-- Fallback inline: apre sempre la modale -->
         <button id="btnLogin"
           class="rounded-xl bg-sky-500 text-white px-3 py-2 text-sm"
           onclick="document.getElementById('loginModal').classList.remove('hidden');document.body.classList.add('modal-open')">
@@ -91,45 +91,54 @@
     <section class="lg:col-span-9">
       <div class="flex items-center justify-between mb-3">
         <div id="resultInfo" class="text-sm text-slate-600">Accedi per visualizzare il listino.</div>
-
-        <!-- switch vista -->
         <div class="flex gap-1 text-sm">
           <button id="viewListino" class="px-3 py-1.5 rounded-lg border bg-white">Vista listino</button>
           <button id="viewCard" class="px-3 py-1.5 rounded-lg border bg-white">Vista card</button>
         </div>
       </div>
 
-      <!-- VISTA LISTINO (tabelle per tipologia) -->
       <div id="listinoContainer" class="space-y-8"></div>
-
-      <!-- VISTA CARD (già esistente) -->
       <div id="productGrid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4"></div>
     </section>
   </main>
 
   <!-- Modal Login -->
   <div id="loginModal" class="fixed inset-0 z-50 hidden">
-    <div id="loginBackdrop" class="absolute inset-0 bg-black/50"></div>
+    <!-- Fallback inline: click sul backdrop chiude -->
+    <div id="loginBackdrop" class="absolute inset-0 bg-black/50"
+         onclick="document.getElementById('loginModal').classList.add('hidden');document.body.classList.remove('modal-open')"></div>
+
     <div class="relative max-w-md mx-auto mt-20 bg-white rounded-2xl shadow-xl border p-6">
       <div class="flex items-center justify-between">
         <h3 class="text-lg font-semibold">Accesso riservato</h3>
-        <button id="loginClose" type="button" class="rounded-full border w-8 h-8 grid place-content-center" aria-label="Chiudi">✕</button>
+        <!-- Fallback inline: X chiude -->
+        <button id="loginClose" type="button" class="rounded-full border w-8 h-8 grid place-content-center" aria-label="Chiudi"
+          onclick="document.getElementById('loginModal').classList.add('hidden');document.body.classList.remove('modal-open')">✕</button>
       </div>
       <p class="text-sm text-slate-600 mt-2">Inserisci la tua email per ricevere il link di accesso.</p>
       <input id="loginEmail" type="email" class="mt-3 w-full rounded-xl border px-3 py-2"
              placeholder="nome@azienda.it" autocomplete="email" required>
-      <button id="loginSend" class="mt-3 w-full rounded-xl bg-sky-500 text-white px-3 py-2">Invia link</button>
+      <!-- Fallback inline: prova a chiamare la funzione globale -->
+      <button id="loginSend" class="mt-3 w-full rounded-xl bg-sky-500 text-white px-3 py-2"
+        onclick="if(window.sendMagicLink){window.sendMagicLink()}else{var m=document.getElementById('loginMsg'); if(m) m.textContent='Servizio non pronto. Riprova.';}">
+        Invia link
+      </button>
       <p id="loginMsg" class="text-xs text-slate-500 mt-2"></p>
     </div>
   </div>
 
   <!-- Modal Immagine -->
   <div id="imgModal" class="fixed inset-0 z-50 hidden">
-    <div id="imgBackdrop" class="absolute inset-0 bg-black/60"></div>
+    <!-- Fallback inline: click sul backdrop chiude -->
+    <div id="imgBackdrop" class="absolute inset-0 bg-black/60"
+         onclick="document.getElementById('imgModal').classList.add('hidden');document.body.classList.remove('modal-open')"></div>
+
     <div class="relative max-w-3xl mx-auto mt-16 bg-white rounded-2xl shadow-xl overflow-hidden">
       <div class="flex items-center justify-between px-4 py-2 border-b">
         <h4 id="imgTitle" class="font-medium"></h4>
-        <button id="imgClose" type="button" class="rounded-full border w-8 h-8 grid place-content-center" aria-label="Chiudi">✕</button>
+        <!-- Fallback inline: X chiude -->
+        <button id="imgClose" type="button" class="rounded-full border w-8 h-8 grid place-content-center" aria-label="Chiudi"
+          onclick="document.getElementById('imgModal').classList.add('hidden');document.body.classList.remove('modal-open')">✕</button>
       </div>
       <div class="p-3 grid place-items-center">
         <img id="imgPreview" alt="" class="max-h-[70vh] w-auto object-contain" loading="lazy" decoding="async"/>
@@ -143,8 +152,7 @@
 
   <!-- Supabase UMD (globale) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-
-  <!-- Il nostro script NON-module -->
+  <!-- Script NON-module -->
   <script src="./script.js?v=21"></script>
 </body>
 </html>
