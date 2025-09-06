@@ -1,73 +1,46 @@
+// =============== CONFIG ===============
+const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co'; // <-- tuo progetto
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
+const SITE_URL = 'https://tecnoboxsrl.github.io/ListinoDigitale/';
+const STORAGE_BUCKET = 'prodotti'; // o 'media'
 
-// ===============================================
-// CONFIGURAZIONE (NO-ESM / NO-IMPORT)
-// ===============================================
-// Supabase è disponibile come window.supabase (caricato da UMD in index.html)
-const SUPABASE_URL = 'https://TUO-PROJECT-ID.supabase.co';        // <-- METTI IL TUO
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';                       // <-- METTI LA TUA
-const SITE_URL = 'https://tecnoboxsrl.github.io/ListinoDigitale/'; // URL Pages
-const STORAGE_BUCKET = 'prodotti'; // oppure 'media' se usi quel bucket
-
-// crea client
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-// ===============================================
-// UTILITY & STATO
-// ===============================================
-const $ = (id) => document.getElementById(id);
-
-const state = {
-  items: [],
-  categories: [],
-  selectedCategory: 'Tutte',
-  search: '',
-  sort: 'alpha',
-  onlyAvailable: false,
-  onlyNew: false,
-  priceMax: null,
-  role: 'guest',
-  view: 'listino', // 'listino' | 'card'
-};
-
-const parseItNumber = (v) => {
-  if (v == null) return null;
-  if (typeof v === 'number') return v;
-  const s = String(v).trim().replace(/\./g, '').replace(',', '.');
-  const n = parseFloat(s);
-  return isNaN(n) ? null : n;
-};
-const formatPriceEUR = (n) => (n == null || isNaN(n))
-  ? '—'
-  : n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
-
-function on(el, ev, fn){ if (el) el.addEventListener(ev, fn); }
-function toggleModal(id, show=true){
-  const el = $(id);
-  if (!el) return;
-  if (show){ el.classList.remove('hidden'); document.body.classList.add('modal-open'); }
-  else { el.classList.add('hidden'); document.body.classList.remove('modal-open'); }
+// Lazy init: non bloccare la UI se Supabase UMD non è pronto
+let _sb = null;
+function getSB() {
+  if (_sb) return _sb;
+  if (!window.supabase) {
+    console.warn('[Listino] Supabase UMD non caricato ancora.');
+    return null;
+  }
+  _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  return _sb;
 }
 
-// ===============================================
-// BOOT
-// ===============================================
+// =============== STATO & UTILI ===============
+const $ = (id) => document.getElementById(id);
+const state = {
+  items: [], categories: [], selectedCategory: 'Tutte',
+  search: '', sort: 'alpha', onlyAvailable: false, onlyNew: false,
+  priceMax: null, role: 'guest', view: 'listino',
+};
+const parseItNumber = (v)=> v==null?null:(typeof v==='number'?v:(n=>isNaN(n)?null:n)(parseFloat(String(v).trim().replace(/\./g,'').replace(',','.'))));
+const formatPriceEUR = (n)=> (n==null||isNaN(n))?'—':n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
+function on(el,ev,fn){ if(el) el.addEventListener(ev,fn); }
+function toggleModal(id, show=true){ const el=$(id); if(!el) return; el.classList.toggle('hidden', !show); document.body.classList.toggle('modal-open', show); }
+
+// =============== BOOT ===============
 document.addEventListener('DOMContentLoaded', async () => {
   $('year') && ($('year').textContent = new Date().getFullYear());
-  setupUI();
-  await restoreSession();
+  setupUI();                 // aggancia sempre i click (anche senza Supabase)
+  await restoreSession();    // proverà solo se SB è disponibile
   await renderAuthState();
-  if (state.role !== 'guest') {
-    await fetchProducts();
-  }
+  if (state.role !== 'guest') { await fetchProducts(); }
   renderView();
 });
 
-// ===============================================
-// UI & EVENTI
-// ===============================================
+// =============== UI & EVENTI ===============
 function setupUI(){
-  // login/logout & mobile
-  on($('btnLogin'), ()=>toggleModal('loginModal', true));
+  on($('btnLogin'), ()=>toggleModal('loginModal', true));      // oltre al fallback inline
   on($('btnLoginM'), ()=>toggleModal('loginModal', true));
   on($('btnLogout'), signOut);
   on($('btnLogoutM'), signOut);
@@ -75,41 +48,39 @@ function setupUI(){
   on($('loginSend'), sendMagicLink);
   on($('btnMobileMenu'), ()=>{ const m=$('mobileMenu'); if(m) m.hidden=!m.hidden; });
 
-  // vista
   on($('viewListino'), ()=>{ state.view='listino'; renderView(); });
-  on($('viewCard'), ()=>{ state.view='card'; renderView(); });
+  on($('viewCard'),   ()=>{ state.view='card';    renderView(); });
 
-  // filtri/ricerca
-  on($('searchInput'), (e)=>{ state.search=e.target.value; renderView(); });
-  on($('sortSelect'), (e)=>{ state.sort=e.target.value; renderView(); });
-  on($('filterDisponibile'), (e)=>{ state.onlyAvailable=e.target.checked; renderView(); });
-  on($('filterNovita'), (e)=>{ state.onlyNew=e.target.checked; renderView(); });
-  on($('filterPriceMax'), (e)=>{ state.priceMax=parseItNumber(e.target.value); renderView(); });
+  on($('searchInput'),      e=>{ state.search=e.target.value; renderView(); });
+  on($('sortSelect'),       e=>{ state.sort=e.target.value; renderView(); });
+  on($('filterDisponibile'),e=>{ state.onlyAvailable=e.target.checked; renderView(); });
+  on($('filterNovita'),     e=>{ state.onlyNew=e.target.checked; renderView(); });
+  on($('filterPriceMax'),   e=>{ state.priceMax=parseItNumber(e.target.value); renderView(); });
 
-  // modal immagine
   on($('imgClose'), ()=>toggleModal('imgModal', false));
 
-  // admin (placeholder)
   on($('btnPublish'), ()=>{
     if (state.role!=='admin') return alert('Solo admin');
     alert('Hook pubblicazione pronto (edge function).');
   });
 }
 
-// ===============================================
-// AUTH
-// ===============================================
+// =============== AUTH ===============
 async function restoreSession(){
-  const { data:{ session } } = await supabase.auth.getSession();
+  const sb = getSB();
+  if (!sb) { state.role='guest'; return; }
+
+  const { data:{ session } } = await sb.auth.getSession();
   if (session?.user) {
-    const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
+    const { data: prof } = await sb.from('profiles').select('role').eq('id', session.user.id).single();
     state.role = (prof?.role === 'admin') ? 'admin' : 'agent';
   } else {
     state.role = 'guest';
   }
-  supabase.auth.onAuthStateChange(async (_e, sess)=>{
+
+  sb.auth.onAuthStateChange(async (_e, sess)=>{
     if (sess?.user){
-      const { data: prof } = await supabase.from('profiles').select('role').eq('id', sess.user.id).single();
+      const { data: prof } = await sb.from('profiles').select('role').eq('id', sess.user.id).single();
       state.role = (prof?.role === 'admin') ? 'admin' : 'agent';
       await renderAuthState();
       await fetchProducts();
@@ -130,7 +101,10 @@ async function renderAuthState(){
 async function sendMagicLink(){
   const email = $('loginEmail')?.value?.trim();
   if (!email) return;
-  const { error } = await supabase.auth.signInWithOtp({
+  const sb = getSB();
+  if (!sb) { $('loginMsg').textContent = 'Errore: Supabase non caricato.'; return; }
+
+  const { error } = await sb.auth.signInWithOtp({
     email,
     options: { emailRedirectTo: SITE_URL }
   });
@@ -138,15 +112,17 @@ async function sendMagicLink(){
 }
 
 async function signOut(){
-  await supabase.auth.signOut();
+  const sb = getSB();
+  if (sb) await sb.auth.signOut();
   state.role='guest'; state.items=[]; renderView(); await renderAuthState();
 }
 
-// ===============================================
-// DATA
-// ===============================================
+// =============== DATA ===============
 async function fetchProducts(){
-  const { data, error } = await supabase
+  const sb = getSB();
+  if (!sb) return;
+
+  const { data, error } = await sb
     .from('products')
     .select('id,codice,descrizione,categoria,sottocategoria,prezzo,unita,disponibile,novita,pack,pallet,tags,updated_at, product_media(id,kind,path,sort)')
     .order('descrizione', { ascending:true });
@@ -158,23 +134,13 @@ async function fetchProducts(){
     const media = (p.product_media||[]).filter(m=>m.kind==='image').sort((a,b)=>(a.sort??0)-(b.sort??0));
     let imgUrl='';
     if (media[0]){
-      const { data: signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(media[0].path, 60*10);
+      const { data: signed } = await sb.storage.from(STORAGE_BUCKET).createSignedUrl(media[0].path, 60*10);
       imgUrl = signed?.signedUrl || '';
     }
     items.push({
-      codice: p.codice,
-      descrizione: p.descrizione,
-      categoria: p.categoria,
-      sottocategoria: p.sottocategoria,
-      prezzo: p.prezzo,
-      unita: p.unita,
-      disponibile: p.disponibile,
-      novita: p.novita,
-      pack: p.pack,
-      pallet: p.pallet,
-      tags: p.tags || [],
-      updated_at: p.updated_at,
-      img: imgUrl,
+      codice: p.codice, descrizione: p.descrizione, categoria: p.categoria, sottocategoria: p.sottocategoria,
+      prezzo: p.prezzo, unita: p.unita, disponibile: p.disponibile, novita: p.novita,
+      pack: p.pack, pallet: p.pallet, tags: p.tags || [], updated_at: p.updated_at, img: imgUrl,
     });
   }
 
@@ -183,7 +149,6 @@ async function fetchProducts(){
   $('resultInfo') && ( $('resultInfo').textContent = `${items.length} articoli` );
 }
 
-// categorie chip
 function buildCategories(){
   const set = new Set(state.items.map(p=>p.categoria||'Altro'));
   state.categories = ['Tutte', ...Array.from(set).sort((a,b)=>a.localeCompare(b,'it'))];
@@ -198,9 +163,7 @@ function buildCategories(){
   });
 }
 
-// ===============================================
-// RENDER: SWITCH
-// ===============================================
+// =============== RENDER SWITCH ===============
 function renderView(){
   const grid = $('productGrid');
   const listino = $('listinoContainer');
@@ -215,9 +178,7 @@ function renderView(){
   }
 }
 
-// ===============================================
-// VISTA LISTINO (tabellare per tipologia)
-// ===============================================
+// =============== VISTA LISTINO ===============
 function renderListinoByCategory(){
   const container = $('listinoContainer'); if(!container) return;
   container.innerHTML='';
@@ -284,9 +245,7 @@ function renderListinoByCategory(){
   });
 }
 
-// ===============================================
-// VISTA CARD
-// ===============================================
+// =============== VISTA CARD ===============
 function renderCards(){
   const grid=$('productGrid'); if(!grid) return;
   grid.innerHTML='';
