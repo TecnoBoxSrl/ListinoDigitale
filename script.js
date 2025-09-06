@@ -1,19 +1,15 @@
 
 // ===============================================
-// CONFIGURAZIONE
-// 1) Inserisci URL e ANON KEY del TUO progetto Supabase
-// 2) Imposta il nome del bucket storage con le immagini (es. 'prodotti' o 'media')
-// 3) Imposta l'URL del sito per il redirect del magic link
+// CONFIGURAZIONE (NO-ESM / NO-IMPORT)
 // ===============================================
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+// Supabase è disponibile come window.supabase (caricato da UMD in index.html)
+const SUPABASE_URL = 'https://TUO-PROJECT-ID.supabase.co';        // <-- METTI IL TUO
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';                       // <-- METTI LA TUA
+const SITE_URL = 'https://tecnoboxsrl.github.io/ListinoDigitale/'; // URL Pages
+const STORAGE_BUCKET = 'prodotti'; // oppure 'media' se usi quel bucket
 
-const SUPABASE_URL = 'https://TUO-PROJECT-ID.supabase.co';          // <-- METTI IL TUO
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';                         // <-- METTI LA TUA
-const SITE_URL = 'https://tecnoboxsrl.github.io/ListinoDigitale/';   // tuo dominio Pages
-const STORAGE_BUCKET = 'prodotti'; // se usi 'media', cambia qui
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
+// crea client
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ===============================================
 // UTILITY & STATO
@@ -62,10 +58,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   await renderAuthState();
   if (state.role !== 'guest') {
     await fetchProducts();
-    renderView();
-  } else {
-    renderView();
   }
+  renderView();
 });
 
 // ===============================================
@@ -164,7 +158,6 @@ async function fetchProducts(){
     const media = (p.product_media||[]).filter(m=>m.kind==='image').sort((a,b)=>(a.sort??0)-(b.sort??0));
     let imgUrl='';
     if (media[0]){
-      // usa URL firmato (niente download blob → più veloce)
       const { data: signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(media[0].path, 60*10);
       imgUrl = signed?.signedUrl || '';
     }
@@ -229,7 +222,6 @@ function renderListinoByCategory(){
   const container = $('listinoContainer'); if(!container) return;
   container.innerHTML='';
 
-  // filtri client (se vuoi portarli lato DB si può fare)
   let arr=[...state.items];
   if(state.selectedCategory!=='Tutte') arr=arr.filter(p=>p.categoria===state.selectedCategory);
   if(state.search){ const q=state.search.toLowerCase(); arr=arr.filter(p=>(p.codice+' '+p.descrizione+' '+(p.tags||[]).join(' ')).toLowerCase().includes(q)); }
@@ -237,7 +229,6 @@ function renderListinoByCategory(){
   if(state.onlyNew) arr=arr.filter(p=>p.novita);
   if(state.priceMax!=null) arr=arr.filter(p=>p.prezzo!=null && p.prezzo<=state.priceMax);
 
-  // raggruppo per categoria
   const byCat=new Map();
   for(const p of arr){
     const c=p.categoria||'Altro';
@@ -281,7 +272,6 @@ function renderListinoByCategory(){
     container.appendChild(table);
   }
 
-  // bind anteprima immagine
   container.querySelectorAll('button[data-src]').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
       const src=e.currentTarget.getAttribute('data-src');
@@ -295,7 +285,7 @@ function renderListinoByCategory(){
 }
 
 // ===============================================
-// VISTA CARD (com’era prima, compatta)
+// VISTA CARD
 // ===============================================
 function renderCards(){
   const grid=$('productGrid'); if(!grid) return;
