@@ -1,0 +1,22 @@
+-- Schema Supabase sintetico (vedi versione completa in chat precedente)
+create extension if not exists "uuid-ossp"; create extension if not exists pgcrypto;
+create table if not exists public.profiles (id uuid primary key references auth.users(id) on delete cascade, full_name text, phone text, role text not null check (role in ('agent','admin')) default 'agent', created_at timestamptz default now()); alter table public.profiles enable row level security;
+create policy "profiles self select" on public.profiles for select using (auth.uid() = id);
+create policy "profiles self update" on public.profiles for update using (auth.uid() = id);
+create table if not exists public.products (id uuid primary key default gen_random_uuid(), codice text unique not null, descrizione text not null, categoria text, sottocategoria text, prezzo numeric(12,4), unita text, disponibile boolean default true, novita boolean default false, pack text, pallet text, tags text[], updated_at timestamptz default now()); alter table public.products enable row level security;
+create table if not exists public.product_media (id uuid primary key default gen_random_uuid(), product_id uuid not null references public.products(id) on delete cascade, path text not null, kind text not null check (kind in ('image','video')), sort int default 0); alter table public.product_media enable row level security;
+create table if not exists public.price_lists (id uuid primary key default gen_random_uuid(), version_label text unique not null, published_by uuid references auth.users(id), published_at timestamptz default now()); alter table public.price_lists enable row level security;
+create table if not exists public.price_list_items (id uuid primary key default gen_random_uuid(), price_list_id uuid not null references public.price_lists(id) on delete cascade, codice text, descrizione text, categoria text, sottocategoria text, prezzo numeric(12,4), unita text, disponibile boolean, novita boolean, pack text, pallet text, tags text[], updated_at timestamptz); alter table public.price_list_items enable row level security;
+create table if not exists public.change_log (id uuid primary key default gen_random_uuid(), price_list_id uuid not null references public.price_lists(id) on delete cascade, codice text not null, change_type text not null check (change_type in ('created','updated','removed')), delta jsonb); alter table public.change_log enable row level security;
+create or replace function public.is_admin(uid uuid) returns boolean language sql stable as $$ select exists(select 1 from public.profiles p where p.id = uid and p.role = 'admin'); $$;
+create or replace function public.is_agent(uid uuid) returns boolean language sql stable as $$ select exists(select 1 from public.profiles p where p.id = uid and p.role in ('agent','admin')); $$;
+create policy "products read for agents" on public.products for select using ( public.is_agent(auth.uid()) );
+create policy "products write for admins" on public.products for all using ( public.is_admin(auth.uid()) ) with check ( public.is_admin(auth.uid()) );
+create policy "media read for agents" on public.product_media for select using ( public.is_agent(auth.uid()) );
+create policy "media write for admins" on public.product_media for all using ( public.is_admin(auth.uid()) ) with check ( public.is_admin(auth.uid()) );
+create policy "price_lists read" on public.price_lists for select using ( public.is_agent(auth.uid()) );
+create policy "price_list_items read" on public.price_list_items for select using ( public.is_agent(auth.uid()) );
+create policy "change_log read" on public.change_log for select using ( public.is_agent(auth.uid()) );
+create policy "price_lists write admin" on public.price_lists for all using ( public.is_admin(auth.uid()) ) with check ( public.is_admin(auth.uid()) );
+create policy "price_list_items write admin" on public.price_list_items for all using ( public.is_admin(auth.uid()) ) with check ( public.is_admin(auth.uid()) );
+create policy "change_log write admin" on public.change_log for all using ( public.is_admin(auth.uid()) ) with check ( public.is_admin(auth.uid()) );

@@ -1,0 +1,9 @@
+{
+  "name": "Listino Digitale",
+  "short_name": "Listino",
+  "display": "standalone",
+  "start_url": "./index.html",
+  "background_color": "#ffffff",
+  "theme_color": "#0ea5e9",
+  "icons": []
+}

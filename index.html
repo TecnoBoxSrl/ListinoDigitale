@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="it"><head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Listino Digitale – Accesso Agenti</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>.glass{backdrop-filter:blur(12px);background:rgba(255,255,255,.6)}.tag{font-size:.75rem;padding:.125rem .5rem;border-radius:999px;border:1px solid rgba(0,0,0,.1)}.card:hover{transform:translateY(-2px);transition:.2s}.modal-open{overflow:hidden}</style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+<header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3">
+    <div class="w-10 h-10 rounded-xl bg-sky-500 grid place-content-center text-white font-bold">TB</div>
+    <div class="flex-1"><h1 class="text-xl font-semibold">Listino Digitale</h1><p class="text-xs text-slate-500">Accesso riservato agli agenti</p></div>
+    <div class="hidden md:flex items-center gap-2">
+      <input id="searchInput" type="search" placeholder="Cerca prodotti…" class="w-72 rounded-xl border px-3 py-2 text-sm">
+      <select id="sortSelect" class="rounded-xl border px-3 py-2 text-sm"><option value="alpha">A→Z</option><option value="priceAsc">Prezzo ↑</option><option value="priceDesc">Prezzo ↓</option><option value="newest">Ultimi</option></select>
+      <button id="btnLogin" class="rounded-xl bg-sky-500 text-white px-3 py-2 text-sm">Accedi</button>
+      <button id="btnLogout" class="hidden rounded-xl border px-3 py-2 text-sm">Esci</button>
+    </div>
+    <button id="btnMobileMenu" class="md:hidden rounded-lg border px-3 py-2 text-sm">Menu</button>
+  </div>
+</header>
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+  <aside class="lg:col-span-3">
+    <div class="glass rounded-2xl p-4 border">
+      <h2 class="font-semibold mb-3">Categorie</h2><div id="categoryList" class="flex flex-wrap gap-2"></div>
+      <div class="mt-4"><h3 class="font-semibold mb-2">Filtri</h3>
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="filterDisponibile" class="accent-sky-500"><span>Solo disponibili</span></label>
+        <label class="flex items-center gap-2 text-sm mt-2"><input type="checkbox" id="filterNovita" class="accent-sky-500"><span>Solo novità</span></label>
+        <label class="text-sm block mt-3 mb-1">Prezzo max (€)</label><input id="filterPriceMax" type="number" inputmode="decimal" step="any" lang="it" class="w-full rounded-xl border px-3 py-2 text-sm">
+    </div></div>
+    <div class="glass rounded-2xl p-4 border mt-6" id="adminBox" hidden>
+      <h2 class="font-semibold mb-3">Amministrazione</h2>
+      <button id="btnPublish" class="rounded-xl bg-emerald-600 text-white px-3 py-2 text-sm">Pubblica nuova versione</button>
+      <p class="text-xs text-slate-500 mt-2">Carica CSV → diff → notifica agenti</p>
+    </div>
+  </aside>
+  <section class="lg:col-span-9">
+    <div id="resultInfo" class="text-sm text-slate-600 mb-3">Accedi per visualizzare il listino.</div>
+    <div id="productGrid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+  </section>
+</main>
+<footer class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-center text-xs text-slate-500">
+  <p>© <span id="year"></span> Tecno Box – PWA ready.</p>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm"></script>
+<script type="module" src="./script.js"></script>
+</body></html>
