@@ -43,6 +43,59 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderView();
 });
 
+
+
+
+
+// evidenzia quale vista è attiva
+function highlightActiveView() {
+  const btnList = document.getElementById('viewListino');
+  const btnCard = document.getElementById('viewCard');
+  if (!btnList || !btnCard) return;
+
+  const active = 'bg-sky-600 text-white border-sky-600';
+  const normal = 'bg-white text-slate-900 border';
+
+  if (state.view === 'listino') {
+    btnList.className = btnList.className.replace(/bg-[^\s]+.*?(?=\s|$)/g,'').replace(/text-[^\s]+/g,'').replace(/border-[^\s]+/g,'');
+    btnCard.className = btnCard.className.replace(/bg-[^\s]+.*?(?=\s|$)/g,'').replace(/text-[^\s]+/g,'').replace(/border-[^\s]+/g,'');
+    btnList.classList.add('bg-sky-600','text-white','border-sky-600');
+    btnCard.classList.add('bg-white','text-slate-900','border');
+  } else {
+    btnList.className = btnList.className.replace(/bg-[^\s]+.*?(?=\s|$)/g,'').replace(/text-[^\s]+/g,'').replace(/border-[^\s]+/g,'');
+    btnCard.className = btnCard.className.replace(/bg-[^\s]+.*?(?=\s|$)/g,'').replace(/text-[^\s]+/g,'').replace(/border-[^\s]+/g,'');
+    btnCard.classList.add('bg-sky-600','text-white','border-sky-600');
+    btnList.classList.add('bg-white','text-slate-900','border');
+  }
+}
+
+// funzione globale di fallback chiamata dall'HTML
+window.setView = function (v) {
+  if (v !== 'listino' && v !== 'card') return;
+  state.view = v;
+  renderView();
+};
+
+// richiamala dentro renderView alla fine
+function renderView(){
+  const grid = $('productGrid');
+  const listino = $('listinoContainer');
+  if (state.view==='listino'){
+    grid.classList.add('hidden');
+    listino.classList.remove('hidden');
+    renderListinoByCategory();
+  } else {
+    listino.classList.add('hidden');
+    grid.classList.remove('hidden');
+    renderCards();
+  }
+  highlightActiveView(); // <--- AGGIUNTO
+}
+
+
+
+
+
 // ================== UI & EVENTI ==================
 function setupUI(){
   // login/logout & mobile
