@@ -1,3 +1,5 @@
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
 const SITE_URL = 'https://tecnoboxsrl.github.io/ListinoDigitale/';
 
 // === INSERISCI QUI I TUOI VALORI REALI ===
@@ -130,8 +132,7 @@ async function sendMagicLink() {
     if (!email) return;
     const { error } = await supabase.auth.signInWithOtp({
       email,
-     options: { emailRedirectTo: SITE_URL }
-
+      options: { emailRedirectTo: SITE_URL }
     });
     if ($('loginMsg')) $('loginMsg').textContent = error ? ('Errore: ' + error.message) : 'Email inviata. Controlla la casella e apri il link di accesso.';
   } catch (e) {
