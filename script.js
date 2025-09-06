@@ -1,22 +1,22 @@
-// =============== CONFIG ===============
-const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co'; // <-- tuo progetto
+// ================== CONFIG ==================
+const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co'; // tuo progetto
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
 const SITE_URL = 'https://tecnoboxsrl.github.io/ListinoDigitale/';
 const STORAGE_BUCKET = 'prodotti'; // o 'media'
 
-// Lazy init: non bloccare la UI se Supabase UMD non è pronto
+// Lazy init Supabase (tollerante)
 let _sb = null;
 function getSB() {
   if (_sb) return _sb;
   if (!window.supabase) {
-    console.warn('[Listino] Supabase UMD non caricato ancora.');
+    console.warn('[Listino] Supabase UMD non ancora pronto.');
     return null;
   }
   _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   return _sb;
 }
 
-// =============== STATO & UTILI ===============
+// ================== STATO & UTILI ==================
 const $ = (id) => document.getElementById(id);
 const state = {
   items: [], categories: [], selectedCategory: 'Tutte',
@@ -26,46 +26,69 @@ const state = {
 const parseItNumber = (v)=> v==null?null:(typeof v==='number'?v:(n=>isNaN(n)?null:n)(parseFloat(String(v).trim().replace(/\./g,'').replace(',','.'))));
 const formatPriceEUR = (n)=> (n==null||isNaN(n))?'—':n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 function on(el,ev,fn){ if(el) el.addEventListener(ev,fn); }
-function toggleModal(id, show=true){ const el=$(id); if(!el) return; el.classList.toggle('hidden', !show); document.body.classList.toggle('modal-open', show); }
+function toggleModal(id, show=true){
+  const el=$(id); if(!el) return;
+  el.classList.toggle('hidden', !show);
+  document.body.classList.toggle('modal-open', show);
+}
 
-// =============== BOOT ===============
+// ================== BOOT ==================
 document.addEventListener('DOMContentLoaded', async () => {
   $('year') && ($('year').textContent = new Date().getFullYear());
-  setupUI();                 // aggancia sempre i click (anche senza Supabase)
-  await restoreSession();    // proverà solo se SB è disponibile
+  setupUI();                 // hooks UI a prescindere
+  await restoreSession();    // prova auth solo se SB disponibile
   await renderAuthState();
-  if (state.role !== 'guest') { await fetchProducts(); }
+  if (state.role !== 'guest') await fetchProducts();
   renderView();
 });
 
-// =============== UI & EVENTI ===============
+// ================== UI & EVENTI ==================
 function setupUI(){
-  on($('btnLogin'), ()=>toggleModal('loginModal', true));      // oltre al fallback inline
+  // login/logout & mobile
+  on($('btnLogin'), ()=>toggleModal('loginModal', true));
   on($('btnLoginM'), ()=>toggleModal('loginModal', true));
   on($('btnLogout'), signOut);
   on($('btnLogoutM'), signOut);
   on($('loginClose'), ()=>toggleModal('loginModal', false));
+  on($('loginBackdrop'), ()=>toggleModal('loginModal', false));
   on($('loginSend'), sendMagicLink);
+
+  // invio con Enter
+  on($('loginEmail'), 'keydown', (e)=>{
+    if (e.key === 'Enter') { e.preventDefault(); sendMagicLink(); }
+  });
+
   on($('btnMobileMenu'), ()=>{ const m=$('mobileMenu'); if(m) m.hidden=!m.hidden; });
 
+  // vista
   on($('viewListino'), ()=>{ state.view='listino'; renderView(); });
   on($('viewCard'),   ()=>{ state.view='card';    renderView(); });
 
-  on($('searchInput'),      e=>{ state.search=e.target.value; renderView(); });
-  on($('sortSelect'),       e=>{ state.sort=e.target.value; renderView(); });
-  on($('filterDisponibile'),e=>{ state.onlyAvailable=e.target.checked; renderView(); });
-  on($('filterNovita'),     e=>{ state.onlyNew=e.target.checked; renderView(); });
-  on($('filterPriceMax'),   e=>{ state.priceMax=parseItNumber(e.target.value); renderView(); });
+  // filtri/ricerca
+  on($('searchInput'), (e)=>{ state.search=e.target.value; renderView(); });
+  on($('sortSelect'),  (e)=>{ state.sort=e.target.value;  renderView(); });
+  on($('filterDisponibile'), (e)=>{ state.onlyAvailable=e.target.checked; renderView(); });
+  on($('filterNovita'),      (e)=>{ state.onlyNew=e.target.checked;      renderView(); });
+  on($('filterPriceMax'),    (e)=>{ state.priceMax=parseItNumber(e.target.value); renderView(); });
 
-  on($('imgClose'), ()=>toggleModal('imgModal', false));
+  // modal immagine: X, backdrop, ESC
+  on($('imgClose'),    ()=>toggleModal('imgModal', false));
+  on($('imgBackdrop'), ()=>toggleModal('imgModal', false));
+  on(document, 'keydown', (e)=>{
+    if (e.key === 'Escape') {
+      if ($('imgModal') && !$('imgModal').classList.contains('hidden')) toggleModal('imgModal', false);
+      if ($('loginModal') && !$('loginModal').classList.contains('hidden')) toggleModal('loginModal', false);
+    }
+  });
 
+  // admin (placeholder)
   on($('btnPublish'), ()=>{
     if (state.role!=='admin') return alert('Solo admin');
     alert('Hook pubblicazione pronto (edge function).');
   });
 }
 
-// =============== AUTH ===============
+// ================== AUTH ==================
 async function restoreSession(){
   const sb = getSB();
   if (!sb) { state.role='guest'; return; }
@@ -98,17 +121,31 @@ async function renderAuthState(){
   if (logged) toggleModal('loginModal', false);
 }
 
+function isValidEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e||''); }
+
 async function sendMagicLink(){
-  const email = $('loginEmail')?.value?.trim();
-  if (!email) return;
+  const emailEl = $('loginEmail');
+  const msgEl   = $('loginMsg');
+  const btn     = $('loginSend');
+  const email   = emailEl?.value?.trim();
+
+  if (msgEl) msgEl.textContent = '';
+
+  if (!email) { msgEl && (msgEl.textContent='Inserisci la tua email.'); emailEl?.focus(); return; }
+  if (!isValidEmail(email)) { msgEl && (msgEl.textContent='Email non valida.'); emailEl?.focus(); return; }
+
   const sb = getSB();
-  if (!sb) { $('loginMsg').textContent = 'Errore: Supabase non caricato.'; return; }
+  if (!sb) { msgEl && (msgEl.textContent='Errore: servizio non inizializzato.'); return; }
+
+  if (btn) { btn.disabled=true; btn.textContent='Invio in corso…'; }
 
   const { error } = await sb.auth.signInWithOtp({
     email,
     options: { emailRedirectTo: SITE_URL }
   });
-  $('loginMsg') && ( $('loginMsg').textContent = error ? ('Errore: '+error.message) : 'Email inviata. Controlla la casella e apri il link.' );
+
+  if (btn) { btn.disabled=false; btn.textContent='Invia link'; }
+  msgEl && (msgEl.textContent = error ? ('Errore: '+error.message) : 'Email inviata. Controlla la casella e clicca il link di accesso.');
 }
 
 async function signOut(){
@@ -117,14 +154,17 @@ async function signOut(){
   state.role='guest'; state.items=[]; renderView(); await renderAuthState();
 }
 
-// =============== DATA ===============
+// ================== DATA ==================
 async function fetchProducts(){
   const sb = getSB();
   if (!sb) return;
 
   const { data, error } = await sb
     .from('products')
-    .select('id,codice,descrizione,categoria,sottocategoria,prezzo,unita,disponibile,novita,pack,pallet,tags,updated_at, product_media(id,kind,path,sort)')
+    .select(`
+      id,codice,descrizione,categoria,sottocategoria,prezzo,unita,disponibile,novita,pack,pallet,tags,updated_at,
+      product_media(id,kind,path,sort)
+    `)
     .order('descrizione', { ascending:true });
 
   if (error) { console.error(error); $('resultInfo')&&( $('resultInfo').textContent='Errore caricamento listino'); return; }
@@ -134,7 +174,10 @@ async function fetchProducts(){
     const media = (p.product_media||[]).filter(m=>m.kind==='image').sort((a,b)=>(a.sort??0)-(b.sort??0));
     let imgUrl='';
     if (media[0]){
-      const { data: signed } = await sb.storage.from(STORAGE_BUCKET).createSignedUrl(media[0].path, 60*10);
+      // tollera chi ha messo "prodotti/..." nel path
+      let key = media[0].path || '';
+      key = key.replace(/^prodotti\//, '');
+      const { data: signed } = await sb.storage.from(STORAGE_BUCKET).createSignedUrl(key, 60*10);
       imgUrl = signed?.signedUrl || '';
     }
     items.push({
@@ -163,7 +206,7 @@ function buildCategories(){
   });
 }
 
-// =============== RENDER SWITCH ===============
+// ================== RENDER SWITCH ==================
 function renderView(){
   const grid = $('productGrid');
   const listino = $('listinoContainer');
@@ -178,7 +221,7 @@ function renderView(){
   }
 }
 
-// =============== VISTA LISTINO ===============
+// ================== VISTA LISTINO ==================
 function renderListinoByCategory(){
   const container = $('listinoContainer'); if(!container) return;
   container.innerHTML='';
@@ -245,7 +288,7 @@ function renderListinoByCategory(){
   });
 }
 
-// =============== VISTA CARD ===============
+// ================== VISTA CARD ==================
 function renderCards(){
   const grid=$('productGrid'); if(!grid) return;
   grid.innerHTML='';
@@ -258,10 +301,10 @@ function renderCards(){
   if(state.priceMax!=null) arr=arr.filter(p=>p.prezzo!=null && p.prezzo<=state.priceMax);
 
   switch(state.sort){
-    case 'priceAsc': arr.sort((a,b)=>(a.prezzo??Infinity)-(b.prezzo??Infinity)); break;
+    case 'priceAsc':  arr.sort((a,b)=>(a.prezzo??Infinity)-(b.prezzo??Infinity)); break;
     case 'priceDesc': arr.sort((a,b)=>(b.prezzo??-Infinity)-(a.prezzo??-Infinity)); break;
-    case 'newest': arr.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||'')); break;
-    default: arr.sort((a,b)=>a.descrizione.localeCompare(b.descrizione,'it')); break;
+    case 'newest':    arr.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||'')); break;
+    default:          arr.sort((a,b)=>a.descrizione.localeCompare(b.descrizione,'it')); break;
   }
 
   if(!arr.length){ grid.innerHTML='<div class="col-span-full text-center text-slate-500 py-10">Nessun articolo trovato.</div>'; return; }
