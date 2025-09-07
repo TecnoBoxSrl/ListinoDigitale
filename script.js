@@ -156,6 +156,25 @@ function setupUI(){
   on($('btnPublish'),'click',()=>{ if(state.role!=='admin') return alert('Solo admin'); alert('Hook pubblicazione pronto.'); });
 }
 
+
+document.addEventListener('DOMContentLoaded', async () => {
+  if (document.getElementById('year')) document.getElementById('year').textContent = new Date().getFullYear();
+
+  setupUI();
+
+  // <<< AGGIUNGI QUESTA RIGA >>>
+  await handleMagicLinkRedirect();
+
+  await restoreSession();
+  await renderAuthState();
+  if (state.role !== 'guest') {
+    await fetchProducts();
+  }
+  renderView();
+});
+
+
+
 /* ==== AUTH ==== */
 async function restoreSession(){
   const { data:{ session } } = await supabase.auth.getSession();
