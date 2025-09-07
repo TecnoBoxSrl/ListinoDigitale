@@ -1,163 +1,163 @@
-// ================== CONFIG ==================
-const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
-const SITE_URL = 'https://tecnoboxsrl.github.io/ListinoDigitale/';
-const STORAGE_BUCKET = 'prodotti';
+/* ================================
+   Listino Digitale – script.js (v16)
+   - Supabase UMD (window.supabase)
+   - Ricerca live dal primo carattere (desktop+mobile)
+   - Modali chiudibili con overlay e tasto ESC
+   - Vista listino (tabellare) / Vista card
+   - Signed URL immagini da Storage (bucket privato)
+=================================== */
 
-// Lazy init Supabase (tollerante)
-let _sb = null;
-function getSB() {
-  if (_sb) return _sb;
-  if (!window.supabase) {
-    console.warn('[Listino] Supabase UMD non ancora pronto.');
-    return null;
-  }
-  _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  return _sb;
-}
+/* ==== CONFIG (metti i tuoi valori reali) ==== */
+const SUPABASE_URL = 'https://TUO-PROJECT-ID.supabase.co';     // <-- INSERISCI IL TUO
+const SUPABASE_ANON_KEY = 'TUO-ANON-KEY';                      // <-- INSERISCI IL TUO
+const SITE_URL = 'https://tecnoboxsrl.github.io/ListinoDigitale/'; // URL GitHub Pages
+const STORAGE_BUCKET = 'prodotti'; // oppure 'media' se usi quel bucket
 
-// ================== STATO & UTILI ==================
+/* ==== Supabase client (UMD globale) ==== */
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ==== Helpers & stato ==== */
 const $ = (id) => document.getElementById(id);
-const state = {
-  items: [], categories: [], selectedCategory: 'Tutte',
-  search: '', sort: 'alpha', onlyAvailable: false, onlyNew: false,
-  priceMax: null, role: 'guest', view: 'listino',
-};
-const parseItNumber = (v)=> v==null?null:(typeof v==='number'?v:(n=>isNaN(n)?null:n)(parseFloat(String(v).trim().replace(/\./g,'').replace(',','.'))));
-const formatPriceEUR = (n)=> (n==null||isNaN(n))?'—':n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
-function on(el,ev,fn){ if(el) el.addEventListener(ev,fn); }
-function toggleModal(id, show=true){
-  const el=$(id); if(!el) return;
-  el.classList.toggle('hidden', !show);
-  document.body.classList.toggle('modal-open', show);
-}
-window.toggleModal = toggleModal; // <-- esposta globalmente
 
-// ================== BOOT ==================
-document.addEventListener('DOMContentLoaded', async () => {
+function on(el, ev, fn){ if (el) el.addEventListener(ev, fn, { passive: true }); }
+
+function debounce(fn, ms=120){
+  let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); };
+}
+
+// normalizza per ricerche robuste (accenti/maiusc/minusc)
+function normalizeQuery(s){
+  return (s||'')
+    .toString()
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .toLowerCase().trim();
+}
+
+function toggleModal(id, show=true){
+  const el = $(id);
+  if (!el) return;
+  if (show){
+    el.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+  } else {
+    el.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+  }
+}
+
+const parseItNumber = (v)=>{
+  if (v==null) return null;
+  if (typeof v==='number') return v;
+  const s = String(v).trim().replace(/\./g,'').replace(',', '.');
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+};
+const formatPriceEUR = (n)=> (n==null||isNaN(n)) ? '—'
+  : n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+
+const state = {
+  items: [],
+  categories: [],
+  selectedCategory: 'Tutte',
+  search: '',
+  sort: 'alpha',         // 'alpha' | 'priceAsc' | 'priceDesc' | 'newest'
+  onlyAvailable: false,
+  onlyNew: false,
+  priceMax: null,
+  role: 'guest',         // 'guest' | 'agent' | 'admin'
+  view: 'listino',       // 'listino' | 'card'
+};
+
+/* ==== Boot ==== */
+document.addEventListener('DOMContentLoaded', async ()=>{
   $('year') && ($('year').textContent = new Date().getFullYear());
-  setupUI();                 // hooks UI a prescindere
-  await restoreSession();    // prova auth solo se SB disponibile
+  setupUI();
+  await restoreSession();
   await renderAuthState();
-  if (state.role !== 'guest') await fetchProducts();
+  if (state.role !== 'guest') {
+    await fetchProducts();
+  }
   renderView();
 });
 
-
-
-
-
-// evidenzia quale vista è attiva
-function highlightActiveView() {
-  const btnList = document.getElementById('viewListino');
-  const btnCard = document.getElementById('viewCard');
-  if (!btnList || !btnCard) return;
-
-  const active = 'bg-sky-600 text-white border-sky-600';
-  const normal = 'bg-white text-slate-900 border';
-
-  if (state.view === 'listino') {
-    btnList.className = btnList.className.replace(/bg-[^\s]+.*?(?=\s|$)/g,'').replace(/text-[^\s]+/g,'').replace(/border-[^\s]+/g,'');
-    btnCard.className = btnCard.className.replace(/bg-[^\s]+.*?(?=\s|$)/g,'').replace(/text-[^\s]+/g,'').replace(/border-[^\s]+/g,'');
-    btnList.classList.add('bg-sky-600','text-white','border-sky-600');
-    btnCard.classList.add('bg-white','text-slate-900','border');
-  } else {
-    btnList.className = btnList.className.replace(/bg-[^\s]+.*?(?=\s|$)/g,'').replace(/text-[^\s]+/g,'').replace(/border-[^\s]+/g,'');
-    btnCard.className = btnCard.className.replace(/bg-[^\s]+.*?(?=\s|$)/g,'').replace(/text-[^\s]+/g,'').replace(/border-[^\s]+/g,'');
-    btnCard.classList.add('bg-sky-600','text-white','border-sky-600');
-    btnList.classList.add('bg-white','text-slate-900','border');
-  }
-}
-
-// funzione globale di fallback chiamata dall'HTML
-window.setView = function (v) {
-  if (v !== 'listino' && v !== 'card') return;
-  state.view = v;
+/* ==== UI & eventi ==== */
+function setSearchQuery(q){
+  state.search = q;
+  const a = $('searchInput');
+  const b = $('searchInputM');
+  if (a && a.value !== q) a.value = q;
+  if (b && b.value !== q) b.value = q;
   renderView();
-};
-
-// richiamala dentro renderView alla fine
-function renderView(){
-  const grid = $('productGrid');
-  const listino = $('listinoContainer');
-  if (state.view==='listino'){
-    grid.classList.add('hidden');
-    listino.classList.remove('hidden');
-    renderListinoByCategory();
-  } else {
-    listino.classList.add('hidden');
-    grid.classList.remove('hidden');
-    renderCards();
-  }
-  highlightActiveView(); // <--- AGGIUNTO
 }
 
-
-
-
-
-// ================== UI & EVENTI ==================
 function setupUI(){
   // login/logout & mobile
-  on($('btnLogin'), ()=>toggleModal('loginModal', true));
-  on($('btnLoginM'), ()=>toggleModal('loginModal', true));
-  on($('btnLogout'), signOut);
-  on($('btnLogoutM'), signOut);
-  on($('loginClose'), ()=>toggleModal('loginModal', false));
-  on($('loginBackdrop'), ()=>toggleModal('loginModal', false));
-  on($('loginSend'), sendMagicLink);
+  on($('btnLogin'), 'click', ()=>toggleModal('loginModal', true));
+  on($('btnLoginM'), 'click', ()=>toggleModal('loginModal', true));
+  on($('btnLogout'), 'click', signOut);
+  on($('btnLogoutM'), 'click', signOut);
+  on($('loginClose'), 'click', ()=>toggleModal('loginModal', false));
+  on($('loginSend'), 'click', sendMagicLink);
+  on($('btnMobileMenu'), 'click', ()=>{ const m=$('mobileMenu'); if(m) m.hidden=!m.hidden; });
 
-  // invio con Enter
-  on($('loginEmail'), 'keydown', (e)=>{
-    if (e.key === 'Enter') { e.preventDefault(); sendMagicLink(); }
-  });
+  // chiusura modale login con overlay+ESC
+  const loginModal = $('loginModal');
+  if (loginModal){
+    on(loginModal, 'click', (ev)=>{ if (ev.target===loginModal) toggleModal('loginModal', false); });
+    document.addEventListener('keydown', (ev)=>{
+      if (ev.key === 'Escape' && !loginModal.classList.contains('hidden')) toggleModal('loginModal', false);
+    });
+  }
 
-  on($('btnMobileMenu'), ()=>{ const m=$('mobileMenu'); if(m) m.hidden=!m.hidden; });
+  // switch vista
+  on($('viewListino'), 'click', ()=>{ state.view='listino'; renderView(); });
+  on($('viewCard'),    'click', ()=>{ state.view='card';    renderView(); });
 
-  // vista
-  on($('viewListino'), ()=>{ state.view='listino'; renderView(); });
-  on($('viewCard'),   ()=>{ state.view='card';    renderView(); });
+  // RICERCA live (desktop+mobile)
+  const handleSearch = debounce((e)=>{
+    const q = normalizeQuery(e.target.value);
+    setSearchQuery(q);
+  }, 120);
+  on($('searchInput'),  'input', handleSearch);
+  on($('searchInputM'), 'input', handleSearch);
+  on($('searchInput'),  'keyup', handleSearch);
+  on($('searchInputM'), 'keyup', handleSearch);
 
-  // filtri/ricerca
-  on($('searchInput'), (e)=>{ state.search=e.target.value; renderView(); });
-  on($('sortSelect'),  (e)=>{ state.sort=e.target.value;  renderView(); });
-  on($('filterDisponibile'), (e)=>{ state.onlyAvailable=e.target.checked; renderView(); });
-  on($('filterNovita'),      (e)=>{ state.onlyNew=e.target.checked;      renderView(); });
-  on($('filterPriceMax'),    (e)=>{ state.priceMax=parseItNumber(e.target.value); renderView(); });
+  // filtri/ordinamento
+  on($('sortSelect'), 'change', (e)=>{ state.sort=e.target.value; renderView(); });
+  on($('filterDisponibile'), 'change', (e)=>{ state.onlyAvailable=e.target.checked; renderView(); });
+  on($('filterNovita'),      'change', (e)=>{ state.onlyNew=e.target.checked; renderView(); });
+  on($('filterPriceMax'),    'input',  (e)=>{ state.priceMax=parseItNumber(e.target.value); renderView(); });
 
-  // modal immagine: X, backdrop, ESC
-  on($('imgClose'),    ()=>toggleModal('imgModal', false));
-  on($('imgBackdrop'), ()=>toggleModal('imgModal', false));
-  on(document, 'keydown', (e)=>{
-    if (e.key === 'Escape') {
-      if ($('imgModal') && !$('imgModal').classList.contains('hidden')) toggleModal('imgModal', false);
-      if ($('loginModal') && !$('loginModal').classList.contains('hidden')) toggleModal('loginModal', false);
-    }
-  });
+  // Modal immagine
+  on($('imgClose'), 'click', ()=>toggleModal('imgModal', false));
+  const imgModal = $('imgModal');
+  if (imgModal){
+    on(imgModal, 'click', (ev)=>{ if (ev.target===imgModal) toggleModal('imgModal', false); });
+    document.addEventListener('keydown', (ev)=>{
+      if (ev.key === 'Escape' && !imgModal.classList.contains('hidden')) toggleModal('imgModal', false);
+    });
+  }
 
-  // admin (placeholder)
-  on($('btnPublish'), ()=>{
+  // Admin (placeholder)
+  on($('btnPublish'), 'click', ()=>{
     if (state.role!=='admin') return alert('Solo admin');
     alert('Hook pubblicazione pronto (edge function).');
   });
 }
 
-// ================== AUTH ==================
+/* ==== AUTH ==== */
 async function restoreSession(){
-  const sb = getSB();
-  if (!sb) { state.role='guest'; return; }
-
-  const { data:{ session } } = await sb.auth.getSession();
-  if (session?.user) {
-    const { data: prof } = await sb.from('profiles').select('role').eq('id', session.user.id).single();
+  const { data:{ session } } = await supabase.auth.getSession();
+  if (session?.user){
+    const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
     state.role = (prof?.role === 'admin') ? 'admin' : 'agent';
   } else {
     state.role = 'guest';
   }
-
-  sb.auth.onAuthStateChange(async (_e, sess)=>{
+  supabase.auth.onAuthStateChange(async (_e, sess)=>{
     if (sess?.user){
-      const { data: prof } = await sb.from('profiles').select('role').eq('id', sess.user.id).single();
+      const { data: prof } = await supabase.from('profiles').select('role').eq('id', sess.user.id).single();
       state.role = (prof?.role === 'admin') ? 'admin' : 'agent';
       await renderAuthState();
       await fetchProducts();
@@ -168,103 +168,115 @@ async function restoreSession(){
 
 async function renderAuthState(){
   const logged = state.role !== 'guest';
-  $('btnLogin') && $('btnLogin').classList.toggle('hidden', logged);
-  $('btnLogout') && $('btnLogout').classList.toggle('hidden', !logged);
-  $('adminBox') && ( $('adminBox').hidden = (state.role!=='admin') );
+  $('btnLogin')   && $('btnLogin').classList.toggle('hidden', logged);
+  $('btnLogout')  && $('btnLogout').classList.toggle('hidden', !logged);
+  $('btnLoginM')  && $('btnLoginM').classList.toggle('hidden', logged);
+  $('btnLogoutM') && $('btnLogoutM').classList.toggle('hidden', !logged);
+  $('adminBox')   && ( $('adminBox').hidden = (state.role!=='admin') );
   $('resultInfo') && ( $('resultInfo').textContent = logged ? 'Caricamento listino…' : 'Accedi per visualizzare il listino.' );
   if (logged) toggleModal('loginModal', false);
 }
 
-function isValidEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e||''); }
-
 async function sendMagicLink(){
   const emailEl = $('loginEmail');
-  const msgEl   = $('loginMsg');
-  const btn     = $('loginSend');
-  const email   = emailEl?.value?.trim();
-
-  if (msgEl) msgEl.textContent = '';
-
-  if (!email) { msgEl && (msgEl.textContent='Inserisci la tua email.'); emailEl?.focus(); return; }
-  if (!isValidEmail(email)) { msgEl && (msgEl.textContent='Email non valida.'); emailEl?.focus(); return; }
-
-  const sb = getSB();
-  if (!sb) { msgEl && (msgEl.textContent='Errore: servizio non inizializzato.'); return; }
-
-  if (btn) { btn.disabled=true; btn.textContent='Invio in corso…'; }
-
-  const { error } = await sb.auth.signInWithOtp({
+  if (!emailEl) return;
+  const email = emailEl.value.trim();
+  const msgEl = $('loginMsg');
+  if (!email){
+    if (msgEl) msgEl.textContent = 'Inserisci un indirizzo email.';
+    return;
+  }
+  const { error } = await supabase.auth.signInWithOtp({
     email,
     options: { emailRedirectTo: SITE_URL }
   });
-
-  if (btn) { btn.disabled=false; btn.textContent='Invia link'; }
-  msgEl && (msgEl.textContent = error ? ('Errore: '+error.message) : 'Email inviata. Controlla la casella e clicca il link di accesso.');
+  if (msgEl) msgEl.textContent = error ? ('Errore: ' + error.message)
+                                       : 'Email inviata. Controlla la casella e apri il link.';
 }
-window.sendMagicLink = sendMagicLink; // <-- esposta globalmente
 
 async function signOut(){
-  const sb = getSB();
-  if (sb) await sb.auth.signOut();
-  state.role='guest'; state.items=[]; renderView(); await renderAuthState();
+  await supabase.auth.signOut();
+  state.role='guest';
+  state.items=[];
+  renderView();
+  await renderAuthState();
 }
 
-// ================== DATA ==================
+/* ==== DATA ==== */
 async function fetchProducts(){
-  const sb = getSB();
-  if (!sb) return;
+  try{
+    const { data, error } = await supabase
+      .from('products')
+      .select('id,codice,descrizione,categoria,sottocategoria,prezzo,unita,disponibile,novita,pack,pallet,tags,updated_at, product_media(id,kind,path,sort)')
+      .order('descrizione', { ascending: true });
 
-  const { data, error } = await sb
-    .from('products')
-    .select(`
-      id,codice,descrizione,categoria,sottocategoria,prezzo,unita,disponibile,novita,pack,pallet,tags,updated_at,
-      product_media(id,kind,path,sort)
-    `)
-    .order('descrizione', { ascending:true });
+    if (error) throw error;
 
-  if (error) { console.error(error); $('resultInfo')&&( $('resultInfo').textContent='Errore caricamento listino'); return; }
+    const items=[];
+    for (const p of (data||[])){
+      // immagini: prima immagine ordinata per sort
+      const mediaImgs = (p.product_media||[])
+        .filter(m=>m.kind==='image')
+        .sort((a,b)=>(a.sort??0)-(b.sort??0));
 
-  const items=[];
-  for(const p of (data||[])){
-    const media = (p.product_media||[]).filter(m=>m.kind==='image').sort((a,b)=>(a.sort??0)-(b.sort??0));
-    let imgUrl='';
-    if (media[0]){
-      let key = media[0].path || '';
-      key = key.replace(/^prodotti\//, '');
-      const { data: signed } = await sb.storage.from(STORAGE_BUCKET).createSignedUrl(key, 60*10);
-      imgUrl = signed?.signedUrl || '';
+      let imgUrl='';
+      if (mediaImgs[0]){
+        const { data: signed } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .createSignedUrl(mediaImgs[0].path, 60*10); // 10 min
+        imgUrl = signed?.signedUrl || '';
+      }
+
+      items.push({
+        codice: p.codice,
+        descrizione: p.descrizione,
+        categoria: p.categoria,
+        sottocategoria: p.sottocategoria,
+        prezzo: p.prezzo,
+        unita: p.unita,
+        disponibile: p.disponibile,
+        novita: p.novita,
+        pack: p.pack,
+        pallet: p.pallet,
+        tags: p.tags || [],
+        updated_at: p.updated_at,
+        img: imgUrl,
+      });
     }
-    items.push({
-      codice: p.codice, descrizione: p.descrizione, categoria: p.categoria, sottocategoria: p.sottocategoria,
-      prezzo: p.prezzo, unita: p.unita, disponibile: p.disponibile, novita: p.novita,
-      pack: p.pack, pallet: p.pallet, tags: p.tags || [], updated_at: p.updated_at, img: imgUrl,
-    });
-  }
 
-  state.items = items;
-  buildCategories();
-  $('resultInfo') && ( $('resultInfo').textContent = `${items.length} articoli` );
+    state.items = items;
+    buildCategories();
+    $('resultInfo') && ( $('resultInfo').textContent = `${items.length} articoli` );
+  } catch(e){
+    console.error('[Listino] fetchProducts error', e);
+    $('resultInfo') && ( $('resultInfo').textContent = 'Errore caricamento listino' );
+  }
 }
 
 function buildCategories(){
-  const set = new Set(state.items.map(p=>p.categoria||'Altro'));
+  const set = new Set(state.items.map(p=>p.categoria || 'Altro'));
   state.categories = ['Tutte', ...Array.from(set).sort((a,b)=>a.localeCompare(b,'it'))];
   const box = $('categoryList'); if(!box) return;
   box.innerHTML='';
   state.categories.forEach(cat=>{
-    const b=document.createElement('button');
-    b.className='tag hover:bg-slate-100';
+    const b = document.createElement('button');
+    b.className = 'tag hover:bg-slate-100';
     b.textContent = cat;
-    b.addEventListener('click', ()=>{ state.selectedCategory=cat; renderView(); });
+    b.addEventListener('click', ()=>{
+      state.selectedCategory = cat;
+      renderView();
+    });
     box.appendChild(b);
   });
 }
 
-// ================== RENDER SWITCH ==================
+/* ==== Render (switch) ==== */
 function renderView(){
-  const grid = $('productGrid');
+  const grid    = $('productGrid');
   const listino = $('listinoContainer');
-  if (state.view==='listino'){
+  if (!grid || !listino) return;
+
+  if (state.view === 'listino'){
     grid.classList.add('hidden');
     listino.classList.remove('hidden');
     renderListinoByCategory();
@@ -275,36 +287,71 @@ function renderView(){
   }
 }
 
-// ================== VISTA LISTINO ==================
+/* ==== Filtri comuni ==== */
+function filterAndSort(arr){
+  let out = [...arr];
+
+  if (state.selectedCategory !== 'Tutte')
+    out = out.filter(p => (p.categoria||'Altro') === state.selectedCategory);
+
+  if (state.search){
+    const q = state.search; // già normalizzato
+    out = out.filter(p=>{
+      const hay = normalizeQuery(
+        (p.codice||'') + ' ' +
+        (p.descrizione||'') + ' ' +
+        (p.tags||[]).join(' ')
+      );
+      return hay.includes(q);
+    });
+  }
+
+  if (state.onlyAvailable) out = out.filter(p=>p.disponibile);
+  if (state.onlyNew)       out = out.filter(p=>p.novita);
+  if (state.priceMax!=null) out = out.filter(p=> p.prezzo!=null && p.prezzo <= state.priceMax);
+
+  switch(state.sort){
+    case 'priceAsc':  out.sort((a,b)=>(a.prezzo??Infinity)-(b.prezzo??Infinity)); break;
+    case 'priceDesc': out.sort((a,b)=>(b.prezzo??-Infinity)-(a.prezzo??-Infinity)); break;
+    case 'newest':    out.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||'')); break;
+    default:          out.sort((a,b)=> (a.descrizione||'').localeCompare(b.descrizione||'', 'it')); break;
+  }
+
+  return out;
+}
+
+/* ==== Vista: LISTINO (tabellare per categoria) ==== */
 function renderListinoByCategory(){
   const container = $('listinoContainer'); if(!container) return;
   container.innerHTML='';
 
-  let arr=[...state.items];
-  if(state.selectedCategory!=='Tutte') arr=arr.filter(p=>p.categoria===state.selectedCategory);
-  if(state.search){ const q=state.search.toLowerCase(); arr=arr.filter(p=>(p.codice+' '+p.descrizione+' '+(p.tags||[]).join(' ')).toLowerCase().includes(q)); }
-  if(state.onlyAvailable) arr=arr.filter(p=>p.disponibile);
-  if(state.onlyNew) arr=arr.filter(p=>p.novita);
-  if(state.priceMax!=null) arr=arr.filter(p=>p.prezzo!=null && p.prezzo<=state.priceMax);
+  const arr = filterAndSort(state.items);
 
-  const byCat=new Map();
-  for(const p of arr){
-    const c=p.categoria||'Altro';
-    if(!byCat.has(c)) byCat.set(c, []);
+  // group by categoria
+  const byCat = new Map();
+  for (const p of arr){
+    const c = p.categoria || 'Altro';
+    if (!byCat.has(c)) byCat.set(c, []);
     byCat.get(c).push(p);
   }
 
-  const cats=[...byCat.keys()].sort((a,b)=>a.localeCompare(b,'it'));
-  for(const cat of cats){
+  const cats = [...byCat.keys()].sort((a,b)=>a.localeCompare(b,'it'));
+  if (!cats.length){
+    container.innerHTML = '<div class="text-center text-slate-500 py-10">Nessun articolo trovato.</div>';
+    return;
+  }
+
+  for (const cat of cats){
     const items = byCat.get(cat).sort((a,b)=>(a.codice||'').localeCompare(b.codice||'','it'));
-    const h=document.createElement('h2');
-    h.className='text-lg font-semibold';
-    h.textContent=cat;
+
+    const h = document.createElement('h2');
+    h.className = 'text-lg font-semibold mt-2 mb-1';
+    h.textContent = cat;
     container.appendChild(h);
 
-    const table=document.createElement('table');
-    table.className='w-full text-sm border-collapse';
-    table.innerHTML=`
+    const table = document.createElement('table');
+    table.className = 'w-full text-sm border-collapse';
+    table.innerHTML = `
       <thead class="bg-slate-100">
         <tr>
           <th class="border px-2 py-1 text-left">Codice</th>
@@ -314,79 +361,77 @@ function renderListinoByCategory(){
           <th class="border px-2 py-1 text-center">Img</th>
         </tr>
       </thead>
-      <tbody></tbody>`;
-    const tb=table.querySelector('tbody');
+      <tbody></tbody>
+    `;
+    const tb = table.querySelector('tbody');
 
-    for(const p of items){
-      const tr=document.createElement('tr');
-      tr.innerHTML=`
+    for (const p of items){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
         <td class="border px-2 py-1 whitespace-nowrap font-mono">${p.codice||''}</td>
-        <td class="border px-2 py-1">${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}</td>
+        <td class="border px-2 py-1">
+          ${p.descrizione||''}
+          ${p.novita ? '<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>' : ''}
+        </td>
         <td class="border px-2 py-1">${p.pack||''}</td>
         <td class="border px-2 py-1 text-right">${formatPriceEUR(p.prezzo)}</td>
-        <td class="border px-2 py-1 text-center">${p.img?`<button class="text-sky-600 underline" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>`:'—'}</td>`;
+        <td class="border px-2 py-1 text-center">${p.img ? `<button class="text-sky-600 underline" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>` : '—'}</td>
+      `;
       tb.appendChild(tr);
     }
     container.appendChild(table);
   }
 
+  // bind anteprima immagine
   container.querySelectorAll('button[data-src]').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
-      const src=e.currentTarget.getAttribute('data-src');
-      const title=decodeURIComponent(e.currentTarget.getAttribute('data-title')||'');
-      const img=$('imgPreview'), ttl=$('imgTitle');
-      if(img){ img.src=src; img.alt=title; }
-      if(ttl){ ttl.textContent=title; }
+      const src   = e.currentTarget.getAttribute('data-src');
+      const title = decodeURIComponent(e.currentTarget.getAttribute('data-title')||'');
+      const img = $('imgPreview'), ttl = $('imgTitle');
+      if (img){ img.src = src; img.alt = title; }
+      if (ttl){ ttl.textContent = title; }
       toggleModal('imgModal', true);
     });
   });
 }
 
-// ================== VISTA CARD ==================
+/* ==== Vista: CARD ==== */
 function renderCards(){
-  const grid=$('productGrid'); if(!grid) return;
+  const grid = $('productGrid'); if(!grid) return;
   grid.innerHTML='';
 
-  let arr=[...state.items];
-  if(state.selectedCategory!=='Tutte') arr=arr.filter(p=>p.categoria===state.selectedCategory);
-  if(state.search){ const q=state.search.toLowerCase(); arr=arr.filter(p=>(p.codice+' '+p.descrizione+' '+(p.tags||[]).join(' ')).toLowerCase().includes(q)); }
-  if(state.onlyAvailable) arr=arr.filter(p=>p.disponibile);
-  if(state.onlyNew) arr=arr.filter(p=>p.novita);
-  if(state.priceMax!=null) arr=arr.filter(p=>p.prezzo!=null && p.prezzo<=state.priceMax);
-
-  switch(state.sort){
-    case 'priceAsc':  arr.sort((a,b)=>(a.prezzo??Infinity)-(b.prezzo??Infinity)); break;
-    case 'priceDesc': arr.sort((a,b)=>(b.prezzo??-Infinity)-(a.prezzo??-Infinity)); break;
-    case 'newest':    arr.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||'')); break;
-    default:          arr.sort((a,b)=>a.descrizione.localeCompare(b.descrizione,'it')); break;
+  const arr = filterAndSort(state.items);
+  if (!arr.length){
+    grid.innerHTML = '<div class="col-span-full text-center text-slate-500 py-10">Nessun articolo trovato.</div>';
+    return;
   }
 
-  if(!arr.length){ grid.innerHTML='<div class="col-span-full text-center text-slate-500 py-10">Nessun articolo trovato.</div>'; return; }
-
-  for(const p of arr){
-    const card=document.createElement('article');
+  for (const p of arr){
+    const card = document.createElement('article');
     card.className='card rounded-2xl bg-white border shadow-sm overflow-hidden';
-    card.innerHTML=`
+    card.innerHTML = `
       <div class="aspect-square bg-slate-100 grid place-content-center">
-        ${p.img ? `<img src="${p.img}" alt="${p.descrizione}" class="w-full h-full object-contain" loading="lazy" decoding="async">` : `<div class="text-slate-400">Nessuna immagine</div>`}
+        ${p.img ? `<img src="${p.img}" alt="${p.descrizione||''}" class="w-full h-full object-contain" loading="lazy" decoding="async">`
+                 : `<div class="text-slate-400">Nessuna immagine</div>`}
       </div>
       <div class="p-3 space-y-2">
         <div class="flex items-start justify-between gap-2">
-          <h3 class="font-medium leading-snug line-clamp-2">${p.descrizione}</h3>
+          <h3 class="font-medium leading-snug line-clamp-2">${p.descrizione||''}</h3>
           ${p.novita ? '<span class="tag bg-emerald-50 text-emerald-700 border-emerald-200">Novità</span>' : ''}
         </div>
-        <p class="text-xs text-slate-500">${p.codice}</p>
+        <p class="text-xs text-slate-500">${p.codice||''}</p>
         <div class="flex items-center justify-between">
           <div class="text-lg font-semibold">${formatPriceEUR(p.prezzo)}</div>
           <button class="rounded-xl border px-3 py-1.5 text-sm hover:bg-slate-50">Vedi</button>
         </div>
         <div class="flex gap-1 flex-wrap">${(p.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('')}</div>
-      </div>`;
+      </div>
+    `;
     card.querySelector('button').addEventListener('click', ()=>{
-      if(!p.img) return;
-      const img=$('imgPreview'), ttl=$('imgTitle');
-      if(img){ img.src=p.img; img.alt=p.descrizione||''; }
-      if(ttl){ ttl.textContent=p.descrizione||''; }
+      if (!p.img) return;
+      const img = $('imgPreview'), ttl = $('imgTitle');
+      if (img){ img.src = p.img; img.alt = p.descrizione||''; }
+      if (ttl){ ttl.textContent = p.descrizione||''; }
       toggleModal('imgModal', true);
     });
     grid.appendChild(card);
