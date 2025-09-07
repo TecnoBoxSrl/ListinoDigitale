@@ -8,8 +8,8 @@
 =================================== */
 
 /* ==== CONFIG (metti i tuoi valori reali) ==== */
-const SUPABASE_URL = 'https://TUO-PROJECT-ID.supabase.co';     // <-- INSERISCI IL TUO
-const SUPABASE_ANON_KEY = 'TUO-ANON-KEY';                      // <-- INSERISCI IL TUO
+const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';     // <-- INSERISCI IL TUO
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';                      // <-- INSERISCI IL TUO
 const SITE_URL = 'https://tecnoboxsrl.github.io/ListinoDigitale/'; // URL GitHub Pages
 const STORAGE_BUCKET = 'prodotti'; // oppure 'media' se usi quel bucket
 
