@@ -375,3 +375,48 @@ function renderCards(){
     grid.appendChild(card);
   }
 }
+
+
+// --- Gestione magic link da hash (#access_token=...&refresh_token=...) ---
+async function handleMagicLinkRedirect() {
+  // se l’URL contiene token nell’hash, es: #access_token=...&refresh_token=...
+  if (location.hash && location.hash.includes('access_token')) {
+    const params = new URLSearchParams(location.hash.substring(1));
+    const access_token  = params.get('access_token');
+    const refresh_token = params.get('refresh_token');
+    const error         = params.get('error');
+    const error_desc    = params.get('error_description');
+
+    // Se Supabase ha segnalato un errore, mostralo e pulisci l’URL
+    if (error) {
+      console.warn('[Auth] errore nel magic link:', error, error_desc || '');
+      const msg = document.getElementById('loginMsg');
+      if (msg) msg.textContent = `Errore accesso: ${error_desc || error}`;
+      // ripulisci URL (rimuove l’hash con i token/errore)
+      history.replaceState({}, document.title, location.pathname + location.search);
+      return;
+    }
+
+    if (access_token && refresh_token) {
+      try {
+        // Imposta la sessione nel client Supabase
+        const { data, error: setErr } = await supabase.auth.setSession({
+          access_token,
+          refresh_token
+        });
+        if (setErr) {
+          console.error('[Auth] setSession error:', setErr);
+          const msg = document.getElementById('loginMsg');
+          if (msg) msg.textContent = `Errore accesso: ${setErr.message}`;
+        } else {
+          console.log('[Auth] sessione impostata con successo', data);
+        }
+      } catch (e) {
+        console.error('[Auth] setSession exception:', e);
+      } finally {
+        // IMPORTANTISSIMO: rimuovi i token dall’URL
+        history.replaceState({}, document.title, location.pathname + location.search);
+      }
+    }
+  }
+}
