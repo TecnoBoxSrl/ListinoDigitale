@@ -1,9 +1,10 @@
 /* ================================
-   Listino Digitale – script.js (v17)
-   Fix robusto post-login:
+   Listino Digitale – script.js (v18)
+   Fix login magic-link + robust loading
+   - exchangeCodeForSession() all'avvio
    - Banner errori visibile
-   - Query products senza join annidato (niente stop)
-   - Immagini opzionali (non bloccano il rendering)
+   - Query products senza join annidato (non blocca rendering)
+   - Immagini opzionali (Signed URL)
    - Ricerca live, viste, ESC/overlay
 =================================== */
 
@@ -52,10 +53,33 @@ function showError(msg){
 window.addEventListener('error', (e)=> showError('Errore JS: '+ (e?.message || 'sconosciuto')));
 window.addEventListener('unhandledrejection', (e)=> showError('Errore (promise): '+ (e?.reason?.message || 'sconosciuto')));
 
+/* ==== Login magic-link: completa la sessione se c'è ?code=... ==== */
+async function completeMagicLinkIfPresent() {
+  const href = window.location.href;
+  if (href.includes('code=')) {
+    const { error } = await supabase.auth.exchangeCodeForSession(href);
+    if (error) {
+      showError('Login: ' + (error.message || 'impossibile completare accesso'));
+      return;
+    }
+    try {
+      const url = new URL(href);
+      url.searchParams.delete('code');
+      url.searchParams.delete('type');
+      url.searchParams.delete('redirect_to');
+      history.replaceState({}, document.title, url.pathname + url.hash);
+    } catch (_) { /* no-op */ }
+  }
+}
+
 /* ==== Boot ==== */
 document.addEventListener('DOMContentLoaded', async ()=>{
   $('year') && ($('year').textContent = new Date().getFullYear());
   setupUI();
+
+  // NOVITÀ: completa magic link prima di tutto
+  await completeMagicLinkIfPresent();
+
   await restoreSession();
   await renderAuthState();
   if (state.role !== 'guest') {
@@ -130,18 +154,23 @@ function setupUI(){
 async function restoreSession(){
   const { data:{ session } } = await supabase.auth.getSession();
   if (session?.user){
-    // profilo opzionale: se non esiste, resti 'agent' di default
-    const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).maybeSingle?.() ?? {};
-    const role = prof?.role || 'agent';
-    state.role = (role === 'admin') ? 'admin' : 'agent';
+    try{
+      const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
+      state.role = (prof?.role === 'admin') ? 'admin' : 'agent';
+    }catch(_e){
+      state.role = 'agent';
+    }
   } else {
     state.role = 'guest';
   }
   supabase.auth.onAuthStateChange(async (_e, sess)=>{
     if (sess?.user){
-      const { data: prof } = await supabase.from('profiles').select('role').eq('id', sess.user.id).maybeSingle?.() ?? {};
-      const role = prof?.role || 'agent';
-      state.role = (role === 'admin') ? 'admin' : 'agent';
+      try{
+        const { data: prof } = await supabase.from('profiles').select('role').eq('id', sess.user.id).single();
+        state.role = (prof?.role === 'admin') ? 'admin' : 'agent';
+      }catch(_e){
+        state.role = 'agent';
+      }
       await renderAuthState();
       await fetchProducts();
       renderView();
@@ -177,7 +206,6 @@ async function signOut(){
 /* ==== DATA ==== */
 async function fetchProducts(){
   try{
-    // 1) Prendi SOLO prodotti (niente join annidato che può fallire se manca la relazione Postgres)
     const { data: products, error } = await supabase
       .from('products')
       .select('id,codice,descrizione,categoria,sottocategoria,prezzo,unita,disponibile,novita,pack,pallet,tags,updated_at')
@@ -185,7 +213,6 @@ async function fetchProducts(){
 
     if (error) throw error;
 
-    // 2) Prova a prendere la media SE la tabella esiste / policy consente; se fallisce, ignora
     let mediaByProductId = new Map();
     try{
       const { data: media, error: mErr } = await supabase
@@ -201,7 +228,6 @@ async function fetchProducts(){
       }
     }catch(_e){ /* nessun blocco */ }
 
-    // 3) Costruisci items; crea SignedURL solo per la prima immagine (se esiste)
     const items=[];
     for (const p of (products||[])){
       let imgUrl = '';
