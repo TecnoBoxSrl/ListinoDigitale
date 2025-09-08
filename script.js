@@ -1,15 +1,15 @@
 /* ================================
-   Listino Digitale – script.js (v20)
-   - Fix: un solo DOMContentLoaded
-   - Fix: un solo flusso di redirect (hash #access_token e ?code)
-   - Niente onclick inline: tutti gli handler sono qui
+   Listino Digitale – script.js (v21)
+   + Preventivo: selezione articoli, qty, sconto, CONAI, export Excel
+   + Login magic link (hash e ?code)
+   + Vista listino/card, ricerca, immagini (signed URL)
 ================================ */
 
 /* ==== CONFIG ==== */
 const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
 const SITE_URL = 'https://tecnoboxsrl.github.io/ListinoDigitale/';
-const STORAGE_BUCKET = 'prodotti';
+const STORAGE_BUCKET = 'prodotti'; // o 'media'
 
 /* ==== Supabase ==== */
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -21,7 +21,7 @@ const debounce = (fn, ms=120) => { let t; return (...a)=>{ clearTimeout(t); t=se
 const normalizeQuery = (s)=> (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
 const toggleModal = (id, show=true)=>{ const el=$(id); if(!el) return; el.classList.toggle('hidden', !show); document.body.classList.toggle('modal-open', show); };
 const parseItNumber = (v)=>{ if(v==null) return null; if(typeof v==='number') return v; const n=parseFloat(String(v).trim().replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; };
-const formatPriceEUR = (n)=> (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
+const fmtEUR = (n)=> (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 
 /* ==== Stato ==== */
 const state = {
@@ -35,32 +35,34 @@ const state = {
   priceMax: null,
   role: 'guest',
   view: 'listino',
+
+  // Preventivo
+  quote: new Map(), // key: codice, val: {codice, descrizione, prezzo, qty, sconto, conai}
+  quoteConaiDefault: 0,
 };
 
-/* ==== Boot unico ==== */
+/* ==== Boot ==== */
 document.addEventListener('DOMContentLoaded', async () => {
   if ($('year')) $('year').textContent = new Date().getFullYear();
   setupUI();
 
-  // gestisci ritorno dal magic link (hash o ?code)
   await handleAuthRedirect();
-
   await restoreSession();
   await renderAuthState();
   if (state.role !== 'guest') await fetchProducts();
   renderView();
+  renderQuoteBox();
 });
 
-/* ==== Redirect handler (unico) ==== */
+/* ==== Auth redirect ==== */
 async function handleAuthRedirect(){
   try {
     const url = new URL(window.location.href);
 
-    // errori nell’hash (es. otp_expired)
+    // errori nell’hash
     if (location.hash && location.hash.includes('error=')) {
       const h = new URLSearchParams(location.hash.slice(1));
       const desc = h.get('error_description') || h.get('error') || 'Errore di accesso';
-      console.warn('[Auth] redirect error:', desc);
       const msg = $('loginMsg') || $('resultInfo');
       if (msg) msg.textContent = `Accesso non riuscito: ${desc}`;
       history.replaceState({}, document.title, url.origin + url.pathname);
@@ -84,7 +86,6 @@ async function handleAuthRedirect(){
       if (access_token && refresh_token) {
         const { error } = await supabase.auth.setSession({ access_token, refresh_token });
         if (error) console.error('[Auth] setSession', error);
-        else console.log('[Auth] sessione impostata da hash');
       }
       history.replaceState({}, document.title, url.origin + url.pathname);
     }
@@ -117,15 +118,17 @@ function setupUI(){
   on($('filterNovita'), 'change', (e)=>{ state.onlyNew=e.target.checked; renderView(); });
   on($('filterPriceMax'), 'input', (e)=>{ state.priceMax=parseItNumber(e.target.value); renderView(); });
 
-  // invio magic link (QUI: un solo handler → una sola mail)
+  // invio magic link
   on($('loginSend'), 'click', sendMagicLink);
 
   // vista
   on($('viewListino'), 'click', ()=>{ state.view='listino'; renderView(); });
   on($('viewCard'),   'click', ()=>{ state.view='card';    renderView(); });
 
-  // espongo setView per eventuali onclick rimasti
-  window.setView = (v)=>{ state.view=v; renderView(); };
+  // Preventivo
+  on($('quoteExport'), 'click', exportQuoteToExcel);
+  on($('quoteClear'), 'click', ()=>{ state.quote.clear(); renderQuoteBox(); syncChecksFromQuote(); });
+  on($('quoteConaiDefault'), 'input', (e)=>{ state.quoteConaiDefault = parseItNumber(e.target.value) || 0; renderQuoteBox(); });
 }
 
 /* ==== Auth ==== */
@@ -196,12 +199,21 @@ async function fetchProducts(){
 
     const out=[];
     for (const p of (data||[])){
+      // --- IMMAGINI ---
       let img='';
       const imgs=(p.product_media||[]).filter(m=>m.kind==='image').sort((a,b)=>(a.sort??0)-(b.sort??0));
       if (imgs[0]) {
-        const { data:signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(imgs[0].path, 600);
-        img = signed?.signedUrl || '';
+        const path = imgs[0].path;
+        if (/^https?:\/\//i.test(path)) {
+          // URL assoluto esterno
+          img = path;
+        } else {
+          // Supabase Storage signed URL
+          const { data:signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(path, 600);
+          img = signed?.signedUrl || '';
+        }
       }
+
       out.push({
         codice:p.codice, descrizione:p.descrizione, categoria:p.categoria, sottocategoria:p.sottocategoria,
         prezzo:p.prezzo, unita:p.unita, disponibile:p.disponibile, novita:p.novita, pack:p.pack, pallet:p.pallet,
@@ -237,8 +249,11 @@ function renderView(){
   if (!grid || !listino) return;
   if (state.view==='listino'){ grid.classList.add('hidden'); listino.classList.remove('hidden'); renderListino(); }
   else { listino.classList.add('hidden'); grid.classList.remove('hidden'); renderCards(); }
+  // dopo ogni render, sincronizza check in base al preventivo
+  syncChecksFromQuote();
 }
 
+/* Filtri/ordinamento comuni */
 function filterAndSort(arr){
   let out=[...arr];
   if (state.selectedCategory!=='Tutte') out=out.filter(p=>(p.categoria||'Altro')===state.selectedCategory);
@@ -261,6 +276,7 @@ function filterAndSort(arr){
   return out;
 }
 
+/* VISTA LISTINO (tabellare) con checkbox */
 function renderListino(){
   const c=$('listinoContainer'); if(!c) return; c.innerHTML='';
   const arr=filterAndSort(state.items);
@@ -274,6 +290,7 @@ function renderListino(){
     const t=document.createElement('table'); t.className='w-full text-sm border-collapse';
     t.innerHTML=`
       <thead class="bg-slate-100"><tr>
+        <th class="border px-2 py-1 text-center">Sel</th>
         <th class="border px-2 py-1 text-left">Codice</th>
         <th class="border px-2 py-1 text-left">Descrizione</th>
         <th class="border px-2 py-1 text-left">Confezione</th>
@@ -281,30 +298,51 @@ function renderListino(){
         <th class="border px-2 py-1 text-center">Img</th>
       </tr></thead><tbody></tbody>`;
     const tb=t.querySelector('tbody');
+
     for(const p of items){
       const tr=document.createElement('tr');
       tr.innerHTML=`
+        <td class="border px-2 py-1 text-center">
+          <input type="checkbox" data-code="${p.codice}">
+        </td>
         <td class="border px-2 py-1 whitespace-nowrap font-mono">${p.codice||''}</td>
         <td class="border px-2 py-1">${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}</td>
         <td class="border px-2 py-1">${p.pack||''}</td>
-        <td class="border px-2 py-1 text-right">${formatPriceEUR(p.prezzo)}</td>
+        <td class="border px-2 py-1 text-right">${fmtEUR(p.prezzo)}</td>
         <td class="border px-2 py-1 text-center">${p.img?`<button class="text-sky-600 underline" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>`:'—'}</td>`;
       tb.appendChild(tr);
     }
     c.appendChild(t);
-  }
-  c.querySelectorAll('button[data-src]').forEach(b=>{
-    b.addEventListener('click', (e)=>{
-      const src=e.currentTarget.getAttribute('data-src');
-      const title=decodeURIComponent(e.currentTarget.getAttribute('data-title')||'');
-      const img=$('imgPreview'), ttl=$('imgTitle');
-      if(img){ img.src=src; img.alt=title; }
-      if(ttl){ ttl.textContent=title; }
-      toggleModal('imgModal', true);
+
+    // bind selezioni
+    t.querySelectorAll('input[type="checkbox"][data-code]').forEach(chk=>{
+      chk.addEventListener('change', (e)=>{
+        const code=e.target.getAttribute('data-code');
+        const prod=state.items.find(x=>x.codice===code);
+        if (!prod) return;
+        if (e.target.checked){
+          addToQuote(prod);
+        } else {
+          removeFromQuote(code);
+        }
+      });
     });
-  });
+
+    // bind anteprima immagine
+    t.querySelectorAll('button[data-src]').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        const src=e.currentTarget.getAttribute('data-src');
+        const title=decodeURIComponent(e.currentTarget.getAttribute('data-title')||'');
+        const img=$('imgPreview'), ttl=$('imgTitle');
+        if(img){ img.src=src; img.alt=title; }
+        if(ttl){ ttl.textContent=title; }
+        toggleModal('imgModal', true);
+      });
+    });
+  }
 }
 
+/* VISTA CARD con checkbox */
 function renderCards(){
   const g=$('productGrid'); if(!g) return; g.innerHTML='';
   const arr=filterAndSort(state.items);
@@ -312,7 +350,11 @@ function renderCards(){
   for(const p of arr){
     const card=document.createElement('article'); card.className='card rounded-2xl bg-white border shadow-sm overflow-hidden';
     card.innerHTML=`
-      <div class="aspect-square bg-slate-100 grid place-content-center">
+      <div class="relative aspect-square bg-slate-100 grid place-content-center">
+        <label class="absolute top-2 left-2 bg-white/90 border rounded-md px-2 py-1 text-xs flex items-center gap-1">
+          <input type="checkbox" data-code="${p.codice}">
+          <span>Sel</span>
+        </label>
         ${p.img?`<img src="${p.img}" alt="${p.descrizione||''}" class="w-full h-full object-contain" loading="lazy" decoding="async">`:`<div class="text-slate-400">Nessuna immagine</div>`}
       </div>
       <div class="p-3 space-y-2">
@@ -322,11 +364,11 @@ function renderCards(){
         </div>
         <p class="text-xs text-slate-500">${p.codice||''}</p>
         <div class="flex items-center justify-between">
-          <div class="text-lg font-semibold">${formatPriceEUR(p.prezzo)}</div>
+          <div class="text-lg font-semibold">${fmtEUR(p.prezzo)}</div>
           <button class="rounded-xl border px-3 py-1.5 text-sm hover:bg-slate-50">Vedi</button>
         </div>
-        <div class="flex gap-1 flex-wrap">${(p.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('')}</div>
       </div>`;
+    // immagine modal
     card.querySelector('button').addEventListener('click', ()=>{
       if(!p.img) return;
       const img=$('imgPreview'), ttl=$('imgTitle');
@@ -334,6 +376,181 @@ function renderCards(){
       if(ttl){ ttl.textContent=p.descrizione||''; }
       toggleModal('imgModal', true);
     });
+    // selezione
+    const chk = card.querySelector('input[type="checkbox"][data-code]');
+    chk.addEventListener('change', (e)=>{
+      if (e.target.checked) addToQuote(p); else removeFromQuote(p.codice);
+    });
+
     g.appendChild(card);
   }
+}
+
+/* ==== Preventivo: logica ==== */
+function addToQuote(prod){
+  if (!prod || !prod.codice) return;
+  if (!state.quote.has(prod.codice)){
+    state.quote.set(prod.codice, {
+      codice: prod.codice,
+      descrizione: prod.descrizione || '',
+      prezzo: typeof prod.prezzo === 'number' ? prod.prezzo : parseItNumber(prod.prezzo) || 0,
+      qty: 1,
+      sconto: 0,         // percentuale
+      conai: null,       // se null → usa default
+    });
+  }
+  renderQuoteBox();
+  syncChecksFromQuote();
+}
+function removeFromQuote(codice){
+  state.quote.delete(codice);
+  renderQuoteBox();
+  syncChecksFromQuote();
+}
+function syncChecksFromQuote(){
+  // riflette lo stato dei checkbox in base a state.quote
+  document.querySelectorAll('input[type="checkbox"][data-code]').forEach(chk=>{
+    const code=chk.getAttribute('data-code');
+    chk.checked = state.quote.has(code);
+  });
+}
+
+/* Calcoli */
+function prezzoScontato(p){ // p: {prezzo, sconto}
+  const s = Math.min(Math.max(p.sconto||0, 0), 100);
+  const net = (p.prezzo||0) * (1 - s/100);
+  return Math.max(net, 0);
+}
+function totaleRiga(p, defaultConai){
+  const conai = (p.conai==null ? (defaultConai||0) : (parseItNumber(p.conai)||0));
+  const unit = prezzoScontato(p) + conai;
+  return (unit) * (p.qty||0);
+}
+
+/* Render box preventivo */
+function renderQuoteBox(){
+  const box=$('quoteBox'), body=$('quoteBody'), total=$('quoteTotal');
+  if (!box || !body || !total) return;
+
+  $('quoteConaiDefault') && (state.quoteConaiDefault = parseItNumber($('quoteConaiDefault').value) || 0);
+
+  const rows = [...state.quote.values()];
+  if (!rows.length){
+    box.classList.add('hidden');
+    body.innerHTML='';
+    total.textContent='—';
+    return;
+  }
+
+  box.classList.remove('hidden');
+  body.innerHTML='';
+
+  let somma=0;
+  for (const r of rows){
+    const unitNet = prezzoScontato(r);
+    const conai = (r.conai==null ? state.quoteConaiDefault : (parseItNumber(r.conai)||0));
+    const riga = (unitNet + conai) * (r.qty||0);
+    somma += riga;
+
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td class="border px-2 py-1 font-mono">${r.codice}</td>
+      <td class="border px-2 py-1">${r.descrizione}</td>
+      <td class="border px-2 py-1 text-right">${fmtEUR(r.prezzo)}</td>
+      <td class="border px-2 py-1 text-right">
+        <input type="number" step="0.01" class="w-20 rounded-md border px-2 py-1 text-right" value="${r.sconto||0}">
+      </td>
+      <td class="border px-2 py-1 text-right">${fmtEUR(unitNet)}</td>
+      <td class="border px-2 py-1 text-right">
+        <input type="number" step="1" class="w-20 rounded-md border px-2 py-1 text-right" value="${r.qty||1}">
+      </td>
+      <td class="border px-2 py-1 text-right">
+        <input type="number" step="0.01" class="w-24 rounded-md border px-2 py-1 text-right" placeholder="${state.quoteConaiDefault}" value="${r.conai==null?'':r.conai}">
+      </td>
+      <td class="border px-2 py-1 text-right">${fmtEUR(riga)}</td>
+      <td class="border px-2 py-1 text-center">
+        <button class="rounded-md border px-2 py-1 text-sm" data-del="${r.codice}">Rimuovi</button>
+      </td>
+    `;
+    // bind campi
+    const inputs = tr.querySelectorAll('input');
+    // sconto
+    inputs[0].addEventListener('input', (e)=>{
+      const v = parseItNumber(e.target.value) || 0;
+      r.sconto = Math.max(0, Math.min(100, v));
+      renderQuoteBox();
+    });
+    // qty
+    inputs[1].addEventListener('input', (e)=>{
+      const v = parseItNumber(e.target.value) || 0;
+      r.qty = Math.max(0, Math.floor(v));
+      renderQuoteBox();
+    });
+    // conai
+    inputs[2].addEventListener('input', (e)=>{
+      const val = e.target.value.trim();
+      r.conai = (val === '') ? null : (parseItNumber(val)||0);
+      renderQuoteBox();
+    });
+    // remove
+    tr.querySelector('button[data-del]').addEventListener('click', ()=>{
+      removeFromQuote(r.codice);
+    });
+
+    body.appendChild(tr);
+  }
+
+  total.textContent = fmtEUR(somma);
+}
+
+/* Export Excel */
+function exportQuoteToExcel(){
+  const rows = [...state.quote.values()];
+  if (!rows.length) { alert('Nessun articolo selezionato.'); return; }
+
+  const defConai = state.quoteConaiDefault || 0;
+
+  // costruisci dati tabellari
+  const data = [
+    ['Codice', 'Descrizione', 'Q.tà', 'Prezzo unit.', 'Sconto %', 'Prezzo scont. unit.', 'CONAI x collo', 'Totale riga']
+  ];
+
+  let somma=0;
+  for (const r of rows){
+    const unitNet = prezzoScontato(r);
+    const conai = (r.conai==null ? defConai : (parseItNumber(r.conai)||0));
+    const tot = (unitNet + conai) * (r.qty||0);
+    somma += tot;
+    data.push([
+      r.codice,
+      r.descrizione,
+      r.qty||0,
+      +(r.prezzo||0),
+      +(r.sconto||0),
+      +unitNet,
+      +conai,
+      +tot
+    ]);
+  }
+  data.push([]);
+  data.push(['', '', '', '', '', 'Totale imponibile', '', +somma]);
+
+  // crea workbook xlsx (SheetJS)
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  // formattazione colonne (opzionale: larghezze)
+  ws['!cols'] = [
+    { wch: 14 }, // codice
+    { wch: 50 }, // descrizione
+    { wch: 8 },  // qty
+    { wch: 12 }, // prezzo unit
+    { wch: 10 }, // sconto
+    { wch: 16 }, // prezzo scontato
+    { wch: 14 }, // conai
+    { wch: 14 }, // totale riga
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Preventivo');
+
+  const fileName = `preventivo_${new Date().toISOString().slice(0,10)}.xlsx`;
+  XLSX.writeFile(wb, fileName);
 }
