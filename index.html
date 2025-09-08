@@ -6,8 +6,6 @@
   <title>Listino Digitale – Accesso Agenti</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <script src="https://cdn.tailwindcss.com"></script>
-
-
   <style>
     .glass{backdrop-filter:blur(12px);background:rgba(255,255,255,.6)}
     .tag{font-size:.75rem;padding:.125rem .5rem;border-radius:999px;border:1px solid rgba(0,0,0,.1)}
@@ -24,7 +22,7 @@
         <p class="text-xs text-slate-500">Accesso riservato agli agenti</p>
       </div>
 
-      <!-- barra azioni desktop -->
+      <!-- azioni desktop -->
       <div class="hidden md:flex items-center gap-2">
         <input id="searchInput" type="search" placeholder="Cerca prodotti…" class="w-72 rounded-xl border px-3 py-2 text-sm">
         <select id="sortSelect" class="rounded-xl border px-3 py-2 text-sm">
@@ -33,9 +31,7 @@
           <option value="priceDesc">Prezzo ↓</option>
           <option value="newest">Ultimi</option>
         </select>
-
-        <!-- Fallback inline: apre sempre la modale -->
-        <button id="btnLogin" class="rounded-xl bg-sky-500 text-white px-3 py-2 text-sm">Accedi</button>
+        <button id="btnLogin"  class="rounded-xl bg-sky-500 text-white px-3 py-2 text-sm">Accedi</button>
         <button id="btnLogout" class="hidden rounded-xl border px-3 py-2 text-sm">Esci</button>
       </div>
 
@@ -53,7 +49,7 @@
           <option value="priceDesc">Prezzo ↓</option>
           <option value="newest">Ultimi</option>
         </select>
-        <button id="btnLoginM" class="rounded-xl bg-sky-500 text-white px-3 py-2 text-sm">Accedi</button>
+        <button id="btnLoginM"  class="rounded-xl bg-sky-500 text-white px-3 py-2 text-sm">Accedi</button>
         <button id="btnLogoutM" class="hidden rounded-xl border px-3 py-2 text-sm">Esci</button>
       </div>
     </div>
@@ -89,44 +85,71 @@
     <section class="lg:col-span-9">
       <div class="flex items-center justify-between mb-3">
         <div id="resultInfo" class="text-sm text-slate-600">Accedi per visualizzare il listino.</div>
-        <div class="flex gap-1 text-sm">
-<button id="btnCreaPreventivo">Crea preventivo</button>
-        
- <button id="viewListino" type="button"
-        class="px-3 py-1.5 rounded-lg border bg-white"
-        onclick="window.setView && window.setView('listino')">
-  Vista listino
-</button>
-
-<button id="viewCard" type="button"
-        class="px-3 py-1.5 rounded-lg border bg-white"
-        onclick="window.setView && window.setView('card')">
-  Vista card
-</button>
-
+        <div class="flex gap-2 text-sm">
+          <button id="viewListino" type="button" class="px-3 py-1.5 rounded-lg border bg-white">Vista listino</button>
+          <button id="viewCard"    type="button" class="px-3 py-1.5 rounded-lg border bg-white">Vista card</button>
         </div>
       </div>
 
+      <!-- VISTA LISTINO -->
       <div id="listinoContainer" class="space-y-8"></div>
+
+      <!-- VISTA CARD -->
       <div id="productGrid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+
+      <!-- PANNELLO PREVENTIVO -->
+      <div id="quoteBox" class="glass rounded-2xl p-4 border mt-6 hidden">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold">Preventivo</h2>
+          <div class="flex items-center gap-3">
+            <label class="text-sm flex items-center gap-2">
+              <span>CONAI predef. (€ / collo)</span>
+              <input id="quoteConaiDefault" type="number" step="0.01" class="w-28 rounded-xl border px-2 py-1 text-sm" value="0">
+            </label>
+            <button id="quoteClear"  class="rounded-xl border px-3 py-2 text-sm">Svuota</button>
+            <button id="quoteExport" class="rounded-xl bg-emerald-600 text-white px-3 py-2 text-sm">Crea preventivo (Excel)</button>
+          </div>
+        </div>
+
+        <div class="overflow-auto">
+          <table class="w-full text-sm border-collapse">
+            <thead class="bg-slate-100">
+              <tr>
+                <th class="border px-2 py-1 text-left">Codice</th>
+                <th class="border px-2 py-1 text-left">Descrizione</th>
+                <th class="border px-2 py-1 text-right">Prezzo</th>
+                <th class="border px-2 py-1 text-right">Sconto %</th>
+                <th class="border px-2 py-1 text-right">Prezzo scont.</th>
+                <th class="border px-2 py-1 text-right">Q.tà</th>
+                <th class="border px-2 py-1 text-right">CONAI/collo</th>
+                <th class="border px-2 py-1 text-right">Totale riga</th>
+                <th class="border px-2 py-1 text-center">Azioni</th>
+              </tr>
+            </thead>
+            <tbody id="quoteBody"></tbody>
+          </table>
+        </div>
+
+        <div class="flex items-center justify-end mt-3">
+          <div class="text-right">
+            <div class="text-sm text-slate-500">Totale imponibile</div>
+            <div id="quoteTotal" class="text-xl font-semibold">—</div>
+          </div>
+        </div>
+      </div>
     </section>
   </main>
 
   <!-- Modal Login -->
   <div id="loginModal" class="fixed inset-0 z-50 hidden">
-    <!-- Fallback inline: click sul backdrop chiude -->
     <div id="loginBackdrop" class="absolute inset-0 bg-black/50"></div>
-
     <div class="relative max-w-md mx-auto mt-20 bg-white rounded-2xl shadow-xl border p-6">
       <div class="flex items-center justify-between">
         <h3 class="text-lg font-semibold">Accesso riservato</h3>
-        <!-- Fallback inline: X chiude -->
         <button id="loginClose" class="rounded-full border w-8 h-8 grid place-content-center" aria-label="Chiudi">✕</button>
       </div>
       <p class="text-sm text-slate-600 mt-2">Inserisci la tua email per ricevere il link di accesso.</p>
-      <input id="loginEmail" type="email" class="mt-3 w-full rounded-xl border px-3 py-2"
-             placeholder="nome@azienda.it" autocomplete="email" required>
-      <!-- Fallback inline: prova a chiamare la funzione globale -->
+      <input id="loginEmail" type="email" class="mt-3 w-full rounded-xl border px-3 py-2" placeholder="nome@azienda.it" autocomplete="email" required>
       <button id="loginSend" class="mt-3 w-full rounded-xl bg-sky-500 text-white px-3 py-2">Invia link</button>
       <p id="loginMsg" class="text-xs text-slate-500 mt-2"></p>
     </div>
@@ -134,14 +157,11 @@
 
   <!-- Modal Immagine -->
   <div id="imgModal" class="fixed inset-0 z-50 hidden">
-    <!-- Fallback inline: click sul backdrop chiude -->
-    <div id="imgBackdrop"   class="absolute inset-0 bg-black/60"></div>
-
+    <div id="imgBackdrop" class="absolute inset-0 bg-black/60"></div>
     <div class="relative max-w-3xl mx-auto mt-16 bg-white rounded-2xl shadow-xl overflow-hidden">
       <div class="flex items-center justify-between px-4 py-2 border-b">
         <h4 id="imgTitle" class="font-medium"></h4>
-        <!-- Fallback inline: X chiude -->
-       <button id="imgClose"   class="rounded-full border w-8 h-8 grid place-content-center" aria-label="Chiudi">✕</button>
+        <button id="imgClose" class="rounded-full border w-8 h-8 grid place-content-center" aria-label="Chiudi">✕</button>
       </div>
       <div class="p-3 grid place-items-center">
         <img id="imgPreview" alt="" class="max-h-[70vh] w-auto object-contain" loading="lazy" decoding="async"/>
@@ -153,15 +173,10 @@
     <p>© <span id="year"></span> Tecno Box – PWA ready.</p>
   </footer>
 
-  <!-- Supabase UMD (globale) -->
+  <!-- Librerie -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <!-- Script NON-module -->
-<!-- ... HEAD invariata ... -->
-
-<!-- (in fondo alla pagina, PRIMA del tuo script.js) -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="./script.js?v=21"></script>
-
-  <script src="./script.js?v=26"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Il tuo script -->
+  <script src="./script.js?v=30"></script>
 </body>
 </html>
