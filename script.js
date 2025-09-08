@@ -119,11 +119,34 @@ async function doLogin(){
   const email = $('loginEmail')?.value?.trim();
   const password = $('loginPassword')?.value || '';
   const msg = $('loginMsg');
-  if (!email || !password){ if(msg) msg.textContent = 'Inserisci email e password.'; return; }
-  if(msg) msg.textContent = 'Accesso in corso…';
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error){ msg && (msg.textContent = 'Accesso non riuscito: ' + error.message); return; }
-  await afterLogin(data.user.id);
+  if (!email || !password){
+    if(msg) msg.textContent = 'Inserisci email e password.';
+    return;
+  }
+
+  if (msg) msg.textContent = 'Accesso in corso…';
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+
+    // Verifica/forza sessione
+    const { data: sessData } = await supabase.auth.getSession();
+    if (!sessData?.session?.user) {
+      throw new Error('Sessione non inizializzata.');
+    }
+
+    // Passa subito all’app
+    showAuthGate(false);
+
+    // Prosegui il flusso app (ruolo + dati)
+    await afterLogin(sessData.session.user.id);
+
+    // Messaggio pulito
+    if (msg) msg.textContent = '';
+  } catch (e) {
+    console.error('[Auth] login error:', e);
+    if (msg) msg.textContent = 'Accesso non riuscito: ' + (e?.message || 'Errore sconosciuto');
+  }
 }
 
 async function sendReset(){
@@ -141,25 +164,37 @@ async function doLogout(){
 }
 
 async function afterLogin(userId){
-  // ruolo opzionale
-  let role='agent';
-  const { data: prof } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle();
-  if (prof?.role==='admin') role='admin';
-  state.role=role;
+  try {
+    // ruolo opzionale (se non c’è profiles, gestisci fallback)
+    let role = 'agent';
+    const { data: prof, error: profErr } =
+      await supabase.from('profiles').select('role').eq('id', userId).maybeSingle();
+    if (!profErr && prof?.role === 'admin') role = 'admin';
+    state.role = role;
 
-  showAuthGate(false);
-  await fetchProducts();
-  renderView();
+    // Mostra app e carica dati
+    showAuthGate(false);
+    await fetchProducts();
+    renderView();
+
+    // aggiorna contatori/testo
+    const info = $('resultInfo');
+    if (info && state.items) info.textContent = `${state.items.length} articoli`;
+  } catch (e) {
+    console.error('[afterLogin] error:', e);
+    const info = $('resultInfo');
+    if (info) info.textContent = 'Errore caricamento listino';
+  }
 }
-
 async function afterLogout(){
   showAuthGate(true);
-  state.role='guest';
-  state.items=[];
+  state.role = 'guest';
+  state.items = [];
   state.selected.clear();
-  renderQuotePanel(); // svuota pannello
-  const grid=$('productGrid'), listino=$('listinoContainer');
-  if(grid) grid.innerHTML=''; if(listino) listino.innerHTML='';
+  renderQuotePanel?.();
+  const grid = $('productGrid'), listino = $('listinoContainer');
+  if (grid) grid.innerHTML = '';
+  if (listino) listino.innerHTML = '';
 }
 
 /* === DATA === */
