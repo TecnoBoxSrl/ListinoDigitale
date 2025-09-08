@@ -6,7 +6,7 @@
   <title>Listino Digitale – Accesso Agenti</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
 
   <style>
     .glass{backdrop-filter:blur(12px);background:rgba(255,255,255,.6)}
@@ -90,7 +90,9 @@
       <div class="flex items-center justify-between mb-3">
         <div id="resultInfo" class="text-sm text-slate-600">Accedi per visualizzare il listino.</div>
         <div class="flex gap-1 text-sm">
-         <button id="viewListino" type="button"
+<button id="btnCreaPreventivo">Crea preventivo</button>
+        
+ <button id="viewListino" type="button"
         class="px-3 py-1.5 rounded-lg border bg-white"
         onclick="window.setView && window.setView('listino')">
   Vista listino
@@ -154,6 +156,12 @@
   <!-- Supabase UMD (globale) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Script NON-module -->
+<!-- ... HEAD invariata ... -->
+
+<!-- (in fondo alla pagina, PRIMA del tuo script.js) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="./script.js?v=21"></script>
+
   <script src="./script.js?v=26"></script>
 </body>
 </html>
