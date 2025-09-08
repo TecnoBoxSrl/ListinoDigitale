@@ -1,66 +1,59 @@
 /* ================================================
-   Listino Digitale – Tecnobox (login+preventivi)
+   Listino Digitale – Tecnobox (login + preventivi)
    - Auth: email/password (no magic link)
-   - Ricerca live, vista listino/card, modali immagini
+   - Ricerca live, vista listino/card, modale immagini
    - Checkbox per selezione articoli
-   - Pannello preventivo fisso a destra con tabella
-   - Export Excel (XLSX) o CSV fallback
+   - Pannello preventivo fisso a destra
+   - Export XLSX (fallback CSV)
 ================================================ */
 
-/* === CONFIG: METTI I TUOI VALORI === */
-const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co'; // <-- tuo URL
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w'; // <-- tua anon key
-const STORAGE_BUCKET = 'prodotti'; // se usi 'media', cambia qui
+/* === CONFIG === */
+const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
+const STORAGE_BUCKET = 'prodotti'; // cambia se usi un bucket diverso
 
 /* === Supabase (UMD) === */
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /* === Helpers === */
 const $ = (id) => document.getElementById(id);
-const log = (...a) => console.log('[Listino]', ...a);
-const err = (...a) => console.error('[Listino]', ...a);
-const normalize = (s) => (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
-const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
+const normalize = (s)=> (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
+const fmtEUR = (n)=> (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 
 /* === Stato === */
 const state = {
   role: 'guest',
-  items: [],            // prodotti caricati
-  view: 'listino',      // 'listino' | 'card'
+  items: [],
+  view: 'listino',       // 'listino' | 'card'
   search: '',
-  sort: 'alpha',        // 'alpha' | 'priceAsc' | 'priceDesc' | 'newest'
+  sort: 'alpha',         // 'alpha' | 'priceAsc' | 'priceDesc' | 'newest'
   onlyAvailable: false,
   onlyNew: false,
   priceMax: null,
-  selected: new Map(),  // codice -> {codice, descrizione, prezzo, conai, qty, sconto}
+  selected: new Map(),   // codice -> {codice, descrizione, prezzo, conai, qty, sconto}
 };
 
 /* === BOOT === */
 document.addEventListener('DOMContentLoaded', async () => {
   bindUI();
-  injectQuotePanel(); // pannello preventivo a destra
+  injectQuotePanel();
 
-  // ripristina sessione
   const { data:{ session } } = await supabase.auth.getSession();
-  if (session?.user) {
-    await afterLogin(session.user.id);
-  } else {
-    showAuthGate(true);
-  }
+  if (session?.user) await afterLogin(session.user.id);
+  else showAuthGate(true);
 
   supabase.auth.onAuthStateChange(async (_e, sess) => {
     if (sess?.user) await afterLogin(sess.user.id);
     else await afterLogout();
   });
 
-  $('year') && ( $('year').textContent = new Date().getFullYear() );
+  const y = $('year'); if (y) y.textContent = new Date().getFullYear();
 });
 
 /* === UI base === */
 function showAuthGate(show){
-  const gate = $('authGate');
-  const app  = $('appShell');
-  if (!gate || !app) return;
+  const gate=$('authGate'), app=$('appShell');
+  if (!gate||!app) return;
   gate.classList.toggle('hidden', !show);
   app.classList.toggle('hidden', show);
 }
@@ -68,8 +61,9 @@ function showAuthGate(show){
 function bindUI(){
   // Login
   $('btnDoLogin')?.addEventListener('click', doLogin);
-  const email = $('loginEmail'), pass = $('loginPassword');
-  [email, pass].forEach(el => el?.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); doLogin(); }}));
+  [$('loginEmail'),$('loginPassword')].forEach(el=> el?.addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ e.preventDefault(); doLogin(); }
+  }));
   $('btnSendReset')?.addEventListener('click', sendReset);
 
   // Logout
@@ -78,12 +72,12 @@ function bindUI(){
 
   // Vista
   $('viewListino')?.addEventListener('click', ()=>{ state.view='listino'; renderView(); });
-  $('viewCard')?.addEventListener('click', ()=>{ state.view='card';    renderView(); });
+  $('viewCard')?.addEventListener('click',   ()=>{ state.view='card';    renderView(); });
 
   // Ricerca live
-  const handleSearch = (e)=>{ state.search = normalize(e.target.value); renderView(); };
-  $('searchInput')?.addEventListener('input', handleSearch);
-  $('searchInputM')?.addEventListener('input', handleSearch);
+  const onSearch = (e)=>{ state.search = normalize(e.target.value); renderView(); };
+  $('searchInput')?.addEventListener('input', onSearch);
+  $('searchInputM')?.addEventListener('input', onSearch);
 
   // Filtri
   $('sortSelect')?.addEventListener('change', (e)=>{ state.sort=e.target.value; renderView(); });
@@ -94,21 +88,19 @@ function bindUI(){
     const v = parseFloat(s); state.priceMax = isNaN(v)?null:v; renderView();
   });
 
-  // Modale immagine (overlay + X + ESC)
-  const imgModal=$('imgModal'), imgBackdrop=$('imgBackdrop'), imgClose=$('imgClose');
-  imgBackdrop?.addEventListener('click', ()=>toggleModal('imgModal', false));
-  imgClose?.addEventListener('click', ()=>toggleModal('imgModal', false));
-  document.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape' && !imgModal?.classList.contains('hidden')) toggleModal('imgModal', false); });
+  // Modale immagine
+  $('imgBackdrop')?.addEventListener('click', ()=>toggleModal('imgModal', false));
+  $('imgClose')?.addEventListener('click', ()=>toggleModal('imgModal', false));
+  document.addEventListener('keydown', (ev)=>{
+    const m=$('imgModal'); if (ev.key==='Escape' && m && !m.classList.contains('hidden')) toggleModal('imgModal', false);
+  });
 
   // Mobile menu
-  $('btnMobileMenu')?.addEventListener('click', ()=>{
-    const m = $('mobileMenu'); if(m) m.hidden = !m.hidden;
-  });
+  $('btnMobileMenu')?.addEventListener('click', ()=>{ const m=$('mobileMenu'); if(m) m.hidden=!m.hidden; });
 }
 
 function toggleModal(id, show=true){
-  const el = $(id);
-  if (!el) return;
+  const el=$(id); if(!el) return;
   el.classList.toggle('hidden', !show);
   document.body.classList.toggle('modal-open', show);
 }
@@ -118,10 +110,10 @@ async function doLogin(){
   const email = $('loginEmail')?.value?.trim();
   const password = $('loginPassword')?.value || '';
   const msg = $('loginMsg');
-  if (!email || !password){ if(msg) msg.textContent = 'Inserisci email e password.'; return; }
-  if(msg) msg.textContent = 'Accesso in corso…';
+  if (!email || !password){ if(msg) msg.textContent='Inserisci email e password.'; return; }
+  msg && (msg.textContent='Accesso in corso…');
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error){ msg && (msg.textContent = 'Accesso non riuscito: ' + error.message); return; }
+  if (error){ msg && (msg.textContent='Accesso non riuscito: '+error.message); return; }
   await afterLogin(data.user.id);
 }
 
@@ -140,11 +132,9 @@ async function doLogout(){
 }
 
 async function afterLogin(userId){
-  // ruolo opzionale
-  let role='agent';
+  // ruolo opzionale (se non hai la tabella profiles non fa nulla)
   const { data: prof } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle();
-  if (prof?.role==='admin') role='admin';
-  state.role=role;
+  state.role = (prof?.role==='admin') ? 'admin' : 'agent';
 
   showAuthGate(false);
   await fetchProducts();
@@ -156,14 +146,14 @@ async function afterLogout(){
   state.role='guest';
   state.items=[];
   state.selected.clear();
-  renderQuotePanel(); // svuota pannello
-  const grid=$('productGrid'), listino=$('listinoContainer');
-  if(grid) grid.innerHTML=''; if(listino) listino.innerHTML='';
+  renderQuotePanel();
+  const g=$('productGrid'), l=$('listinoContainer'); if(g) g.innerHTML=''; if(l) l.innerHTML='';
 }
 
 /* === DATA === */
 async function fetchProducts(){
   try{
+    // IMPORTANTISSIMO: seleziona SOLO colonne esistenti
     const { data, error } = await supabase
       .from('products')
       .select(`
@@ -179,63 +169,59 @@ async function fetchProducts(){
         pack,
         pallet,
         tags,
-        updated_at,
-        product_media(id,kind,path,sort)
+        updated_at
       `)
       .order('descrizione', { ascending: true });
 
     if (error) throw error;
 
-    const items = [];
-    for (const p of (data || [])) {
-      // immagine principale (se presente)
-      const mediaImgs = (p.product_media || [])
-        .filter(m => m.kind === 'image')
-        .sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
-
-      let imgUrl = '';
-      if (mediaImgs[0]) {
-        const { data: signed } = await supabase.storage
-          .from(STORAGE_BUCKET)
-          .createSignedUrl(mediaImgs[0].path, 600);
-        imgUrl = signed?.signedUrl || '';
-      }
-
-      items.push({
-        codice: p.codice,
-        descrizione: p.descrizione,
-        categoria: p.categoria,
-        sottocategoria: p.sottocategoria,
-        prezzo: p.prezzo,
-        unita: p.unita,
-        disponibile: p.disponibile,
-        novita: p.novita,
-        pack: p.pack,
-        pallet: p.pallet,
-        tags: p.tags || [],
-        updated_at: p.updated_at,
-        // Il CONAI per collo non esiste in tabella: usa default 0
-        conaiPerCollo: 0,
-        img: imgUrl,
-      });
-    }
+    const items = (data || []).map(p => ({
+      codice: p.codice,
+      descrizione: p.descrizione,
+      categoria: p.categoria,
+      sottocategoria: p.sottocategoria,
+      prezzo: p.prezzo,
+      unita: p.unita,
+      disponibile: p.disponibile,
+      novita: p.novita,
+      pack: p.pack,
+      pallet: p.pallet,
+      tags: p.tags || [],
+      updated_at: p.updated_at,
+      conaiPerCollo: 0,    // default (non presente a DB)
+      img: ''              // se in futuro aggiungi product_media, qui popoli la signed URL
+    }));
 
     state.items = items;
     buildCategories();
-    const info = document.getElementById('resultInfo');
-    if (info) info.textContent = `${items.length} articoli`;
-    renderView();
+    const info=$('resultInfo'); if(info) info.textContent = `${items.length} articoli`;
   } catch(e){
     console.error('[Listino] fetchProducts error', e);
-    const info = document.getElementById('resultInfo');
-    if (info) info.textContent = 'Errore caricamento listino';
+    const info=$('resultInfo'); if(info) info.textContent='Errore caricamento listino';
   }
 }
 
+/* === CATEGORIE === */
+function buildCategories(){
+  const box=$('categoryList'); if(!box) return;
+  const set = new Set(state.items.map(p=>p.categoria || 'Altro'));
+  const cats = ['Tutte', ...Array.from(set).sort((a,b)=>a.localeCompare(b,'it'))];
+  box.innerHTML='';
+  cats.forEach(cat=>{
+    const b=document.createElement('button');
+    b.className='tag hover:bg-slate-100';
+    b.textContent=cat;
+    b.addEventListener('click', ()=>{ state.selectedCategory=cat; renderView(); });
+    box.appendChild(b);
+  });
+  state.selectedCategory = 'Tutte';
+}
 
-/* === FILTRI comuni === */
+/* === FILTRI === */
 function applyFilters(arr){
   let out=[...arr];
+  if (state.selectedCategory && state.selectedCategory!=='Tutte')
+    out = out.filter(p => (p.categoria||'Altro') === state.selectedCategory);
   if (state.search){
     const q=state.search;
     out = out.filter(p => normalize((p.codice||'')+' '+(p.descrizione||'')+' '+(p.tags||[]).join(' ')).includes(q));
@@ -244,36 +230,47 @@ function applyFilters(arr){
   if (state.onlyNew) out = out.filter(p=>p.novita);
   if (state.priceMax!=null) out = out.filter(p=> p.prezzo!=null && p.prezzo<=state.priceMax);
   switch(state.sort){
-    case 'priceAsc': out.sort((a,b)=>(a.prezzo??Infinity)-(b.prezzo??Infinity)); break;
+    case 'priceAsc':  out.sort((a,b)=>(a.prezzo??Infinity)-(b.prezzo??Infinity)); break;
     case 'priceDesc': out.sort((a,b)=>(b.prezzo??-Infinity)-(a.prezzo??-Infinity)); break;
-    case 'newest': out.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||'')); break;
-    default: out.sort((a,b)=>(a.descrizione||'').localeCompare(b.descrizione||'','it')); break;
+    case 'newest':    out.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||'')); break;
+    default:          out.sort((a,b)=>(a.descrizione||'').localeCompare(b.descrizione||'','it')); break;
   }
   return out;
 }
 
-/* === LISTINO (tabellare) con checkbox === */
+/* === RENDER SWITCH === */
+function renderView(){
+  const grid=$('productGrid'), listino=$('listinoContainer');
+  if (!grid || !listino) return;
+  if (state.view==='listino'){
+    grid.classList.add('hidden');  listino.classList.remove('hidden');
+    renderListino();
+  } else {
+    listino.classList.add('hidden'); grid.classList.remove('hidden');
+    renderCards();
+  }
+}
+
+/* === LISTINO con checkbox === */
 function renderListino(){
-  const container = $('listinoContainer'); if(!container) return;
+  const container=$('listinoContainer'); if(!container) return;
   container.innerHTML='';
 
   // group by categoria
-  const byCat = new Map();
+  const byCat=new Map();
   for (const p of applyFilters(state.items)){
-    const c = p.categoria || 'Altro';
+    const c=p.categoria || 'Altro';
     if (!byCat.has(c)) byCat.set(c, []);
     byCat.get(c).push(p);
   }
-  const cats = [...byCat.keys()].sort((a,b)=>a.localeCompare(b,'it'));
+  const cats=[...byCat.keys()].sort((a,b)=>a.localeCompare(b,'it'));
   if (!cats.length){ container.innerHTML='<div class="text-slate-500 py-10 text-center">Nessun articolo.</div>'; return; }
 
   for (const cat of cats){
     const items = byCat.get(cat).sort((a,b)=>(a.codice||'').localeCompare(b.codice||'','it'));
-    const h = document.createElement('h2'); h.className='text-lg font-semibold mt-2 mb-1'; h.textContent=cat;
-    container.appendChild(h);
+    const h=document.createElement('h2'); h.className='text-lg font-semibold mt-2 mb-1'; h.textContent=cat; container.appendChild(h);
 
-    const table = document.createElement('table');
-    table.className='w-full text-sm border-collapse';
+    const table=document.createElement('table'); table.className='w-full text-sm border-collapse';
     table.innerHTML=`
       <thead class="bg-slate-100">
         <tr>
@@ -286,19 +283,15 @@ function renderListino(){
         </tr>
       </thead>
       <tbody></tbody>`;
-    const tb = table.querySelector('tbody');
+    const tb=table.querySelector('tbody');
 
     for (const p of items){
-      const tr = document.createElement('tr');
+      const tr=document.createElement('tr');
       const checked = state.selected.has(p.codice) ? 'checked' : '';
-      tr.innerHTML = `
-        <td class="border px-2 py-1 text-center">
-          <input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}>
-        </td>
+      tr.innerHTML=`
+        <td class="border px-2 py-1 text-center"><input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}></td>
         <td class="border px-2 py-1 whitespace-nowrap font-mono">${p.codice||''}</td>
-        <td class="border px-2 py-1">
-          ${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}
-        </td>
+        <td class="border px-2 py-1">${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}</td>
         <td class="border px-2 py-1">${p.pack||''}</td>
         <td class="border px-2 py-1 text-right">${fmtEUR(p.prezzo)}</td>
         <td class="border px-2 py-1 text-center">${p.img?`<button class="text-sky-600 underline btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>`:'—'}</td>`;
@@ -307,11 +300,10 @@ function renderListino(){
     container.appendChild(table);
   }
 
-  // bind checkbox e immagini
   container.querySelectorAll('.selItem').forEach(chk=>{
     chk.addEventListener('change', (e)=>{
-      const code = e.currentTarget.getAttribute('data-code');
-      const prod = state.items.find(x=>x.codice===code);
+      const code=e.currentTarget.getAttribute('data-code');
+      const prod=state.items.find(x=>x.codice===code);
       if (!prod) return;
       if (e.currentTarget.checked) addToQuote(prod);
       else removeFromQuote(code);
@@ -329,30 +321,29 @@ function renderListino(){
   });
 }
 
-/* === CARD view con checkbox === */
+/* === CARD view === */
 function renderCards(){
   const grid=$('productGrid'); if(!grid) return;
   grid.innerHTML='';
 
-  const arr = applyFilters(state.items);
+  const arr=applyFilters(state.items);
   if (!arr.length){ grid.innerHTML='<div class="col-span-full text-center text-slate-500 py-10">Nessun articolo.</div>'; return; }
 
   for (const p of arr){
     const checked = state.selected.has(p.codice) ? 'checked' : '';
-    const card = document.createElement('article');
-    card.className='relative card rounded-2xl bg-white border shadow-sm overflow-hidden';
+    const card=document.createElement('article'); card.className='relative card rounded-2xl bg-white border shadow-sm overflow-hidden';
     card.innerHTML=`
       <label class="absolute top-2 left-2 bg-white/80 backdrop-blur rounded-md px-2 py-1 flex items-center gap-1 text-xs">
         <input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}> Seleziona
       </label>
       <div class="aspect-square bg-slate-100 grid place-content-center">
-        ${p.img ? `<img src="${p.img}" alt="${p.descrizione||''}" class="w-full h-full object-contain" loading="lazy" decoding="async">`
-                 : `<div class="text-slate-400">Nessuna immagine</div>`}
+        ${p.img?`<img src="${p.img}" alt="${p.descrizione||''}" class="w-full h-full object-contain" loading="lazy" decoding="async">`
+               :`<div class="text-slate-400">Nessuna immagine</div>`}
       </div>
       <div class="p-3 space-y-2">
         <div class="flex items-start justify-between gap-2">
           <h3 class="font-medium leading-snug line-clamp-2">${p.descrizione||''}</h3>
-          ${p.novita ? '<span class="tag bg-emerald-50 text-emerald-700 border-emerald-200">Novità</span>' : ''}
+          ${p.novita?'<span class="tag bg-emerald-50 text-emerald-700 border-emerald-200">Novità</span>':''}
         </div>
         <p class="text-xs text-slate-500">${p.codice||''}</p>
         <div class="flex items-center justify-between">
@@ -365,8 +356,8 @@ function renderCards(){
 
   grid.querySelectorAll('.selItem').forEach(chk=>{
     chk.addEventListener('change', (e)=>{
-      const code = e.currentTarget.getAttribute('data-code');
-      const prod = state.items.find(x=>x.codice===code);
+      const code=e.currentTarget.getAttribute('data-code');
+      const prod=state.items.find(x=>x.codice===code);
       if (!prod) return;
       if (e.currentTarget.checked) addToQuote(prod);
       else removeFromQuote(code);
@@ -384,15 +375,13 @@ function renderCards(){
   });
 }
 
-/* ==================================================
-   PANNELLO PREVENTIVO (fisso a destra, via JS)
-================================================== */
+/* ===== Preventivo (pannello destro) ===== */
 function injectQuotePanel(){
   if ($('quotePanel')) return;
-  const panel = document.createElement('aside');
+  const panel=document.createElement('aside');
   panel.id='quotePanel';
   panel.className='fixed top-0 right-0 h-screen w-[420px] max-w-[90vw] bg-white border-l shadow-xl hidden lg:block z-40';
-  panel.innerHTML = `
+  panel.innerHTML=`
     <div class="h-full flex flex-col">
       <div class="px-4 py-3 border-b flex items-center justify-between">
         <h3 class="font-semibold">Preventivo</h3>
@@ -432,19 +421,16 @@ function injectQuotePanel(){
   $('btnClearQuote')?.addEventListener('click', ()=>{
     state.selected.clear();
     renderQuotePanel();
-    // togli spunte nelle liste
     document.querySelectorAll('.selItem').forEach(i=>{ i.checked=false; });
   });
 
-  // Mostra pannello su desktop
-  panel.classList.remove('hidden');
+  panel.classList.remove('hidden'); // mostra su desktop
 }
 
 function addToQuote(p){
   const item = state.selected.get(p.codice) || {
-    codice: p.codice, descrizione: p.descrizione, prezzo: p.prezzo||0, conai: p.conai||0, qty: 1, sconto: 0
+    codice:p.codice, descrizione:p.descrizione, prezzo:p.prezzo||0, conai: 0, qty:1, sconto:0
   };
-  // se già presente, solo qty+1
   if (state.selected.has(p.codice)) item.qty += 1;
   state.selected.set(p.codice, item);
   renderQuotePanel();
@@ -465,7 +451,6 @@ function lineCalc(it){
 function renderQuotePanel(){
   const body=$('quoteBody'), tot=$('quoteTotal');
   if (!body || !tot) return;
-
   body.innerHTML='';
   let total=0;
 
@@ -473,107 +458,80 @@ function renderQuotePanel(){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
 
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
       <td class="border px-2 py-1 font-mono">${it.codice}</td>
       <td class="border px-2 py-1">${it.descrizione}</td>
       <td class="border px-2 py-1 text-right">${fmtEUR(it.prezzo)}</td>
       <td class="border px-2 py-1 text-right">${fmtEUR(it.conai||0)}</td>
-      <td class="border px-2 py-1 text-center">
-        <input type="number" class="w-16 border rounded px-1 py-0.5 text-right inputQty" data-code="${it.codice}" value="${Number(it.qty)||1}" step="1" min="1">
-      </td>
-      <td class="border px-2 py-1 text-center">
-        <input type="number" class="w-16 border rounded px-1 py-0.5 text-right inputSconto" data-code="${it.codice}" value="${Number(it.sconto)||0}" step="1" min="0" max="100">
-      </td>
+      <td class="border px-2 py-1 text-center"><input type="number" class="w-16 border rounded px-1 py-0.5 text-right inputQty" data-code="${it.codice}" value="${Number(it.qty)||1}" step="1" min="1"></td>
+      <td class="border px-2 py-1 text-center"><input type="number" class="w-16 border rounded px-1 py-0.5 text-right inputSconto" data-code="${it.codice}" value="${Number(it.sconto)||0}" step="1" min="0" max="100"></td>
       <td class="border px-2 py-1 text-right">${fmtEUR(prezzoScont)}</td>
       <td class="border px-2 py-1 text-right">${fmtEUR(totale)}</td>
-      <td class="border px-2 py-1 text-center">
-        <button class="text-rose-600 underline btnRemove" data-code="${it.codice}">Rimuovi</button>
-      </td>`;
+      <td class="border px-2 py-1 text-center"><button class="text-rose-600 underline btnRemove" data-code="${it.codice}">Rimuovi</button></td>`;
     body.appendChild(tr);
   }
 
   tot.textContent = fmtEUR(total);
 
-  // bind qty/sconto/remove
+  // bind
   body.querySelectorAll('.inputQty').forEach(inp=>{
     inp.addEventListener('input', (e)=>{
       const code=e.currentTarget.getAttribute('data-code');
       const it=state.selected.get(code); if(!it) return;
       const v = Math.max(1, parseInt(e.target.value||'1',10));
-      it.qty = v; state.selected.set(code, it);
-      renderQuotePanel();
+      it.qty=v; state.selected.set(code, it); renderQuotePanel();
     });
   });
   body.querySelectorAll('.inputSconto').forEach(inp=>{
     inp.addEventListener('input', (e)=>{
       const code=e.currentTarget.getAttribute('data-code');
       const it=state.selected.get(code); if(!it) return;
-      let v = parseInt(e.target.value||'0',10);
-      if (isNaN(v)) v=0; v=Math.max(0, Math.min(100, v));
-      it.sconto = v; state.selected.set(code, it);
-      renderQuotePanel();
+      let v=parseInt(e.target.value||'0',10); if(isNaN(v)) v=0;
+      v=Math.max(0, Math.min(100, v));
+      it.sconto=v; state.selected.set(code, it); renderQuotePanel();
     });
   });
   body.querySelectorAll('.btnRemove').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
       const code=e.currentTarget.getAttribute('data-code');
       state.selected.delete(code);
-      // deseleziona anche nelle liste
       document.querySelectorAll(`.selItem[data-code="${CSS.escape(code)}"]`).forEach(i=>{ i.checked=false; });
       renderQuotePanel();
     });
   });
 }
 
-/* === EXPORT preventivo === */
+/* === EXPORT === */
 function exportQuote(){
-  const rows = [
-    ['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']
-  ];
+  const rows = [['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']];
   let total=0;
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
     rows.push([
-      it.codice,
-      it.descrizione,
-      Number(it.prezzo||0),
-      Number(it.conai||0),
-      Number(it.qty||0),
-      Number(it.sconto||0),
-      Number(prezzoScont||0),
-      Number(totale||0),
+      it.codice, it.descrizione,
+      Number(it.prezzo||0), Number(it.conai||0), Number(it.qty||0), Number(it.sconto||0),
+      Number(prezzoScont||0), Number(totale||0),
     ]);
   }
-  rows.push([]);
-  rows.push(['','','','','','','Totale imponibile', Number(total||0)]);
+  rows.push([]); rows.push(['','','','','','','Totale imponibile', Number(total||0)]);
 
   const filename = `preventivo_${new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')}.xlsx`;
 
   if (window.XLSX){
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Preventivo');
-    const wbout = XLSX.write(wb, { bookType:'xlsx', type:'array' });
-    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+    const blob=new Blob([wbout], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click(); URL.revokeObjectURL(a.href);
   } else {
-    // Fallback CSV
     const csv = rows.map(r=>r.map(v=>{
-      const s = (v==null)?'':String(v);
-      if (/[",;\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
-      return s;
+      const s=(v==null)?'':String(v);
+      return /[",;\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
     }).join(';')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename.replace('.xlsx','.csv');
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename.replace('.xlsx','.csv'); a.click(); URL.revokeObjectURL(a.href);
   }
 }
