@@ -1,162 +1,166 @@
 /* ================================
-   Listino Digitale – script.js (v30)
-   - Supabase UMD (window.supabase)
-   - Login magic link (?code=… o #access_token=…)
-   - Vista listino/card, ricerca live, filtri
-   - Preventivo: checkbox, qty, sconto, CONAI, export Excel
-   - Modali chiudibili (overlay + ESC)
+   Listino Digitale – script.js (v31)
+   Fix robusto login:
+   - gestisce ?code=... (PKCE)
+   - gestisce #access_token=...&refresh_token=...
+   - pulisce URL dopo il login
+   UI: listino/card, ricerca, filtri, preventivo+Excel
 ================================ */
 
-/* ==== CONFIG: INSERISCI I TUOI VALORI REALI ==== */
-const SUPABASE_URL      = 'https://wajzudbaezbyterpjdxg.supabase.co'; // <-- tuo project
+/* ==== CONFIG ==== */
+const SUPABASE_URL      = 'https://wajzudbaezbyterpjdxg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
-const SITE_URL          = 'https://tecnoboxsrl.github.io/ListinoDigitale/'; // esatto come in Supabase Auth
-const STORAGE_BUCKET    = 'prodotti'; // o 'media' se quello usi
+const SITE_URL          = 'https://tecnoboxsrl.github.io/ListinoDigitale/'; // deve combaciare 1:1 con Supabase
+const STORAGE_BUCKET    = 'prodotti';
 
-/* ==== Supabase client ==== */
+/* ==== Supabase ==== */
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /* ==== Helpers ==== */
-const $ = (id) => document.getElementById(id);
-const on = (el, ev, fn) => { if (el) el.addEventListener(ev, fn, { passive: true }); };
-const debounce = (fn, ms=120) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
-const normalize = (s)=> (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
-const toggleModal = (id, show=true)=>{ const el=$(id); if(!el) return; el.classList.toggle('hidden', !show); document.body.classList.toggle('modal-open', show); };
-const parseItNumber = (v)=>{ if(v==null) return null; if(typeof v==='number') return v; const n=parseFloat(String(v).trim().replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; };
-const fmtEUR = (n)=> (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
+const $ = (id)=>document.getElementById(id);
+const on = (el, ev, fn)=>{ if (el) el.addEventListener(ev, fn, { passive:true }); };
+const debounce = (fn,ms=120)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
+const normalize=(s)=>(s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
+const toggleModal=(id,show=true)=>{ const el=$(id); if(!el) return; el.classList.toggle('hidden',!show); document.body.classList.toggle('modal-open',show); };
+const parseItNumber=(v)=>{ if(v==null) return null; if(typeof v==='number') return v; const n=parseFloat(String(v).trim().replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; };
+const fmtEUR=(n)=>(n==null||isNaN(n))?'—':n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 
 /* ==== Stato ==== */
-const state = {
-  items: [],
-  categories: [],
-  selectedCategory: 'Tutte',
-  search: '',
-  sort: 'alpha',
-  onlyAvailable: false,
-  onlyNew: false,
-  priceMax: null,
-  role: 'guest',
-  view: 'listino',
-
-  // Preventivo
-  quote: new Map(),    // codice -> {codice, descrizione, prezzo, qty, sconto, conai}
-  quoteConaiDefault: 0,
+const state={
+  items:[], categories:[], selectedCategory:'Tutte',
+  search:'', sort:'alpha', onlyAvailable:false, onlyNew:false, priceMax:null,
+  role:'guest', view:'listino',
+  quote:new Map(), quoteConaiDefault:0
 };
 
-/* ==== Boot ==== */
-document.addEventListener('DOMContentLoaded', async () => {
+/* =======================
+   BOOT
+======================= */
+document.addEventListener('DOMContentLoaded', async ()=>{
+  console.log('[Listino] v31 boot');
   if ($('year')) $('year').textContent = new Date().getFullYear();
   setupUI();
 
+  // 1) Processa eventuale ritorno dal magic link
   await handleAuthRedirect();
+
+  // 2) Sessione
   await restoreSession();
   await renderAuthState();
 
-  if (state.role !== 'guest') await fetchProducts();
+  // 3) Dati
+  if (state.role!=='guest') await fetchProducts();
   renderView();
   renderQuoteBox();
 });
 
-/* ==== Auth redirect (gestisce email link) ==== */
+/* =======================
+   AUTH: redirect handler
+======================= */
 async function handleAuthRedirect(){
-  try {
-    const url = new URL(location.href);
+  try{
+    const url=new URL(location.href);
 
-    // errori nell’hash
-    if (location.hash && location.hash.includes('error=')) {
-      const h = new URLSearchParams(location.hash.slice(1));
-      const desc = h.get('error_description') || h.get('error') || 'Errore di accesso';
-      const msg = $('loginMsg') || $('resultInfo');
-      if (msg) msg.textContent = `Accesso non riuscito: ${desc}`;
-      history.replaceState({}, document.title, url.origin + url.pathname);
+    // Errore nell'hash (es. otp_expired)
+    if (location.hash && location.hash.includes('error=')){
+      const h=new URLSearchParams(location.hash.slice(1));
+      const desc=h.get('error_description')||h.get('error')||'Errore di accesso';
+      console.warn('[Auth] redirect error:', desc);
+      if ($('loginMsg')) $('loginMsg').textContent = `Accesso non riuscito: ${desc}`;
+      history.replaceState({}, document.title, url.origin+url.pathname);
       return;
     }
 
-    // PKCE code
-    const code = url.searchParams.get('code');
-    if (code) {
+    // Flusso PKCE (?code=...)
+    const code=url.searchParams.get('code');
+    if (code){
+      console.log('[Auth] trovata query ?code=..., eseguo exchange');
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (error) console.error('[Auth] exchangeCodeForSession', error);
-      history.replaceState({}, document.title, url.origin + url.pathname);
+      history.replaceState({}, document.title, url.origin+url.pathname); // pulizia URL
       return;
     }
 
-    // hash con token
-    if (location.hash && location.hash.includes('access_token=')) {
-      const h = new URLSearchParams(location.hash.slice(1));
-      const access_token  = h.get('access_token');
-      const refresh_token = h.get('refresh_token');
-      if (access_token && refresh_token) {
+    // Fallback: token nell'hash (#access_token=...&refresh_token=...)
+    if (location.hash && location.hash.includes('access_token=')){
+      const h=new URLSearchParams(location.hash.slice(1));
+      const access_token=h.get('access_token');
+      const refresh_token=h.get('refresh_token');
+      if (access_token && refresh_token){
+        console.log('[Auth] trovati token nell’hash, setSession');
         const { error } = await supabase.auth.setSession({ access_token, refresh_token });
         if (error) console.error('[Auth] setSession', error);
       }
-      history.replaceState({}, document.title, url.origin + url.pathname);
+      history.replaceState({}, document.title, url.origin+url.pathname); // pulizia hash
+      return;
     }
-  } catch(e){
+  }catch(e){
     console.error('[Auth] handleAuthRedirect', e);
   }
 }
 
-/* ==== UI ==== */
+/* =======================
+   UI & eventi
+======================= */
 function setupUI(){
   // login/logout
-  on($('btnLogin') , 'click', ()=> toggleModal('loginModal', true));
-  on($('btnLoginM'), 'click', ()=> toggleModal('loginModal', true));
-  on($('btnLogout') , 'click', signOut);
-  on($('btnLogoutM'), 'click', signOut);
-  on($('loginSend'), 'click', sendMagicLink);
-  on($('loginClose'), 'click', ()=> toggleModal('loginModal', false));
-  on($('loginBackdrop'), 'click', ()=> toggleModal('loginModal', false));
-  // modale immagini
-  on($('imgClose'), 'click', ()=> toggleModal('imgModal', false));
-  on($('imgBackdrop'), 'click', ()=> toggleModal('imgModal', false));
-  // ESC chiude modali
-  document.addEventListener('keydown', (e)=>{
-    if (e.key === 'Escape') {
-      if (!$('loginModal')?.classList.contains('hidden')) toggleModal('loginModal', false);
-      if (!$('imgModal')?.classList.contains('hidden')) toggleModal('imgModal', false);
+  on($('btnLogin'),'click',()=>toggleModal('loginModal',true));
+  on($('btnLoginM'),'click',()=>toggleModal('loginModal',true));
+  on($('btnLogout'),'click',signOut);
+  on($('btnLogoutM'),'click',signOut);
+  on($('loginSend'),'click',sendMagicLink);
+  on($('loginClose'),'click',()=>toggleModal('loginModal',false));
+  on($('loginBackdrop'),'click',()=>toggleModal('loginModal',false));
+  on($('imgClose'),'click',()=>toggleModal('imgModal',false));
+  on($('imgBackdrop'),'click',()=>toggleModal('imgModal',false));
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'){
+      if (!$('loginModal')?.classList.contains('hidden')) toggleModal('loginModal',false);
+      if (!$('imgModal')?.classList.contains('hidden')) toggleModal('imgModal',false);
     }
   });
 
-  // menu mobile
-  on($('btnMobileMenu'), 'click', ()=>{ const m=$('mobileMenu'); if(m) m.hidden=!m.hidden; });
+  // mobile menu
+  on($('btnMobileMenu'),'click',()=>{ const m=$('mobileMenu'); if(m) m.hidden=!m.hidden; });
 
-  // vista
-  on($('viewListino'), 'click', ()=>{ state.view='listino'; renderView(); });
-  on($('viewCard'),    'click', ()=>{ state.view='card';    renderView(); });
+  // viste
+  on($('viewListino'),'click',()=>{ state.view='listino'; renderView(); });
+  on($('viewCard'),'click',()=>{ state.view='card'; renderView(); });
 
   // ricerca live
-  const handleSearch = debounce((e)=>{ state.search = normalize(e.target.value); renderView(); }, 120);
-  on($('searchInput'),  'input', handleSearch);
-  on($('searchInputM'), 'input', handleSearch);
+  const doSearch=debounce(e=>{ state.search = normalize(e.target.value); renderView(); },120);
+  on($('searchInput'),'input',doSearch);
+  on($('searchInputM'),'input',doSearch);
 
   // filtri
-  on($('sortSelect'), 'change', (e)=>{ state.sort=e.target.value; renderView(); });
-  on($('sortSelectM'),'change', (e)=>{ state.sort=e.target.value; renderView(); });
-  on($('filterDisponibile'), 'change', (e)=>{ state.onlyAvailable=e.target.checked; renderView(); });
-  on($('filterNovita'),      'change', (e)=>{ state.onlyNew=e.target.checked; renderView(); });
-  on($('filterPriceMax'),    'input',  (e)=>{ state.priceMax=parseItNumber(e.target.value); renderView(); });
+  on($('sortSelect'),'change',e=>{ state.sort=e.target.value; renderView(); });
+  on($('sortSelectM'),'change',e=>{ state.sort=e.target.value; renderView(); });
+  on($('filterDisponibile'),'change',e=>{ state.onlyAvailable=e.target.checked; renderView(); });
+  on($('filterNovita'),'change',e=>{ state.onlyNew=e.target.checked; renderView(); });
+  on($('filterPriceMax'),'input',e=>{ state.priceMax=parseItNumber(e.target.value); renderView(); });
 
   // preventivo
-  on($('quoteExport'), 'click', exportQuoteToExcel);
-  on($('quoteClear'),  'click', ()=>{ state.quote.clear(); renderQuoteBox(); syncChecksFromQuote(); });
-  on($('quoteConaiDefault'), 'input', (e)=>{ state.quoteConaiDefault = parseItNumber(e.target.value) || 0; renderQuoteBox(); });
+  on($('quoteExport'),'click',exportQuoteToExcel);
+  on($('quoteClear'),'click',()=>{ state.quote.clear(); renderQuoteBox(); syncChecksFromQuote(); });
+  on($('quoteConaiDefault'),'input',e=>{ state.quoteConaiDefault=parseItNumber(e.target.value)||0; renderQuoteBox(); });
 }
 
-/* ==== Auth ==== */
+/* =======================
+   AUTH: sessione
+======================= */
 async function restoreSession(){
   const { data:{ session } } = await supabase.auth.getSession();
-  if (session?.user) {
+  if (session?.user){
     const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).maybeSingle();
-    state.role = (prof?.role === 'admin') ? 'admin' : 'agent';
+    state.role = (prof?.role==='admin') ? 'admin' : 'agent';
   } else {
-    state.role = 'guest';
+    state.role='guest';
   }
 
   supabase.auth.onAuthStateChange(async (_e, sess)=>{
-    if (sess?.user) {
+    if (sess?.user){
       const { data: prof } = await supabase.from('profiles').select('role').eq('id', sess.user.id).maybeSingle();
-      state.role = (prof?.role === 'admin') ? 'admin' : 'agent';
+      state.role = (prof?.role==='admin') ? 'admin' : 'agent';
       await renderAuthState();
       await fetchProducts();
       renderView();
@@ -169,37 +173,35 @@ async function restoreSession(){
 }
 
 async function renderAuthState(){
-  const logged = state.role !== 'guest';
-  $('btnLogin')   && $('btnLogin').classList.toggle('hidden', logged);
-  $('btnLogout')  && $('btnLogout').classList.toggle('hidden', !logged);
-  $('btnLoginM')  && $('btnLoginM').classList.toggle('hidden', logged);
-  $('btnLogoutM') && $('btnLogoutM').classList.toggle('hidden', !logged);
-  $('adminBox')   && ( $('adminBox').hidden = (state.role!=='admin') );
-  $('resultInfo') && ( $('resultInfo').textContent = logged ? 'Caricamento listino…' : 'Accedi per visualizzare il listino.' );
-  if (logged) toggleModal('loginModal', false);
+  const logged = state.role!=='guest';
+  $('btnLogin')  && $('btnLogin').classList.toggle('hidden', logged);
+  $('btnLogout') && $('btnLogout').classList.toggle('hidden', !logged);
+  $('btnLoginM') && $('btnLoginM').classList.toggle('hidden', logged);
+  $('btnLogoutM')&& $('btnLogoutM').classList.toggle('hidden', !logged);
+  $('adminBox')  && ( $('adminBox').hidden = (state.role!=='admin') );
+  $('resultInfo')&& ( $('resultInfo').textContent = logged ? 'Caricamento listino…' : 'Accedi per visualizzare il listino.' );
+  if (logged) toggleModal('loginModal',false);
 }
 
 async function sendMagicLink(){
-  const emailEl = $('loginEmail'), msg = $('loginMsg');
+  const emailEl=$('loginEmail'), msg=$('loginMsg');
   if (!emailEl) return;
-  const email = emailEl.value.trim();
-  if (!email) { if (msg) msg.textContent='Inserisci la tua email.'; return; }
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: SITE_URL }
-  });
+  const email=emailEl.value.trim();
+  if (!email){ if(msg) msg.textContent='Inserisci la tua email.'; return; }
+  const { error } = await supabase.auth.signInWithOtp({ email, options:{ emailRedirectTo: SITE_URL } });
   if (msg) msg.textContent = error ? ('Errore: '+error.message) : 'Email inviata. Controlla la casella e apri il link.';
 }
 
 async function signOut(){
   await supabase.auth.signOut();
-  state.role='guest';
-  state.items=[];
+  state.role='guest'; state.items=[];
   renderView();
   await renderAuthState();
 }
 
-/* ==== Data ==== */
+/* =======================
+   DATA
+======================= */
 async function fetchProducts(){
   try{
     const { data, error } = await supabase
@@ -210,19 +212,16 @@ async function fetchProducts(){
 
     const out=[];
     for (const p of (data||[])){
-      // IMMAGINE: URL esterno oppure signed URL da Storage
       let img='';
       const imgs=(p.product_media||[]).filter(m=>m.kind==='image').sort((a,b)=>(a.sort??0)-(b.sort??0));
-      if (imgs[0]) {
-        const path = imgs[0].path;
-        if (/^https?:\/\//i.test(path)) {
-          img = path; // URL assoluto esterno
-        } else {
-          const { data: signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(path, 600);
+      if (imgs[0]){
+        const path=imgs[0].path;
+        if (/^https?:\/\//i.test(path)) img = path;
+        else {
+          const { data:signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(path, 600);
           img = signed?.signedUrl || '';
         }
       }
-
       out.push({
         codice:p.codice, descrizione:p.descrizione, categoria:p.categoria, sottocategoria:p.sottocategoria,
         prezzo:p.prezzo, unita:p.unita, disponibile:p.disponibile, novita:p.novita, pack:p.pack, pallet:p.pallet,
@@ -232,9 +231,9 @@ async function fetchProducts(){
     state.items=out;
     buildCategories();
     if ($('resultInfo')) $('resultInfo').textContent = `${out.length} articoli`;
-  } catch(e){
+  }catch(e){
     console.error('[Listino] fetchProducts', e);
-    if ($('resultInfo')) $('resultInfo').textContent = 'Errore caricamento listino';
+    if ($('resultInfo')) $('resultInfo').textContent='Errore caricamento listino';
   }
 }
 
@@ -252,7 +251,9 @@ function buildCategories(){
   });
 }
 
-/* ==== Render ==== */
+/* =======================
+   RENDER
+======================= */
 function renderView(){
   const grid=$('productGrid'), listino=$('listinoContainer');
   if (!grid || !listino) return;
@@ -261,7 +262,6 @@ function renderView(){
   syncChecksFromQuote();
 }
 
-/* Filtri/ordinamento */
 function filterAndSort(arr){
   let out=[...arr];
   if (state.selectedCategory!=='Tutte') out=out.filter(p=>(p.categoria||'Altro')===state.selectedCategory);
@@ -271,7 +271,7 @@ function filterAndSort(arr){
   }
   if (state.onlyAvailable) out=out.filter(p=>p.disponibile);
   if (state.onlyNew) out=out.filter(p=>p.novita);
-  if (state.priceMax!=null) out=out.filter(p=> p.prezzo!=null && p.prezzo<=state.priceMax);
+  if (state.priceMax!=null) out=out.filter(p=>p.prezzo!=null && p.prezzo<=state.priceMax);
   switch(state.sort){
     case 'priceAsc':  out.sort((a,b)=>(a.prezzo??Infinity)-(b.prezzo??Infinity)); break;
     case 'priceDesc': out.sort((a,b)=>(b.prezzo??-Infinity)-(a.prezzo??-Infinity)); break;
@@ -281,7 +281,7 @@ function filterAndSort(arr){
   return out;
 }
 
-/* VISTA LISTINO (tabellare) */
+/* VISTA LISTINO */
 function renderListino(){
   const c=$('listinoContainer'); if(!c) return; c.innerHTML='';
   const arr=filterAndSort(state.items);
@@ -317,7 +317,6 @@ function renderListino(){
     }
     c.appendChild(t);
 
-    // selezioni
     t.querySelectorAll('input[type="checkbox"][data-code]').forEach(chk=>{
       chk.addEventListener('change', (e)=>{
         const code=e.target.getAttribute('data-code');
@@ -326,10 +325,8 @@ function renderListino(){
         if (e.target.checked) addToQuote(prod); else removeFromQuote(code);
       });
     });
-
-    // anteprima immagine
     t.querySelectorAll('button[data-src]').forEach(btn=>{
-      btn.addEventListener('click', (e)=>{
+      btn.addEventListener('click',(e)=>{
         const src=e.currentTarget.getAttribute('data-src');
         const title=decodeURIComponent(e.currentTarget.getAttribute('data-title')||'');
         const img=$('imgPreview'), ttl=$('imgTitle');
@@ -367,7 +364,6 @@ function renderCards(){
           <button class="rounded-xl border px-3 py-1.5 text-sm hover:bg-slate-50">Vedi</button>
         </div>
       </div>`;
-    // immagine modal
     card.querySelector('button').addEventListener('click', ()=>{
       if(!p.img) return;
       const img=$('imgPreview'), ttl=$('imgTitle');
@@ -375,36 +371,29 @@ function renderCards(){
       if(ttl){ ttl.textContent=p.descrizione||''; }
       toggleModal('imgModal', true);
     });
-    // selezione
-    const chk = card.querySelector('input[type="checkbox"][data-code]');
-    chk.addEventListener('change', (e)=>{
-      if (e.target.checked) addToQuote(p); else removeFromQuote(p.codice);
-    });
-
+    const chk=card.querySelector('input[type="checkbox"][data-code]');
+    chk.addEventListener('change',(e)=>{ if(e.target.checked) addToQuote(p); else removeFromQuote(p.codice); });
     g.appendChild(card);
   }
 }
 
-/* ==== Preventivo ==== */
+/* =======================
+   Preventivo
+======================= */
 function addToQuote(prod){
-  if (!prod || !prod.codice) return;
+  if (!prod?.codice) return;
   if (!state.quote.has(prod.codice)){
     state.quote.set(prod.codice, {
-      codice: prod.codice,
-      descrizione: prod.descrizione || '',
-      prezzo: typeof prod.prezzo === 'number' ? prod.prezzo : parseItNumber(prod.prezzo) || 0,
-      qty: 1,
-      sconto: 0,
-      conai: null, // null = usa default
+      codice:prod.codice, descrizione:prod.descrizione||'',
+      prezzo: (typeof prod.prezzo==='number'?prod.prezzo:parseItNumber(prod.prezzo)||0),
+      qty:1, sconto:0, conai:null
     });
   }
-  renderQuoteBox();
-  syncChecksFromQuote();
+  renderQuoteBox(); syncChecksFromQuote();
 }
-function removeFromQuote(codice){
-  state.quote.delete(codice);
-  renderQuoteBox();
-  syncChecksFromQuote();
+function removeFromQuote(code){
+  state.quote.delete(code);
+  renderQuoteBox(); syncChecksFromQuote();
 }
 function syncChecksFromQuote(){
   document.querySelectorAll('input[type="checkbox"][data-code]').forEach(chk=>{
@@ -412,102 +401,57 @@ function syncChecksFromQuote(){
     chk.checked = state.quote.has(code);
   });
 }
-
 function prezzoScontato(r){
-  const s = Math.min(Math.max(r.sconto||0, 0), 100);
-  const net = (r.prezzo||0) * (1 - s/100);
-  return Math.max(net, 0);
+  const s=Math.min(Math.max(r.sconto||0,0),100);
+  return Math.max((r.prezzo||0)*(1 - s/100), 0);
 }
 function renderQuoteBox(){
   const box=$('quoteBox'), body=$('quoteBody'), total=$('quoteTotal');
-  if (!box || !body || !total) return;
-
-  $('quoteConaiDefault') && (state.quoteConaiDefault = parseItNumber($('quoteConaiDefault').value) || 0);
-
+  if (!box||!body||!total) return;
+  $('quoteConaiDefault') && (state.quoteConaiDefault = parseItNumber($('quoteConaiDefault').value)||0);
   const rows=[...state.quote.values()];
-  if (!rows.length){
-    box.classList.add('hidden');
-    body.innerHTML='';
-    total.textContent='—';
-    return;
-  }
-  box.classList.remove('hidden');
-  body.innerHTML='';
-
+  if(!rows.length){ box.classList.add('hidden'); body.innerHTML=''; total.textContent='—'; return; }
+  box.classList.remove('hidden'); body.innerHTML='';
   let somma=0;
-  for (const r of rows){
-    const unitNet = prezzoScontato(r);
-    const conai   = (r.conai==null ? state.quoteConaiDefault : (parseItNumber(r.conai)||0));
-    const riga    = (unitNet + conai) * (r.qty||0);
-    somma += riga;
-
+  for(const r of rows){
+    const net=prezzoScontato(r);
+    const conai=(r.conai==null?state.quoteConaiDefault:(parseItNumber(r.conai)||0));
+    const tot=(net+conai)*(r.qty||0); somma+=tot;
     const tr=document.createElement('tr');
     tr.innerHTML=`
       <td class="border px-2 py-1 font-mono">${r.codice}</td>
       <td class="border px-2 py-1">${r.descrizione}</td>
       <td class="border px-2 py-1 text-right">${fmtEUR(r.prezzo)}</td>
-      <td class="border px-2 py-1 text-right">
-        <input type="number" step="0.01" class="w-20 rounded-md border px-2 py-1 text-right" value="${r.sconto||0}">
-      </td>
-      <td class="border px-2 py-1 text-right">${fmtEUR(unitNet)}</td>
-      <td class="border px-2 py-1 text-right">
-        <input type="number" step="1" class="w-20 rounded-md border px-2 py-1 text-right" value="${r.qty||1}">
-      </td>
-      <td class="border px-2 py-1 text-right">
-        <input type="number" step="0.01" class="w-24 rounded-md border px-2 py-1 text-right" placeholder="${state.quoteConaiDefault}" value="${r.conai==null?'':r.conai}">
-      </td>
-      <td class="border px-2 py-1 text-right">${fmtEUR(riga)}</td>
-      <td class="border px-2 py-1 text-center">
-        <button class="rounded-md border px-2 py-1 text-sm" data-del="${r.codice}">Rimuovi</button>
-      </td>
-    `;
-    const inputs = tr.querySelectorAll('input');
-    // sconto
-    inputs[0].addEventListener('input', (e)=>{
-      const v = parseItNumber(e.target.value) || 0;
-      r.sconto = Math.max(0, Math.min(100, v));
-      renderQuoteBox();
-    });
-    // qty
-    inputs[1].addEventListener('input', (e)=>{
-      const v = parseItNumber(e.target.value) || 0;
-      r.qty = Math.max(0, Math.floor(v));
-      renderQuoteBox();
-    });
-    // conai
-    inputs[2].addEventListener('input', (e)=>{
-      const val = e.target.value.trim();
-      r.conai = (val === '') ? null : (parseItNumber(val)||0);
-      renderQuoteBox();
-    });
-    tr.querySelector('button[data-del]').addEventListener('click', ()=> removeFromQuote(r.codice));
+      <td class="border px-2 py-1 text-right"><input type="number" step="0.01" class="w-20 rounded-md border px-2 py-1 text-right" value="${r.sconto||0}"></td>
+      <td class="border px-2 py-1 text-right">${fmtEUR(net)}</td>
+      <td class="border px-2 py-1 text-right"><input type="number" step="1" class="w-20 rounded-md border px-2 py-1 text-right" value="${r.qty||1}"></td>
+      <td class="border px-2 py-1 text-right"><input type="number" step="0.01" class="w-24 rounded-md border px-2 py-1 text-right" placeholder="${state.quoteConaiDefault}" value="${r.conai==null?'':r.conai}"></td>
+      <td class="border px-2 py-1 text-right">${fmtEUR(tot)}</td>
+      <td class="border px-2 py-1 text-center"><button class="rounded-md border px-2 py-1 text-sm" data-del="${r.codice}">Rimuovi</button></td>`;
+    const ins=tr.querySelectorAll('input');
+    ins[0].addEventListener('input', e=>{ r.sconto=Math.max(0,Math.min(100,parseItNumber(e.target.value)||0)); renderQuoteBox(); });
+    ins[1].addEventListener('input', e=>{ r.qty=Math.max(0,Math.floor(parseItNumber(e.target.value)||0)); renderQuoteBox(); });
+    ins[2].addEventListener('input', e=>{ const v=e.target.value.trim(); r.conai=(v===''?null:(parseItNumber(v)||0)); renderQuoteBox(); });
+    tr.querySelector('button[data-del]').addEventListener('click',()=>removeFromQuote(r.codice));
     body.appendChild(tr);
   }
   total.textContent = fmtEUR(somma);
 }
-
 function exportQuoteToExcel(){
-  const rows = [...state.quote.values()];
-  if (!rows.length) { alert('Nessun articolo selezionato.'); return; }
-
-  const defConai = state.quoteConaiDefault || 0;
-  const data = [['Codice','Descrizione','Q.tà','Prezzo unit.','Sconto %','Prezzo scont. unit.','CONAI x collo','Totale riga']];
+  const rows=[...state.quote.values()];
+  if(!rows.length){ alert('Nessun articolo selezionato.'); return; }
+  const defConai=state.quoteConaiDefault||0;
+  const data=[['Codice','Descrizione','Q.tà','Prezzo unit.','Sconto %','Prezzo scont. unit.','CONAI x collo','Totale riga']];
   let somma=0;
-
-  for (const r of rows){
-    const unitNet = prezzoScontato(r);
-    const conai   = (r.conai==null ? defConai : (parseItNumber(r.conai)||0));
-    const tot     = (unitNet + conai) * (r.qty||0);
-    somma += tot;
-    data.push([r.codice, r.descrizione, r.qty||0, +(r.prezzo||0), +(r.sconto||0), +unitNet, +conai, +tot]);
+  for(const r of rows){
+    const net=prezzoScontato(r);
+    const conai=(r.conai==null?defConai:(parseItNumber(r.conai)||0));
+    const tot=(net+conai)*(r.qty||0); somma+=tot;
+    data.push([r.codice,r.descrizione,r.qty||0,+(r.prezzo||0),+(r.sconto||0),+net,+conai,+tot]);
   }
-  data.push([]);
-  data.push(['','','','','','Totale imponibile','',+somma]);
-
-  const ws = XLSX.utils.aoa_to_sheet(data);
-  ws['!cols'] = [{wch:14},{wch:50},{wch:8},{wch:12},{wch:10},{wch:16},{wch:14},{wch:14}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Preventivo');
-  const file = `preventivo_${new Date().toISOString().slice(0,10)}.xlsx`;
-  XLSX.writeFile(wb, file);
+  data.push([]); data.push(['','','','','','Totale imponibile','',+somma]);
+  const ws=XLSX.utils.aoa_to_sheet(data);
+  ws['!cols']=[{wch:14},{wch:50},{wch:8},{wch:12},{wch:10},{wch:16},{wch:14},{wch:14}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Preventivo');
+  XLSX.writeFile(wb, `preventivo_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
