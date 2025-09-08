@@ -115,39 +115,30 @@ function toggleModal(id, show=true){
 }
 
 /* === AUTH === */
-async function doLogin(){
-  const email = $('loginEmail')?.value?.trim();
-  const password = $('loginPassword')?.value || '';
-  const msg = $('loginMsg');
-  if (!email || !password){
-    if(msg) msg.textContent = 'Inserisci email e password.';
-    return;
-  }
-
+async function doLogin() {
+  const email = document.getElementById('loginEmail')?.value?.trim();
+  const password = document.getElementById('loginPassword')?.value || '';
+  const msg = document.getElementById('loginMsg');
+  if (!email || !password) { if (msg) msg.textContent = 'Inserisci email e password.'; return; }
   if (msg) msg.textContent = 'Accesso in corso…';
+
   try {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
 
-    // Verifica/forza sessione
-    const { data: sessData } = await supabase.auth.getSession();
-    if (!sessData?.session?.user) {
-      throw new Error('Sessione non inizializzata.');
-    }
+    // verifica che la sessione ci sia davvero
+    const { data: s } = await supabase.auth.getSession();
+    if (!s?.session?.user) throw new Error('Sessione non inizializzata.');
 
-    // Passa subito all’app
-    showAuthGate(false);
-
-    // Prosegui il flusso app (ruolo + dati)
-    await afterLogin(sessData.session.user.id);
-
-    // Messaggio pulito
+    showAuthGate(false);                 // mostra subito l’app
+    await afterLogin(s.session.user.id); // ruolo + fetch prodotti
     if (msg) msg.textContent = '';
   } catch (e) {
     console.error('[Auth] login error:', e);
     if (msg) msg.textContent = 'Accesso non riuscito: ' + (e?.message || 'Errore sconosciuto');
   }
 }
+
 
 async function sendReset(){
   const email = $('loginEmail')?.value?.trim();
