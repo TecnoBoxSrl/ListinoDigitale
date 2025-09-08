@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Listino Digitale Tecnobox</title>
+  <title>Listino Digitale – Tecnobox</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
@@ -11,44 +11,39 @@
     .tag{font-size:.75rem;padding:.125rem .5rem;border-radius:999px;border:1px solid rgba(0,0,0,.1)}
     .card:hover{transform:translateY(-2px);transition:.2s}
     .modal-open{overflow:hidden}
-    /* Evita flicker contenuti: l'app è nascosta finché non sei loggato */
-    #app { display:none; }
-    #loginScreen { display:flex; }
   </style>
 </head>
 <body class="bg-white text-slate-900">
 
-  <!-- Schermata login a tutta pagina -->
-  <section id="loginScreen" class="min-h-screen items-center justify-center px-4">
-    <div class="w-full max-w-sm">
-      <h1 class="text-2xl font-semibold text-center mb-1">Listino Digitale Tecnobox</h1>
-      <p class="text-center text-slate-500 mb-6">Accesso riservato agli agenti</p>
+  <!-- ============ LOGIN GATE FULL SCREEN ============ -->
+  <section id="authGate" class="min-h-screen w-full grid place-items-center bg-white">
+    <div class="w-full max-w-sm p-6">
+      <h1 class="text-2xl font-semibold text-center mb-6">Listino Digitale Tecnobox</h1>
 
-      <div class="rounded-2xl border bg-white p-5 shadow-sm">
-        <label class="block text-sm mb-1">Email</label>
-        <input id="loginEmail" type="email" class="w-full rounded-xl border px-3 py-2 mb-3" placeholder="nome@azienda.it" autocomplete="email" required>
+      <label class="block text-sm font-medium mb-1">Email</label>
+      <input id="loginEmail" type="email" class="w-full rounded-xl border px-3 py-2 mb-3" placeholder="nome@azienda.it" autocomplete="email" required>
 
-        <label class="block text-sm mb-1">Password</label>
-        <input id="loginPassword" type="password" class="w-full rounded-xl border px-3 py-2" placeholder="Password" autocomplete="current-password" required>
+      <label class="block text-sm font-medium mb-1">Password</label>
+      <input id="loginPassword" type="password" class="w-full rounded-xl border px-3 py-2 mb-4" placeholder="Password" autocomplete="current-password" required>
 
-        <button id="btnLoginPassword" class="mt-4 w-full rounded-xl bg-sky-600 text-white px-3 py-2">Accedi</button>
-        <button id="btnResetPassword" class="mt-2 w-full rounded-xl border px-3 py-2">Ho dimenticato la password</button>
+      <button id="btnDoLogin" class="w-full rounded-xl bg-sky-600 text-white py-2">Accedi</button>
+      <button id="btnSendReset" class="w-full rounded-xl border py-2 mt-2">Ho dimenticato la password</button>
 
-        <p id="loginMsg" class="text-xs text-slate-500 mt-3 h-4"></p>
-      </div>
+      <p id="loginMsg" class="text-xs text-slate-500 mt-3 text-center"></p>
     </div>
   </section>
 
-  <!-- App completa (nascosta finché non loggato) -->
-  <div id="app">
+  <!-- ============ APP (nascosta finché non loggato) ============ -->
+  <section id="appShell" class="hidden">
     <header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl bg-sky-500 grid place-content-center text-white font-bold">TB</div>
         <div class="flex-1">
           <h2 class="text-lg font-semibold">Listino Digitale</h2>
-          <p class="text-xs text-slate-500">Accesso riservato</p>
+          <p class="text-xs text-slate-500">Accesso riservato agli agenti</p>
         </div>
 
+        <!-- barra azioni desktop -->
         <div class="hidden md:flex items-center gap-2">
           <input id="searchInput" type="search" placeholder="Cerca prodotti…" class="w-72 rounded-xl border px-3 py-2 text-sm">
           <select id="sortSelect" class="rounded-xl border px-3 py-2 text-sm">
@@ -60,6 +55,7 @@
           <button id="btnLogout" class="rounded-xl border px-3 py-2 text-sm">Esci</button>
         </div>
 
+        <!-- mobile -->
         <button id="btnMobileMenu" class="md:hidden rounded-lg border px-3 py-2 text-sm">Menu</button>
       </div>
 
@@ -82,10 +78,10 @@
       <!-- SIDEBAR -->
       <aside class="lg:col-span-3">
         <div class="glass rounded-2xl p-4 border">
-          <h3 class="font-semibold mb-3">Categorie</h3>
+          <h2 class="font-semibold mb-3">Categorie</h2>
           <div id="categoryList" class="flex flex-wrap gap-2"></div>
           <div class="mt-4">
-            <h4 class="font-semibold mb-2">Filtri</h4>
+            <h3 class="font-semibold mb-2">Filtri</h3>
             <label class="flex items-center gap-2 text-sm">
               <input type="checkbox" id="filterDisponibile" class="accent-sky-500"><span>Solo disponibili</span>
             </label>
@@ -98,7 +94,7 @@
         </div>
 
         <div class="glass rounded-2xl p-4 border mt-6" id="adminBox" hidden>
-          <h3 class="font-semibold mb-3">Amministrazione</h3>
+          <h2 class="font-semibold mb-3">Amministrazione</h2>
           <button id="btnPublish" class="rounded-xl bg-emerald-600 text-white px-3 py-2 text-sm">Pubblica nuova versione</button>
           <p class="text-xs text-slate-500 mt-2">Carica CSV → diff → notifica agenti</p>
         </div>
@@ -114,8 +110,10 @@
           </div>
         </div>
 
+        <!-- VISTA LISTINO -->
         <div id="listinoContainer" class="space-y-8"></div>
-        <div id="productGrid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+        <!-- VISTA CARD -->
+        <div id="productGrid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 hidden"></div>
       </section>
     </main>
 
@@ -136,11 +134,11 @@
         </div>
       </div>
     </div>
-  </div>
+  </section>
 
   <!-- Supabase UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <!-- Script -->
-  <script src="./script.js?v=auth-gate"></script>
+  <!-- App -->
+  <script src="./script.js?v=login-gate"></script>
 </body>
 </html>
