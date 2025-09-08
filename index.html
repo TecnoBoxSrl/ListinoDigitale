@@ -15,16 +15,18 @@
 </head>
 <body class="bg-white text-slate-900">
 
-  <!-- ============ LOGIN GATE FULL SCREEN ============ -->
+  <!-- ====== LOGIN GATE (full screen finché non loggato) ====== -->
   <section id="authGate" class="min-h-screen w-full grid place-items-center bg-white">
     <div class="w-full max-w-sm p-6">
       <h1 class="text-2xl font-semibold text-center mb-6">Listino Digitale Tecnobox</h1>
 
-      <label class="block text-sm font-medium mb-1">Email</label>
-      <input id="loginEmail" type="email" class="w-full rounded-xl border px-3 py-2 mb-3" placeholder="nome@azienda.it" autocomplete="email" required>
+      <label class="block text-sm font-medium mb-1" for="loginEmail">Email</label>
+      <input id="loginEmail" type="email" class="w-full rounded-xl border px-3 py-2 mb-3"
+             placeholder="nome@azienda.it" autocomplete="email" required>
 
-      <label class="block text-sm font-medium mb-1">Password</label>
-      <input id="loginPassword" type="password" class="w-full rounded-xl border px-3 py-2 mb-4" placeholder="Password" autocomplete="current-password" required>
+      <label class="block text-sm font-medium mb-1" for="loginPassword">Password</label>
+      <input id="loginPassword" type="password" class="w-full rounded-xl border px-3 py-2 mb-4"
+             placeholder="Password" autocomplete="current-password" required>
 
       <button id="btnDoLogin" class="w-full rounded-xl bg-sky-600 text-white py-2">Accedi</button>
       <button id="btnSendReset" class="w-full rounded-xl border py-2 mt-2">Ho dimenticato la password</button>
@@ -33,7 +35,7 @@
     </div>
   </section>
 
-  <!-- ============ APP (nascosta finché non loggato) ============ -->
+  <!-- ====== APP (nascosta finché non loggato) ====== -->
   <section id="appShell" class="hidden">
     <header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3">
@@ -43,7 +45,7 @@
           <p class="text-xs text-slate-500">Accesso riservato agli agenti</p>
         </div>
 
-        <!-- barra azioni desktop -->
+        <!-- azioni desktop -->
         <div class="hidden md:flex items-center gap-2">
           <input id="searchInput" type="search" placeholder="Cerca prodotti…" class="w-72 rounded-xl border px-3 py-2 text-sm">
           <select id="sortSelect" class="rounded-xl border px-3 py-2 text-sm">
@@ -74,8 +76,10 @@
       </div>
     </header>
 
+    <!-- Layout a 3 colonne: SX categorie (3) – CENTRO listino (6) – DX preventivi (3) -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-      <!-- SIDEBAR -->
+
+      <!-- SX: CATEGORIE / FILTRI -->
       <aside class="lg:col-span-3">
         <div class="glass rounded-2xl p-4 border">
           <h2 class="font-semibold mb-3">Categorie</h2>
@@ -100,8 +104,8 @@
         </div>
       </aside>
 
-      <!-- CONTENUTO -->
-      <section class="lg:col-span-9">
+      <!-- CENTRO: LISTINO -->
+      <section class="lg:col-span-6">
         <div class="flex items-center justify-between mb-3">
           <div id="resultInfo" class="text-sm text-slate-600">Caricamento…</div>
           <div class="flex gap-1 text-sm">
@@ -110,11 +114,64 @@
           </div>
         </div>
 
-        <!-- VISTA LISTINO -->
+        <!-- tabellare -->
         <div id="listinoContainer" class="space-y-8"></div>
-        <!-- VISTA CARD -->
-        <div id="productGrid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 hidden"></div>
+        <!-- cards -->
+        <div id="productGrid" class="grid grid-cols-2 md:grid-cols-3 gap-4 hidden"></div>
       </section>
+
+      <!-- DX: PREVENTIVI -->
+      <aside class="lg:col-span-3">
+        <div class="glass rounded-2xl p-4 border" id="quotePanel">
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="font-semibold">Preventivo</h2>
+            <button id="btnClearQuote" class="text-xs underline">Svuota</button>
+          </div>
+
+          <!-- riepilogo selezioni -->
+          <div class="text-xs text-slate-500 mb-3">
+            <span id="quoteItemsCount">0</span> articoli selezionati
+          </div>
+
+          <!-- tabella righe preventivo -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm border-collapse" id="quoteTable">
+              <thead class="bg-slate-100">
+                <tr>
+                  <th class="border px-2 py-1 text-left">Codice</th>
+                  <th class="border px-2 py-1 text-left">Descrizione</th>
+                  <th class="border px-2 py-1 text-right">Prezzo</th>
+                  <th class="border px-2 py-1 text-right">CONAI/collo</th>
+                  <th class="border px-2 py-1 text-right">Q.tà</th>
+                  <th class="border px-2 py-1 text-right">Sconto %</th>
+                  <th class="border px-2 py-1 text-right">Prezzo scont.</th>
+                  <th class="border px-2 py-1 text-right">Totale riga</th>
+                  <th class="border px-2 py-1 text-center">Azioni</th>
+                </tr>
+              </thead>
+              <tbody id="quoteBody">
+                <!-- righe generate da script.js -->
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="7" class="border px-2 py-1 text-right font-medium">Totale imponibile</td>
+                  <td class="border px-2 py-1 text-right font-semibold" id="quoteTotal">€ 0,00</td>
+                  <td class="border px-2 py-1"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <!-- azioni preventivo -->
+          <div class="mt-3 flex gap-2">
+            <button id="btnExportXlsx" class="flex-1 rounded-xl bg-sky-600 text-white py-2 text-sm">Esporta Excel</button>
+            <button id="btnCopySummary" class="flex-1 rounded-xl border py-2 text-sm">Copia riepilogo</button>
+          </div>
+
+          <p id="quoteMsg" class="text-[11px] text-slate-500 mt-2"></p>
+        </div>
+      </aside>
+
     </main>
 
     <footer class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-center text-xs text-slate-500">
@@ -138,7 +195,9 @@
 
   <!-- Supabase UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <!-- XLSX per export preventivo -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <!-- App -->
-  <script src="./script.js?v=login-gate"></script>
+  <script src="./script.js?v=login-gate-3" defer></script>
 </body>
 </html>
