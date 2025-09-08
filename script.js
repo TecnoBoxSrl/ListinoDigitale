@@ -163,50 +163,75 @@ async function afterLogout(){
 
 /* === DATA === */
 async function fetchProducts(){
-  $('resultInfo') && ( $('resultInfo').textContent='Caricamento listino…' );
-  const { data, error } = await supabase
-    .from('products')
-    .select('id,codice,descrizione,categoria,sottocategoria,prezzo,unita,disponibile,novita,pack,pallet,tags,updated_at,conai_per_collo,conai, product_media(id,kind,path,sort)')
-    .order('descrizione',{ascending:true});
-  if (error){ err('fetchProducts', error); $('resultInfo')&&( $('resultInfo').textContent='Errore caricamento listino' ); return; }
+  try{
+    const { data, error } = await supabase
+      .from('products')
+      .select(`
+        id,
+        codice,
+        descrizione,
+        categoria,
+        sottocategoria,
+        prezzo,
+        unita,
+        disponibile,
+        novita,
+        pack,
+        pallet,
+        tags,
+        updated_at,
+        product_media(id,kind,path,sort)
+      `)
+      .order('descrizione', { ascending: true });
 
-  // risolvi 1a immagine con signed url (se presente)
-  const items=[];
-  for (const p of (data||[])){
-    const mediaImgs = (p.product_media||[]).filter(m=>m.kind==='image').sort((a,b)=>(a.sort??0)-(b.sort??0));
-    let img='';
-    if (mediaImgs[0]){
-      const { data: signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(mediaImgs[0].path, 600);
-      img = signed?.signedUrl || '';
+    if (error) throw error;
+
+    const items = [];
+    for (const p of (data || [])) {
+      // immagine principale (se presente)
+      const mediaImgs = (p.product_media || [])
+        .filter(m => m.kind === 'image')
+        .sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
+
+      let imgUrl = '';
+      if (mediaImgs[0]) {
+        const { data: signed } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .createSignedUrl(mediaImgs[0].path, 600);
+        imgUrl = signed?.signedUrl || '';
+      }
+
+      items.push({
+        codice: p.codice,
+        descrizione: p.descrizione,
+        categoria: p.categoria,
+        sottocategoria: p.sottocategoria,
+        prezzo: p.prezzo,
+        unita: p.unita,
+        disponibile: p.disponibile,
+        novita: p.novita,
+        pack: p.pack,
+        pallet: p.pallet,
+        tags: p.tags || [],
+        updated_at: p.updated_at,
+        // Il CONAI per collo non esiste in tabella: usa default 0
+        conaiPerCollo: 0,
+        img: imgUrl,
+      });
     }
-    items.push({
-      codice: p.codice,
-      descrizione: p.descrizione,
-      categoria: p.categoria,
-      sottocategoria: p.sottocategoria,
-      prezzo: p.prezzo,
-      unita: p.unita,
-      disponibile: p.disponibile,
-      novita: p.novita,
-      pack: p.pack,
-      pallet: p.pallet,
-      tags: p.tags||[],
-      updated_at: p.updated_at,
-      conai: (p.conai_per_collo ?? p.conai ?? 0) || 0,
-      img
-    });
+
+    state.items = items;
+    buildCategories();
+    const info = document.getElementById('resultInfo');
+    if (info) info.textContent = `${items.length} articoli`;
+    renderView();
+  } catch(e){
+    console.error('[Listino] fetchProducts error', e);
+    const info = document.getElementById('resultInfo');
+    if (info) info.textContent = 'Errore caricamento listino';
   }
-  state.items = items;
-  $('resultInfo') && ( $('resultInfo').textContent = `${items.length} articoli` );
 }
 
-/* === VIEW SWITCH === */
-function renderView(){
-  const grid=$('productGrid'), listino=$('listinoContainer');
-  if (!grid || !listino) return;
-  if (state.view==='listino'){ grid.classList.add('hidden'); listino.classList.remove('hidden'); renderListino(); }
-  else { listino.classList.add('hidden'); grid.classList.remove('hidden'); renderCards(); }
-}
 
 /* === FILTRI comuni === */
 function applyFilters(arr){
