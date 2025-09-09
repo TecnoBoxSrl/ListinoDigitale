@@ -1,9 +1,8 @@
-
 // ===============================
-// Listino Digitale – Tecnobox (vLG-8)
+// Listino Digitale – Tecnobox (vLG-8+PDF/Print)
 // - Auth: email/password (login gate)
 // - Ricerca live, vista listino/card
-// - Preventivi a destra (export XLSX/CSV)
+// - Preventivi a destra (export XLSX/PDF/Print)
 // - Log estesi per debugging
 // ===============================
 
@@ -52,20 +51,17 @@ async function boot(){
     bindUI(); // aggancia sempre i listener
     $('year') && ( $('year').textContent = new Date().getFullYear() );
 
-// inizializza nominativo+data nel pannello
-const nameEl = document.getElementById('quoteName');
-const dateEl = document.getElementById('quoteDate');
-if (nameEl) {
-  nameEl.value = state.quoteMeta.name;
-  nameEl.addEventListener('input', () => { state.quoteMeta.name = nameEl.value.trim(); });
-}
-if (dateEl) {
-  dateEl.value = state.quoteMeta.date;
-  dateEl.addEventListener('change', () => { state.quoteMeta.date = dateEl.value || new Date().toISOString().slice(0,10); });
-}
-
-
-
+    // inizializza nominativo+data nel pannello
+    const nameEl = document.getElementById('quoteName');
+    const dateEl = document.getElementById('quoteDate');
+    if (nameEl) {
+      nameEl.value = state.quoteMeta.name;
+      nameEl.addEventListener('input', () => { state.quoteMeta.name = nameEl.value.trim(); });
+    }
+    if (dateEl) {
+      dateEl.value = state.quoteMeta.date;
+      dateEl.addEventListener('change', () => { state.quoteMeta.date = dateEl.value || new Date().toISOString().slice(0,10); });
+    }
 
     // restore session
     if (!supabase) return showAuthGate(true);
@@ -153,7 +149,8 @@ function bindUI(){
 
   // Preventivi (azioni pannello)
   $('btnExportXlsx')?.addEventListener('click', exportXlsx);
-  $('btnCopySummary')?.addEventListener('click', copySummary);
+  $('btnExportPdf')?.addEventListener('click', exportPdf);
+  $('btnPrintQuote')?.addEventListener('click', printQuote);
   $('btnClearQuote')?.addEventListener('click', ()=>{
     state.selected.clear();
     renderQuotePanel();
@@ -581,20 +578,24 @@ function renderQuotePanel(){
   });
 }
 
-/* ============ EXPORT ============ */
+/* ============ VALIDAZIONE E EXPORT ============ */
 function validateQuoteMeta() {
   const msg = document.getElementById('quoteMsg');
   const nameEl = document.getElementById('quoteName');
   const dateEl = document.getElementById('quoteDate');
 
   if (!state.quoteMeta.name) {
-    if (msg) msg.textContent = 'Inserisci il nominativo prima di esportare.';
+    if (msg) msg.textContent = 'Inserisci il nominativo prima di procedere.';
     nameEl?.focus();
     return false;
   }
   if (!state.quoteMeta.date) {
-    if (msg) msg.textContent = 'Inserisci la data del preventivo prima di esportare.';
+    if (msg) msg.textContent = 'Inserisci la data del preventivo.';
     dateEl?.focus();
+    return false;
+  }
+  if (state.selected.size === 0) {
+    if (msg) msg.textContent = 'Seleziona almeno un articolo.';
     return false;
   }
   if (msg) msg.textContent = '';
@@ -653,35 +654,157 @@ function exportXlsx(){
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = filename.replace('.xlsx','.csv');
+    a.download = `preventivo_${safeName}_${state.quoteMeta.date}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
 }
 
-function copySummary(){
+function exportPdf(){
   if (!validateQuoteMeta()) return;
+  if (!window.jspdf) { alert('Libreria PDF non caricata.'); return; }
+  const { jsPDF } = window.jspdf;
 
-  const lines = [];
-  lines.push(`Preventivo`);
-  lines.push(`Nominativo:\t${state.quoteMeta.name}`);
-  lines.push(`Data:\t${state.quoteMeta.date}`);
-  lines.push('');
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const marginX = 40, marginY = 40;
+  let y = marginY;
 
-  lines.push('Codice\tDescrizione\tPrezzo\tCONAI/collo\tQ.tà\tSconto %\tPrezzo scont.\tTotale riga');
+  // Titolo
+  doc.setFont('helvetica','bold'); doc.setFontSize(16);
+  doc.text('Preventivo', marginX, y); y += 20;
 
+  // Meta
+  doc.setFont('helvetica','normal'); doc.setFontSize(11);
+  doc.text(`Nominativo: ${state.quoteMeta.name}`, marginX, y); y += 16;
+  doc.text(`Data: ${state.quoteMeta.date}`, marginX, y); y += 12;
+
+  // Tabella
+  const head = [['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']];
+  const body = [];
   let total=0;
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
-    lines.push([
-      it.codice, it.descrizione, fmtEUR(it.prezzo), fmtEUR(it.conai||0),
-      it.qty, it.sconto, fmtEUR(prezzoScont), fmtEUR(totale)
-    ].join('\t'));
+    body.push([
+      it.codice,
+      it.descrizione,
+      fmtEUR(it.prezzo),
+      fmtEUR(it.conai||0),
+      String(it.qty),
+      String(it.sconto),
+      fmtEUR(prezzoScont),
+      fmtEUR(totale),
+    ]);
   }
-  lines.push('');
-  lines.push(`Totale imponibile:\t${fmtEUR(total)}`);
+  // usa autoTable (già inclusa in index)
+  if (doc.autoTable) {
+    doc.autoTable({
+      head,
+      body,
+      startY: y + 10,
+      styles: { fontSize: 9, halign: 'right' },
+      headStyles: { fillColor: [241,245,249], textColor: 20, halign: 'right' },
+      columnStyles: {
+        0: { halign: 'left' },
+        1: { halign: 'left', cellWidth: 180 },
+      },
+      margin: { left: marginX, right: marginX },
+      theme: 'grid',
+    });
+    const endY = doc.lastAutoTable.finalY || (y+10);
+    doc.setFont('helvetica','bold'); doc.setFontSize(12);
+    doc.text(`Totale imponibile: ${fmtEUR(total)}`, 555, endY + 24, { align: 'right' });
+  } else {
+    // Fallback senza autotable (basic)
+    doc.text('Errore: jsPDF-Autotable non presente.', marginX, y+20);
+  }
 
-  navigator.clipboard.writeText(lines.join('\n'));
-  const msg=$('quoteMsg'); if (msg) msg.textContent='Riepilogo copiato negli appunti.';
+  const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
+  doc.save(`preventivo_${safeName}_${state.quoteMeta.date}.pdf`);
+}
+
+function printQuote(){
+  if (!validateQuoteMeta()) return;
+
+  // HTML semplice con stile simile
+  let rowsHtml = '';
+  let total=0;
+  for (const it of state.selected.values()){
+    const { prezzoScont, totale } = lineCalc(it);
+    total += totale;
+    rowsHtml += `
+      <tr>
+        <td>${it.codice}</td>
+        <td>${it.descrizione}</td>
+        <td class="tr">${fmtEUR(it.prezzo)}</td>
+        <td class="tr">${fmtEUR(it.conai||0)}</td>
+        <td class="tr">${it.qty}</td>
+        <td class="tr">${it.sconto}</td>
+        <td class="tr">${fmtEUR(prezzoScont)}</td>
+        <td class="tr">${fmtEUR(totale)}</td>
+      </tr>`;
+  }
+
+  const win = window.open('', '_blank');
+  const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
+
+  win.document.write(`
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Preventivo ${safeName}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#0f172a; margin:24px; }
+    h1 { font-size:20px; margin:0 0 8px 0; }
+    .meta { font-size:12px; color:#334155; margin-bottom:16px; }
+    table { width:100%; border-collapse:collapse; font-size:12px; }
+    thead th { background:#f1f5f9; text-align:left; border:1px solid #e2e8f0; padding:6px 8px; }
+    td { border:1px solid #e2e8f0; padding:6px 8px; }
+    .tr { text-align:right; }
+    tfoot td { font-weight:600; }
+    .actions { display:none; }
+  </style>
+</head>
+<body>
+  <h1>Preventivo</h1>
+  <div class="meta">Nominativo: <strong>${escapeHtml(state.quoteMeta.name)}</strong><br>Data: <strong>${state.quoteMeta.date}</strong></div>
+  <table>
+    <thead>
+      <tr>
+        <th>Codice</th>
+        <th>Descrizione</th>
+        <th class="tr">Prezzo</th>
+        <th class="tr">CONAI/collo</th>
+        <th class="tr">Q.tà</th>
+        <th class="tr">Sconto %</th>
+        <th class="tr">Prezzo scont.</th>
+        <th class="tr">Totale riga</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="7" class="tr">Totale imponibile</td>
+        <td class="tr">${fmtEUR(total)}</td>
+      </tr>
+    </tfoot>
+  </table>
+  <script>
+    window.onload = function(){ window.print(); }
+  </script>
+</body>
+</html>`);
+  win.document.close();
+}
+
+function escapeHtml(s){
+  return String(s||'')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
 }
