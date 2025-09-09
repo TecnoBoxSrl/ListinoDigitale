@@ -315,9 +315,11 @@ async function fetchProducts(){
       items.push({
         codice: p.codice,
         descrizione: p.descrizione,
+       dimensione: p.dimensione,
         categoria: p.categoria,
         sottocategoria: p.sottocategoria,
         prezzo: p.prezzo,
+        conai: p.conai,
         unita: p.unita,
         disponibile: p.disponibile,
         novita: p.novita,
@@ -499,8 +501,10 @@ function renderListino(){
         <td class="border px-2 py-1">
           ${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}
         </td>
-        <td class="border px-2 py-1">${p.pack||''}</td>
+        <td class="border px-2 py-1">${p.dimensione||''}</td>        
+<td class="border px-2 py-1">${p.unita||''}</td>
         <td class="border px-2 py-1 text-right">${fmtEUR(p.prezzo)}</td>
+       <td class="border px-2 py-1 text-right">${fmtEUR(p.conai)}</td>
         <td class="border px-2 py-1 text-center">${p.img?`<button class="text-sky-600 underline btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>`:'—'}</td>`;
       tb.appendChild(tr);
     }
