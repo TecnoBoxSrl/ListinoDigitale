@@ -412,7 +412,13 @@ function renderView(){
 function applyFilters(arr){
   let out=[...arr];
 
-  if (state._cat) out = out.filter(p => (p.categoria||'Altro') === state._cat);
+  if (state._catKey) {
+    out = out.filter(p => {
+      const raw = (p.categoria ?? 'Altro').toString();
+      const key = raw.normalize('NFD').replace(/\p{Diacritic}/gu,'').trim().toLowerCase();
+      return key === state._catKey;
+    });
+  }
 
   if (state.search){
     const q=state.search;
