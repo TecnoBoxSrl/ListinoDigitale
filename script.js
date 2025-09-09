@@ -72,6 +72,7 @@ const state = {
     name: '',                                       // Nominativo
     date: new Date().toISOString().slice(0, 10),    // yyyy-mm-dd
   },
+selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
 };
 
 /* ============ BOOT ROBUSTO ============ */
@@ -341,55 +342,64 @@ async function fetchProducts(){
 
 /* ============ CATEGORIE ============ */
 function buildCategories(){
-  // dedup robusto su chiave normalizzata
-  const map = new Map(); // key -> label originale
-  for (const p of (state.items || [])) {
-    const raw = (p.categoria ?? 'Altro').toString();
-    const key = raw.normalize('NFD').replace(/\p{Diacritic}/gu,'').trim().toLowerCase();
-    const label = raw.trim() || 'Altro';
-    if (!map.has(key)) map.set(key, label);
-  }
-
-  // ordina per etichetta (valore), non per chiave
-  const entries = [...map.entries()]
-    .sort((a,b) => a[1].localeCompare(b[1], 'it'));
-
   const box = document.getElementById('categoryList');
   if (!box) return;
+
+  // dedup + sort alfabetico (IT) + fallback "Altro"
+  const set = new Set((state.items || []).map(p => (p.categoria || 'Altro').trim()));
+  const cats = Array.from(set).sort((a,b)=> a.localeCompare(b,'it'));
+
+  // container
   box.innerHTML = '';
 
-  const wrap = document.createElement('div');
-  wrap.className = 'cat-list';
+  // --- Bottone "TUTTE" in prima riga, a tutta larghezza ---
+  const allBtn = document.createElement('button');
+  allBtn.type = 'button';
+  allBtn.textContent = 'TUTTE';
+  allBtn.className = [
+    'block w-full text-center',
+    'rounded-xl border px-3 py-2 text-sm',
+    'transition',
+    (state.selectedCategory === 'Tutte')
+      ? 'bg-slate-200 border-slate-300 text-slate-900'
+      : 'bg-white hover:bg-slate-50'
+  ].join(' ');
+  allBtn.addEventListener('click', ()=>{
+    state.selectedCategory = 'Tutte';
+    renderView();        // aggiorna listino
+    buildCategories();   // aggiorna evidenziazione
+  });
+  box.appendChild(allBtn);
 
-  // voce "Tutte" sempre in testa
-  const btnAll = document.createElement('button');
-  btnAll.type = 'button';
-  btnAll.className = 'cat-btn' + (state._catKey ? '' : ' active');
-  btnAll.textContent = 'TUTTE';
-  btnAll.addEventListener('click', () => { state._catKey = null; renderView(); highlightCats(); });
-  wrap.appendChild(btnAll);
+  // separatore per andare a capo
+  const br = document.createElement('div');
+  br.className = 'w-full h-0 my-2';
+  box.appendChild(br);
 
-  // altre categorie
-  for (const [key, label] of entries){
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'cat-btn' + (state._catKey===key ? ' active' : '');
-    b.textContent = label;
-    b.setAttribute('data-key', key);
-    b.addEventListener('click', () => { state._catKey = key; renderView(); highlightCats(); });
-    wrap.appendChild(b);
-  }
-
-  box.appendChild(wrap);
-
-  function highlightCats(){
-    box.querySelectorAll('.cat-btn').forEach(el=>{
-      const k = el.getAttribute('data-key');
-      el.classList.toggle('active', (k ? k===state._catKey : !state._catKey));
+  // --- Altre categorie: chip su righe successive, no duplicati ---
+  cats.forEach(cat=>{
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = cat;
+    btn.className = [
+      'inline-flex items-center justify-center',
+      'rounded-xl border px-3 py-1.5 text-sm',
+      'transition',
+      (state.selectedCategory === cat)
+        ? 'bg-slate-200 border-slate-300 text-slate-900'
+        : 'bg-white hover:bg-slate-50'
+    ].join(' ');
+    btn.addEventListener('click', ()=>{
+      state.selectedCategory = cat;
+      renderView();
+      buildCategories();
     });
-  }
-}
+    box.appendChild(btn);
+  });
 
+  // stile del contenitore (se non l’hai già messo in HTML)
+  box.classList.add('flex','flex-wrap','gap-2','items-start');
+}
 
 /* ============ RENDER SWITCH ============ */
 function renderView(){
@@ -412,6 +422,11 @@ function renderView(){
 function applyFilters(arr){
   let out=[...arr];
 
+if (state.selectedCategory && state.selectedCategory !== 'Tutte') {
+  out = out.filter(p => (p.categoria || 'Altro') === state.selectedCategory);
+}
+
+<!--
   if (state._catKey) {
     out = out.filter(p => {
       const raw = (p.categoria ?? 'Altro').toString();
@@ -419,7 +434,7 @@ function applyFilters(arr){
       return key === state._catKey;
     });
   }
-
+-->
   if (state.search){
     const q=state.search;
     out = out.filter(p => normalize((p.codice||'')+' '+(p.descrizione||'')+' '+(p.tags||[]).join(' ')).includes(q));
