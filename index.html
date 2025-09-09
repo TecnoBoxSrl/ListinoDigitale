@@ -12,22 +12,52 @@
     .card:hover{transform:translateY(-2px);transition:.2s}
     .modal-open{overflow:hidden}
 
-    /* Evita a capo sui pulsanti del pannello preventivo */
-#quotePanel button { white-space: nowrap; }
-
-/* rende il pannello “misurabile” e limita un massimo */
-#quotePanel {
-  /* la larghezza finale la settiamo via JS; qui solo massimi/overflow */
-  max-width: 1200px;              /* tetto massimo (modificabile) */
-  overflow-x: auto;               /* safety */
+  /* 1) La tabella del preventivo non deve restringersi */
+#quoteTable{
+  table-layout: auto;      /* lascia calcolare le colonne in base ai contenuti */
+  width: max-content;      /* si allarga quanto serve */
+  min-width: 960px;        /* una base minima sensata (modifica a piacere) */
 }
 
-/* Celle descrizione: spezza parole e va a capo */
-.quote-desc {
+/* 2) Colonne numeriche: niente a capo */
+#quoteTable th:nth-child(3),
+#quoteTable th:nth-child(4),
+#quoteTable th:nth-child(5),
+#quoteTable th:nth-child(6),
+#quoteTable th:nth-child(7),
+#quoteTable th:nth-child(8),
+#quoteTable td:nth-child(3),
+#quoteTable td:nth-child(4),
+#quoteTable td:nth-child(5),
+#quoteTable td:nth-child(6),
+#quoteTable td:nth-child(7),
+#quoteTable td:nth-child(8){
+  white-space: nowrap;
+}
+
+/* 3) Input quantità/sconto: larghezza fissa per non “ballare” */
+#quoteTable input[type="number"]{
+  width: 5.5rem;  /* ~88px: modifica se vuoi più/meno spazio */
+}
+
+/* 4) Il pannello resta a destra e fa scroll se la tabella è larga */
+#quotePanel{
+  overflow-x: auto;   /* già presente: bene tenerlo */
+  max-width: 1200px;  /* cappello massimo: alzalo se vuoi ancora più ampiezza */
+}
+
+/* 5) Descrizione: può andare a capo per risparmiare spazio */
+.quote-desc{
   white-space: normal;
   word-break: break-word;
   line-height: 1.2;
 }
+
+/* 6) Pulsanti nel pannello: niente a capo nel testo */
+#quotePanel button{
+  white-space: nowrap;  /* già presente: ottimo */
+}
+
 
   </style>
 </head>
@@ -243,6 +273,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- La tua app -->
-  <script src="./script.js?v=login-gate-15" defer></script>
+  <script src="./script.js?v=login-gate-16" defer></script>
 </body>
 </html>
