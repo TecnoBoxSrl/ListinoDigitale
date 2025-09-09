@@ -341,25 +341,47 @@ async function fetchProducts(){
 
 /* ============ CATEGORIE ============ */
 function buildCategories(){
-  const set = new Set((state.items||[]).map(p=>p.categoria || 'Altro'));
-  const cats = Array.from(set).sort((a,b)=>a.localeCompare(b,'it'));
-  const box = $('categoryList'); if(!box) return;
+  // dedup + sort
+  const set = new Set((state.items || []).map(p => (p.categoria || 'Altro').trim()));
+  const cats = Array.from(set).sort((a,b)=> a.localeCompare(b, 'it', {sensitivity:'base'}));
+
+  const box = document.getElementById('categoryList');
+  if (!box) return;
+
   box.innerHTML = '';
-  // chip "Tutte"
-  const all = document.createElement('button');
-  all.className = 'tag hover:bg-slate-100';
-  all.textContent = 'Tutte';
-  all.addEventListener('click', ()=>{ state._cat = null; renderView(); });
-  box.appendChild(all);
-  // chip per categoria
+
+  // helper per creare una pill
+  const mkPill = (label, value, isActive) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = label;
+    // niente @apply: classi complete per compatibilità CDN
+    btn.className = [
+      'cat-pill',
+      'rounded-full','border','px-3','py-1.5','text-sm',
+      'bg-white','hover:bg-slate-50','transition',
+      'text-center','whitespace-nowrap'
+    ].join(' ');
+    if (isActive){
+      btn.className += ' bg-sky-600 text-white border-sky-600';
+    }
+    btn.addEventListener('click', ()=>{
+      state._cat = value;   // null = tutte
+      renderView();         // ridisegna lista
+      buildCategories();    // rigenera per aggiornare evidenza attiva
+    });
+    return btn;
+  };
+
+  // 1) voce TUTTE
+  box.appendChild(mkPill('TUTTE', null, !state._cat));
+
+  // 2) resto categorie
   cats.forEach(cat=>{
-    const b=document.createElement('button');
-    b.className='tag hover:bg-slate-100';
-    b.textContent=cat;
-    b.addEventListener('click', ()=>{ state._cat = cat; renderView(); });
-    box.appendChild(b);
+    box.appendChild(mkPill(cat, cat, state._cat === cat));
   });
 }
+
 
 /* ============ RENDER SWITCH ============ */
 function renderView(){
