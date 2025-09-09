@@ -1,65 +1,89 @@
-/* ===================================================
-   Listino Digitale – Tecnobox (login + preventivi PRO)
-   - Auth email/password (Supabase UMD)
-   - Categorie compatte (ordine alfabetico)
-   - Vista listino / card + ricerca live
-   - Selezione articoli + Pannello Preventivo a destra
-   - Nominativo + Data (editabile, default oggi)
-   - Esporta: Excel (XLSX), PDF (jsPDF + AutoTable), Stampa
-   - Stampa/PDF con stile coerente alla tabella UI
-=================================================== */
+<script>
+// ===============================
+// Listino Digitale – Tecnobox (vLG-8)
+// - Auth: email/password (login gate)
+// - Ricerca live, vista listino/card
+// - Preventivi a destra (export XLSX/CSV)
+// - Log estesi per debugging
+// ===============================
 
-/* === CONFIG: METTI I TUOI VALORI === */
-const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
-const STORAGE_BUCKET = 'prodotti'; // cambia in 'media' se usi quel bucket
+/* === CONFIG (METTI I TUOI VALORI) === */
+const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';           // <-- tuo URL
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w'; // <-- tua anon key
+const STORAGE_BUCKET = 'prodotti'; // se usi 'media', cambia qui
 
-/* === Supabase (UMD) === */
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+/* === Supabase (UMD globale) === */
+let supabase;
+try {
+  if (!window.supabase) throw new Error('window.supabase non presente (UMD non caricato).');
+  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  console.log('[Boot] Supabase client OK');
+} catch (e) {
+  console.error('[Boot] Errore init Supabase:', e);
+}
 
 /* === Helpers === */
 const $ = (id) => document.getElementById(id);
+const log = (...a) => console.log('[Listino]', ...a);
+const err = (...a) => console.error('[Listino]', ...a);
 const normalize = (s) => (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
 const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
-const todayISO = () => new Date().toISOString().slice(0,10); // yyyy-mm-dd
 
 /* === Stato === */
 const state = {
   role: 'guest',
   items: [],
-  view: 'listino',       // 'listino' | 'card'
+  view: 'listino',   // 'listino' | 'card'
   search: '',
-  sort: 'alpha',
+  sort: 'alpha',     // 'alpha' | 'priceAsc' | 'priceDesc' | 'newest'
   onlyAvailable: false,
   onlyNew: false,
   priceMax: null,
-  selected: new Map(),   // codice -> {codice, descrizione, prezzo, conai, qty, sconto}
-  quoteName: '',         // nominativo preventivo
-  quoteDate: todayISO(), // data preventivo
+  selected: new Map(),  // codice -> {codice, descrizione, prezzo, conai, qty, sconto}
 };
 
-/* === BOOT === */
-document.addEventListener('DOMContentLoaded', async () => {
-  bindUI();
-  injectQuotePanel(); // pannello preventivo a destra (desktop)
+/* ============ BOOT ROBUSTO ============ */
+async function boot(){
+  try {
+    bindUI(); // aggancia sempre i listener
+    $('year') && ( $('year').textContent = new Date().getFullYear() );
 
-  // ripristina sessione
-  const { data:{ session } } = await supabase.auth.getSession();
-  if (session?.user) {
-    await afterLogin(session.user.id);
-  } else {
+    // restore session
+    if (!supabase) return showAuthGate(true);
+
+    const { data:{ session }, error } = await supabase.auth.getSession();
+    if (error) console.warn('[Auth] getSession warn:', error);
+    if (session?.user) {
+      console.log('[Auth] sessione presente', session.user.id);
+      await afterLogin(session.user.id);
+    } else {
+      console.log('[Auth] nessuna sessione. Mostro login gate');
+      showAuthGate(true);
+    }
+
+    // ascolta cambi di auth
+    supabase.auth.onAuthStateChange(async (event, sess)=>{
+      console.log('[Auth] onAuthStateChange:', event, !!sess?.user);
+      if (sess?.user) await afterLogin(sess.user.id);
+      else await afterLogout();
+    });
+
+  } catch (e) {
+    console.error('[Boot] eccezione:', e);
     showAuthGate(true);
+    const m = $('loginMsg');
+    if (m) m.textContent = 'Errore di inizializzazione. Vedi console.';
   }
+}
 
-  supabase.auth.onAuthStateChange(async (_e, sess) => {
-    if (sess?.user) await afterLogin(sess.user.id);
-    else await afterLogout();
-  });
+// Avvia subito se il DOM è già pronto (defer) oppure su DOMContentLoaded
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  boot();
+} else {
+  document.addEventListener('DOMContentLoaded', boot);
+}
 
-  $('year') && ( $('year').textContent = new Date().getFullYear() );
-});
-
-/* === UI base === */
+/* ============ UI BASE ============ */
 function showAuthGate(show){
   const gate = $('authGate');
   const app  = $('appShell');
@@ -72,7 +96,9 @@ function bindUI(){
   // Login
   $('btnDoLogin')?.addEventListener('click', doLogin);
   const email = $('loginEmail'), pass = $('loginPassword');
-  [email, pass].forEach(el => el?.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); doLogin(); }}));
+  [email, pass].forEach(el => el?.addEventListener('keydown', e => {
+    if(e.key==='Enter'){ e.preventDefault(); doLogin(); }
+  }));
   $('btnSendReset')?.addEventListener('click', sendReset);
 
   // Logout
@@ -105,6 +131,15 @@ function bindUI(){
 
   // Mobile menu
   $('btnMobileMenu')?.addEventListener('click', ()=>{ const m = $('mobileMenu'); if(m) m.hidden = !m.hidden; });
+
+  // Preventivi (azioni pannello)
+  $('btnExportXlsx')?.addEventListener('click', exportXlsx);
+  $('btnCopySummary')?.addEventListener('click', copySummary);
+  $('btnClearQuote')?.addEventListener('click', ()=>{
+    state.selected.clear();
+    renderQuotePanel();
+    document.querySelectorAll('.selItem').forEach(i=>{ i.checked=false; });
+  });
 }
 
 function toggleModal(id, show=true){
@@ -114,31 +149,27 @@ function toggleModal(id, show=true){
   document.body.classList.toggle('modal-open', show);
 }
 
-/* === AUTH === */
-async function doLogin() {
-  const email = document.getElementById('loginEmail')?.value?.trim();
-  const password = document.getElementById('loginPassword')?.value || '';
-  const msg = document.getElementById('loginMsg');
-  if (!email || !password) { if (msg) msg.textContent = 'Inserisci email e password.'; return; }
-  if (msg) msg.textContent = 'Accesso in corso…';
-
+/* ============ AUTH ============ */
+async function doLogin(){
+  const email = $('loginEmail')?.value?.trim();
+  const password = $('loginPassword')?.value || '';
+  const msg = $('loginMsg');
+  if (!email || !password){ if(msg) msg.textContent = 'Inserisci email e password.'; return; }
+  if(msg) msg.textContent = 'Accesso in corso…';
   try {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-
-    // verifica che la sessione ci sia davvero
-    const { data: s } = await supabase.auth.getSession();
-    if (!s?.session?.user) throw new Error('Sessione non inizializzata.');
-
-    showAuthGate(false);                 // mostra subito l’app
-    await afterLogin(s.session.user.id); // ruolo + fetch prodotti
-    if (msg) msg.textContent = '';
+    if (error) {
+      console.warn('[Auth] signIn error:', error);
+      msg && (msg.textContent = 'Accesso non riuscito: ' + error.message);
+      return;
+    }
+    console.log('[Auth] signIn OK', data?.user?.id);
+    await afterLogin(data.user.id);
   } catch (e) {
-    console.error('[Auth] login error:', e);
-    if (msg) msg.textContent = 'Accesso non riuscito: ' + (e?.message || 'Errore sconosciuto');
+    console.error('[Auth] eccezione login:', e);
+    msg && (msg.textContent = 'Errore accesso. Vedi console.');
   }
 }
-
 
 async function sendReset(){
   const email = $('loginEmail')?.value?.trim();
@@ -155,47 +186,55 @@ async function doLogout(){
 }
 
 async function afterLogin(userId){
-  try {
-    // ruolo opzionale (se non c’è profiles, gestisci fallback)
-    let role = 'agent';
-    const { data: prof, error: profErr } =
-      await supabase.from('profiles').select('role').eq('id', userId).maybeSingle();
-    if (!profErr && prof?.role === 'admin') role = 'admin';
-    state.role = role;
+  try{
+    // ruolo (opzionale)
+    let role='agent';
+    const { data: prof, error: perr } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle();
+    if (perr) console.warn('[Profiles] warn:', perr.message);
+    if (prof?.role==='admin') role='admin';
+    state.role=role;
 
-    // Mostra app e carica dati
     showAuthGate(false);
     await fetchProducts();
     renderView();
-
-    // aggiorna contatori/testo
-    const info = $('resultInfo');
-    if (info && state.items) info.textContent = `${state.items.length} articoli`;
-  } catch (e) {
-    console.error('[afterLogin] error:', e);
+  } catch(e){
+    console.error('[afterLogin] err:', e);
     const info = $('resultInfo');
     if (info) info.textContent = 'Errore caricamento listino';
   }
 }
+
 async function afterLogout(){
   showAuthGate(true);
-  state.role = 'guest';
-  state.items = [];
+  state.role='guest';
+  state.items=[];
   state.selected.clear();
-  renderQuotePanel?.();
-  const grid = $('productGrid'), listino = $('listinoContainer');
-  if (grid) grid.innerHTML = '';
-  if (listino) listino.innerHTML = '';
+  renderQuotePanel();
+  $('productGrid') && ( $('productGrid').innerHTML='' );
+  $('listinoContainer') && ( $('listinoContainer').innerHTML='' );
 }
 
-/* === DATA === */
+/* ============ DATA ============ */
 async function fetchProducts(){
+  console.log('[Data] fetchProducts…');
+  const info = $('resultInfo');
   try{
     const { data, error } = await supabase
       .from('products')
       .select(`
-        id, codice, descrizione, categoria, sottocategoria,
-        prezzo, unita, disponibile, novita, pack, pallet, tags, updated_at,
+        id,
+        codice,
+        descrizione,
+        categoria,
+        sottocategoria,
+        prezzo,
+        unita,
+        disponibile,
+        novita,
+        pack,
+        pallet,
+        tags,
+        updated_at,
         product_media(id,kind,path,sort)
       `)
       .order('descrizione', { ascending: true });
@@ -211,9 +250,10 @@ async function fetchProducts(){
 
       let imgUrl = '';
       if (mediaImgs[0]) {
-        const { data: signed } = await supabase.storage
-          .from(STORAGE_BUCKET)
+        const { data: signed, error: sErr } = await supabase
+          .storage.from(STORAGE_BUCKET)
           .createSignedUrl(mediaImgs[0].path, 600);
+        if (sErr) console.warn('[Storage] signedURL warn:', sErr.message);
         imgUrl = signed?.signedUrl || '';
       }
 
@@ -230,77 +270,44 @@ async function fetchProducts(){
         pallet: p.pallet,
         tags: p.tags || [],
         updated_at: p.updated_at,
-        conaiPerCollo: 0,  // se in futuro aggiungi campo in DB, sostituisci
+        conaiPerCollo: 0,
         img: imgUrl,
       });
     }
 
     state.items = items;
     buildCategories();
-    const info = $('resultInfo');
-    if (info) info.textContent = `${items.length} articoli`;
-    renderView();
+    info && (info.textContent = `${items.length} articoli`);
+    console.log('[Data] prodotti:', items.length);
   } catch(e){
-    console.error('[Listino] fetchProducts error', e);
-    const info = $('resultInfo');
-    if (info) info.textContent = 'Errore caricamento listino';
+    console.error('[Data] fetchProducts error', e);
+    info && (info.textContent = 'Errore caricamento listino');
   }
 }
 
-/* === CATEGORIE (sinistra, compatte & alfabetiche) === */
+/* ============ CATEGORIE ============ */
 function buildCategories(){
-  const set = new Set(state.items.map(p => (p.categoria || 'Altro').trim()));
+  const set = new Set((state.items||[]).map(p=>p.categoria || 'Altro'));
   const cats = Array.from(set).sort((a,b)=>a.localeCompare(b,'it'));
-  const box = $('categoryList'); if (!box) return;
+  const box = $('categoryList'); if(!box) return;
   box.innerHTML = '';
-
-  // chip “Tutte”
+  // chip "Tutte"
   const all = document.createElement('button');
   all.className = 'tag hover:bg-slate-100';
   all.textContent = 'Tutte';
-  all.addEventListener('click', ()=>{ state.selectedCategory='Tutte'; renderView(); });
+  all.addEventListener('click', ()=>{ state._cat = null; renderView(); });
   box.appendChild(all);
-
-  // chips per categoria
-  for (const c of cats){
-    const b = document.createElement('button');
+  // chip per categoria
+  cats.forEach(cat=>{
+    const b=document.createElement('button');
     b.className='tag hover:bg-slate-100';
-    b.textContent=c;
-    b.title=c;
-    b.addEventListener('click', ()=>{ state.selectedCategory=c; renderView(); });
+    b.textContent=cat;
+    b.addEventListener('click', ()=>{ state._cat = cat; renderView(); });
     box.appendChild(b);
-  }
-  // default
-  if (!state.selectedCategory) state.selectedCategory='Tutte';
+  });
 }
 
-/* === Filtri comuni === */
-function applyFilters(arr){
-  let out=[...arr];
-  // categoria
-  if (state.selectedCategory && state.selectedCategory!=='Tutte'){
-    out = out.filter(p => (p.categoria || 'Altro') === state.selectedCategory);
-  }
-  // ricerca
-  if (state.search){
-    const q=state.search;
-    out = out.filter(p => normalize((p.codice||'')+' '+(p.descrizione||'')+' '+(p.tags||[]).join(' ')).includes(q));
-  }
-  // filtri
-  if (state.onlyAvailable) out = out.filter(p=>p.disponibile);
-  if (state.onlyNew) out = out.filter(p=>p.novita);
-  if (state.priceMax!=null) out = out.filter(p=> p.prezzo!=null && p.prezzo<=state.priceMax);
-  // sort
-  switch(state.sort){
-    case 'priceAsc': out.sort((a,b)=>(a.prezzo??Infinity)-(b.prezzo??Infinity)); break;
-    case 'priceDesc': out.sort((a,b)=>(b.prezzo??-Infinity)-(a.prezzo??-Infinity)); break;
-    case 'newest': out.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||'')); break;
-    default: out.sort((a,b)=>(a.descrizione||'').localeCompare(b.descrizione||'','it')); break;
-  }
-  return out;
-}
-
-/* === RENDER SWITCH === */
+/* ============ RENDER SWITCH ============ */
 function renderView(){
   const grid=$('productGrid'), listino=$('listinoContainer');
   if (!grid || !listino) return;
@@ -314,9 +321,33 @@ function renderView(){
     grid.classList.remove('hidden');
     renderCards();
   }
+  renderQuotePanel(); // sync pannello a destra
 }
 
-/* === LISTINO tabellare con checkbox === */
+/* ============ FILTRI ============ */
+function applyFilters(arr){
+  let out=[...arr];
+
+  if (state._cat) out = out.filter(p => (p.categoria||'Altro') === state._cat);
+
+  if (state.search){
+    const q=state.search;
+    out = out.filter(p => normalize((p.codice||'')+' '+(p.descrizione||'')+' '+(p.tags||[]).join(' ')).includes(q));
+  }
+  if (state.onlyAvailable) out = out.filter(p=>p.disponibile);
+  if (state.onlyNew) out = out.filter(p=>p.novita);
+  if (state.priceMax!=null) out = out.filter(p=> p.prezzo!=null && p.prezzo<=state.priceMax);
+
+  switch(state.sort){
+    case 'priceAsc': out.sort((a,b)=>(a.prezzo??Infinity)-(b.prezzo??Infinity)); break;
+    case 'priceDesc': out.sort((a,b)=>(b.prezzo??-Infinity)-(a.prezzo??-Infinity)); break;
+    case 'newest': out.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||'')); break;
+    default: out.sort((a,b)=>(a.descrizione||'').localeCompare(b.descrizione||'','it')); break;
+  }
+  return out;
+}
+
+/* ============ LISTINO (tabellare) ============ */
 function renderListino(){
   const container = $('listinoContainer'); if(!container) return;
   container.innerHTML='';
@@ -350,15 +381,13 @@ function renderListino(){
         </tr>
       </thead>
       <tbody></tbody>`;
-    const tb=table.querySelector('tbody');
+    const tb = table.querySelector('tbody');
 
     for (const p of items){
       const tr = document.createElement('tr');
       const checked = state.selected.has(p.codice) ? 'checked' : '';
       tr.innerHTML = `
-        <td class="border px-2 py-1 text-center">
-          <input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}>
-        </td>
+        <td class="border px-2 py-1 text-center"><input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}></td>
         <td class="border px-2 py-1 whitespace-nowrap font-mono">${p.codice||''}</td>
         <td class="border px-2 py-1">
           ${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}
@@ -393,7 +422,7 @@ function renderListino(){
   });
 }
 
-/* === CARD view con checkbox === */
+/* ============ CARD view ============ */
 function renderCards(){
   const grid=$('productGrid'); if(!grid) return;
   grid.innerHTML='';
@@ -448,169 +477,48 @@ function renderCards(){
   });
 }
 
-/* ==================================================
-   PANNELLO PREVENTIVO (fisso a destra)
-   - occupa tutta la colonna destra (desktop)
-   - nominativo + data
-   - esporta: excel / pdf / stampa
-================================================== */
-/* ============================
-   PREVENTIVI – BLOCCO COMPLETO
-   (sostituisci il tuo con questo)
-============================ */
-
-const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' :
-  Number(n).toLocaleString('it-IT',{style:'currency',currency:'EUR'});
-
-/* Stato selezione righe preventivo
-   (deve esistere in cima al tuo script):
-   state.selected: Map<codice, {codice,descrizione,prezzo,conai,qty,sconto}>
-*/
-if (!state) window.state = { selected:new Map() };
-
-/* ===== PANNELLO A DESTRA ===== */
-function injectQuotePanel(){
-  const old = document.getElementById('quotePanel');
-  if (old) old.remove();
-
-  const panel = document.createElement('aside');
-  panel.id='quotePanel';
-  panel.className='lg:col-span-3 glass rounded-2xl p-4 border';
-
-  panel.innerHTML = `
-    <div class="flex items-center justify-between mb-2">
-      <h2 class="font-semibold">Preventivo</h2>
-      <button id="btnClearQuote" class="text-xs underline">Svuota</button>
-    </div>
-
-    <!-- Metadati preventivo -->
-    <div class="grid grid-cols-2 gap-2 mb-3">
-      <div>
-        <label class="block text-xs text-slate-500 mb-1">Nominativo</label>
-        <input id="quoteName" type="text" class="w-full rounded-xl border px-2 py-1 text-sm" placeholder="Cliente / Azienda">
-      </div>
-      <div>
-        <label class="block text-xs text-slate-500 mb-1">Data</label>
-        <input id="quoteDate" type="date" class="w-full rounded-xl border px-2 py-1 text-sm">
-      </div>
-    </div>
-
-    <div class="text-xs text-slate-500 mb-2">
-      <span id="quoteItemsCount">0</span> articoli selezionati
-    </div>
-
-    <div class="overflow-x-auto">
-      <table id="quoteTable" class="w-full text-sm border-collapse">
-        <thead class="bg-slate-100">
-          <tr>
-            <th class="border px-2 py-1 text-left">Codice</th>
-            <th class="border px-2 py-1 text-left">Descrizione</th>
-            <th class="border px-2 py-1 text-right">Prezzo</th>
-            <th class="border px-2 py-1 text-right">CONAI/collo</th>
-            <th class="border px-2 py-1 text-center">Q.tà</th>
-            <th class="border px-2 py-1 text-center">Sconto %</th>
-            <th class="border px-2 py-1 text-right">Prezzo scont.</th>
-            <th class="border px-2 py-1 text-right">Totale riga</th>
-            <th class="border px-2 py-1 text-center">Azioni</th>
-          </tr>
-        </thead>
-        <tbody id="quoteBody"></tbody>
-        <tfoot>
-          <tr>
-            <td colspan="7" class="border px-2 py-1 text-right font-medium">Totale imponibile</td>
-            <td id="quoteTotal" class="border px-2 py-1 text-right font-semibold">€ 0,00</td>
-            <td class="border px-2 py-1"></td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-
-    <div class="mt-3 grid grid-cols-3 gap-2">
-      <button id="btnExportHtml" class="rounded-xl bg-sky-600 text-white py-2 text-sm">Esporta HTML</button>
-      <button id="btnExportPdf"  class="rounded-xl bg-sky-600 text-white py-2 text-sm">Esporta PDF</button>
-      <button id="btnPrint"      class="rounded-xl border py-2 text-sm">Stampa</button>
-    </div>
-
-    <p id="quoteMsg" class="text-[11px] text-slate-500 mt-2"></p>
-  `;
-
-  // inseriscilo nella colonna destra (se usi il layout con 3 colonne)
-  const rightCol = document.querySelector('aside.lg\\:col-span-3:last-of-type');
-  if (rightCol) rightCol.replaceWith(panel);
-  else document.body.appendChild(panel); // fallback
-
-  // default data = oggi
-  const d = document.getElementById('quoteDate');
-  if (d) d.value = new Date().toISOString().slice(0,10);
-
-  // bind pulsanti
-  document.getElementById('btnClearQuote')?.addEventListener('click', ()=>{
-    state.selected.clear();
-    renderQuotePanel();
-    document.querySelectorAll('.selItem').forEach(i=>{ i.checked=false; });
-  });
-  document.getElementById('btnExportHtml')?.addEventListener('click', exportHTML);
-  document.getElementById('btnExportPdf') ?.addEventListener('click', exportPDF);
-  document.getElementById('btnPrint')     ?.addEventListener('click', printQuote);
-
-  // prima render
-  renderQuotePanel();
-}
-
-/* ===== CRUD righe preventivo ===== */
+/* ============ PREVENTIVI (lato destro) ============ */
 function addToQuote(p){
   const item = state.selected.get(p.codice) || {
-    codice: p.codice,
-    descrizione: p.descrizione,
-    prezzo: Number(p.prezzo||0),
-    conai: Number(p.conaiPerCollo||0),
-    qty: 1,
-    sconto: 0,
+    codice: p.codice, descrizione: p.descrizione, prezzo: p.prezzo||0, conai: p.conaiPerCollo||0, qty: 1, sconto: 0
   };
   if (state.selected.has(p.codice)) item.qty += 1;
   state.selected.set(p.codice, item);
   renderQuotePanel();
 }
+
 function removeFromQuote(code){
   state.selected.delete(code);
   renderQuotePanel();
 }
 
-/* ===== Calcoli riga / totale ===== */
 function lineCalc(it){
-  const s = Math.max(0, Math.min(100, Number(it.sconto||0)));
-  const prezzoScont = Number(it.prezzo||0) * (1 - s/100);
-  const qty = Math.max(1, Number(it.qty||1));
-  const conai = Number(it.conai||0);
-  const totale = prezzoScont*qty + conai*qty;
+  const sconto = Math.min(100, Math.max(0, Number(it.sconto||0)));
+  const prezzoScont = (Number(it.prezzo||0)) * (1 - sconto/100);
+  const totale = prezzoScont * Number(it.qty||0) + (Number(it.conai||0) * Number(it.qty||0));
   return { prezzoScont, totale };
 }
 
-/* ===== Render tabella preventivo ===== */
 function renderQuotePanel(){
-  const body = document.getElementById('quoteBody');
-  const tot  = document.getElementById('quoteTotal');
-  const count= document.getElementById('quoteItemsCount');
-  if (!body || !tot || !count) return;
-
+  const body=$('quoteBody'), tot=$('quoteTotal'), cnt=$('quoteItemsCount');
+  if (!body || !tot) return;
   body.innerHTML='';
-  let total=0, rows=0;
 
+  let total=0;
   for (const it of state.selected.values()){
-    rows++;
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="border px-2 py-1 font-mono">${it.codice}</td>
-      <td class="border px-2 py-1">${it.descrizione||''}</td>
+      <td class="border px-2 py-1">${it.descrizione}</td>
       <td class="border px-2 py-1 text-right">${fmtEUR(it.prezzo)}</td>
       <td class="border px-2 py-1 text-right">${fmtEUR(it.conai||0)}</td>
-      <td class="border px-2 py-1 text-center">
+      <td class="border px-2 py-1 text-right">
         <input type="number" class="w-16 border rounded px-1 py-0.5 text-right inputQty" data-code="${it.codice}" value="${Number(it.qty)||1}" step="1" min="1">
       </td>
-      <td class="border px-2 py-1 text-center">
+      <td class="border px-2 py-1 text-right">
         <input type="number" class="w-16 border rounded px-1 py-0.5 text-right inputSconto" data-code="${it.codice}" value="${Number(it.sconto)||0}" step="1" min="0" max="100">
       </td>
       <td class="border px-2 py-1 text-right">${fmtEUR(prezzoScont)}</td>
@@ -621,14 +529,14 @@ function renderQuotePanel(){
     body.appendChild(tr);
   }
 
-  count.textContent = rows;
   tot.textContent = fmtEUR(total);
+  cnt && (cnt.textContent = state.selected.size);
 
-  // bind interazioni
+  // bind qty/sconto/remove
   body.querySelectorAll('.inputQty').forEach(inp=>{
     inp.addEventListener('input', (e)=>{
-      const code = e.currentTarget.getAttribute('data-code');
-      const it = state.selected.get(code); if(!it) return;
+      const code=e.currentTarget.getAttribute('data-code');
+      const it=state.selected.get(code); if(!it) return;
       const v = Math.max(1, parseInt(e.target.value||'1',10));
       it.qty = v; state.selected.set(code, it);
       renderQuotePanel();
@@ -636,17 +544,17 @@ function renderQuotePanel(){
   });
   body.querySelectorAll('.inputSconto').forEach(inp=>{
     inp.addEventListener('input', (e)=>{
-      const code = e.currentTarget.getAttribute('data-code');
-      const it = state.selected.get(code); if(!it) return;
+      const code=e.currentTarget.getAttribute('data-code');
+      const it=state.selected.get(code); if(!it) return;
       let v = parseInt(e.target.value||'0',10);
-      if (isNaN(v)) v=0; v=Math.max(0,Math.min(100,v));
+      if (isNaN(v)) v=0; v=Math.max(0, Math.min(100, v));
       it.sconto = v; state.selected.set(code, it);
       renderQuotePanel();
     });
   });
   body.querySelectorAll('.btnRemove').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
-      const code = e.currentTarget.getAttribute('data-code');
+      const code=e.currentTarget.getAttribute('data-code');
       state.selected.delete(code);
       document.querySelectorAll(`.selItem[data-code="${CSS.escape(code)}"]`).forEach(i=>{ i.checked=false; });
       renderQuotePanel();
@@ -654,242 +562,61 @@ function renderQuotePanel(){
   });
 }
 
-/* ====== EXPORT: HTML / PDF / PRINT ====== */
-function currentQuoteMeta(){
-  const name = (document.getElementById('quoteName')?.value || '').trim();
-  const date = (document.getElementById('quoteDate')?.value || new Date().toISOString().slice(0,10));
-  return { name, date };
-}
-
-function buildRowsForExport(){
-  const rows = [];
+/* ============ EXPORT ============ */
+function exportXlsx(){
+  const rows = [
+    ['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']
+  ];
   let total=0;
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
-    rows.push({
-      codice: it.codice,
-      descrizione: it.descrizione||'',
-      prezzo: it.prezzo||0,
-      conai: it.conai||0,
-      qty: it.qty||1,
-      sconto: it.sconto||0,
-      prezzoScont,
-      totale
-    });
+    rows.push([
+      it.codice, it.descrizione,
+      Number(it.prezzo||0), Number(it.conai||0),
+      Number(it.qty||0), Number(it.sconto||0),
+      Number(prezzoScont||0), Number(totale||0),
+    ]);
   }
-  return { rows, total };
-}
+  rows.push([]); rows.push(['','','','','','','Totale imponibile', Number(total||0)]);
 
-/* --- HTML (scarica .html con stessa grafica tabella) --- */
-function exportHTML(){
-  const { name, date } = currentQuoteMeta();
-  const { rows, total } = buildRowsForExport();
-
-  const style = `
-    <style>
-      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;color:#0f172a;margin:24px}
-      h1{font-size:20px;margin:0 0 6px}
-      .meta{font-size:12px;color:#64748b;margin-bottom:12px}
-      table{width:100%;border-collapse:collapse;font-size:13px}
-      th,td{border:1px solid #e2e8f0;padding:6px 8px}
-      thead th{background:#f1f5f9;text-align:left}
-      tfoot td{font-weight:600}
-      .right{text-align:right}
-      .center{text-align:center}
-    </style>`;
-
-  const head = `
-    <thead>
-      <tr>
-        <th>Codice</th>
-        <th>Descrizione</th>
-        <th class="right">Prezzo</th>
-        <th class="right">CONAI/collo</th>
-        <th class="center">Q.tà</th>
-        <th class="center">Sconto %</th>
-        <th class="right">Prezzo scont.</th>
-        <th class="right">Totale riga</th>
-      </tr>
-    </thead>`;
-
-  const body = rows.map(r=>`
-    <tr>
-      <td>${escapeHtml(r.codice)}</td>
-      <td>${escapeHtml(r.descrizione)}</td>
-      <td class="right">${fmtEUR(r.prezzo)}</td>
-      <td class="right">${fmtEUR(r.conai)}</td>
-      <td class="center">${r.qty}</td>
-      <td class="center">${r.sconto}</td>
-      <td class="right">${fmtEUR(r.prezzoScont)}</td>
-      <td class="right">${fmtEUR(r.totale)}</td>
-    </tr>`).join('');
-
-  const html = `
-    <!doctype html><html><head><meta charset="utf-8"><title>Preventivo</title>${style}</head>
-    <body>
-      <h1>Preventivo</h1>
-      <div class="meta">
-        ${name ? `Nominativo: <strong>${escapeHtml(name)}</strong> – `:''}
-        Data: <strong>${escapeHtml(date)}</strong>
-      </div>
-      <table>
-        ${head}
-        <tbody>${body}</tbody>
-        <tfoot>
-          <tr>
-            <td colspan="7" class="right">Totale imponibile</td>
-            <td class="right">${fmtEUR(total)}</td>
-          </tr>
-        </tfoot>
-      </table>
-    </body></html>`;
-
-  const blob = new Blob([html], {type:'text/html;charset=utf-8'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `preventivo_${date}.html`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-/* --- PDF (usa jsPDF + autoTable) --- */
-function exportPDF(){
-  const { jsPDF } = window.jspdf || {};
-  if (!jsPDF || !window.jspdf || !window.jspdf.jsPDF){
-    alert('PDF non disponibile (jsPDF non caricato).');
-    return;
+  const filename = `preventivo_${new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')}.xlsx`;
+  if (window.XLSX){
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Preventivo');
+    const wbout = XLSX.write(wb, { bookType:'xlsx', type:'array' });
+    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+    URL.revokeObjectURL(a.href);
+  } else {
+    // fallback CSV
+    const csv = rows.map(r=>r.map(v=>{
+      const s = (v==null)?'':String(v);
+      if (/[",;\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
+      return s;
+    }).join(';')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = filename.replace('.xlsx','.csv'); a.click(); URL.revokeObjectURL(a.href);
   }
-
-  const { name, date } = currentQuoteMeta();
-  const { rows, total } = buildRowsForExport();
-
-  const doc = new jsPDF({ unit:'pt', format:'a4' });
-  const margin = 36;
-
-  doc.setFontSize(14);
-  doc.text('Preventivo', margin, 40);
-  doc.setFontSize(10);
-  let meta = `Data: ${date}`;
-  if (name) meta = `Nominativo: ${name}  —  ` + meta;
-  doc.text(meta, margin, 58);
-
-  const head = [[
-    'Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga'
-  ]];
-  const body = rows.map(r=>[
-    r.codice,
-    r.descrizione,
-    fmtEUR(r.prezzo),
-    fmtEUR(r.conai),
-    String(r.qty),
-    String(r.sconto),
-    fmtEUR(r.prezzoScont),
-    fmtEUR(r.totale),
-  ]);
-
-  doc.autoTable({
-    startY: 74,
-    head, body,
-    styles: { fontSize: 9, cellPadding: 4, lineColor: [226,232,240], lineWidth: 0.8 },
-    headStyles: { fillColor: [241,245,249], textColor: 0, halign:'left' },
-    columnStyles: {
-      2:{halign:'right'}, 3:{halign:'right'},
-      4:{halign:'center'}, 5:{halign:'center'},
-      6:{halign:'right'}, 7:{halign:'right'}
-    },
-    margin: { left: margin, right: margin }
-  });
-
-  // totale
-  const endY = doc.lastAutoTable.finalY || 74;
-  doc.setFontSize(10);
-  doc.text('Totale imponibile', 400, endY+24, { align:'right' });
-  doc.setFont(undefined, 'bold');
-  doc.text(fmtEUR(total), 540, endY+24, { align:'right' });
-  doc.setFont(undefined, 'normal');
-
-  doc.save(`preventivo_${date}.pdf`);
 }
 
-/* --- Stampa (apre finestra con l’HTML e chiama print) --- */
-function printQuote(){
-  const { name, date } = currentQuoteMeta();
-  const { rows, total } = buildRowsForExport();
-
-  const style = `
-    <style>
-      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;color:#0f172a;margin:24px}
-      h1{font-size:20px;margin:0 0 6px}
-      .meta{font-size:12px;color:#64748b;margin-bottom:12px}
-      table{width:100%;border-collapse:collapse;font-size:13px}
-      th,td{border:1px solid #e2e8f0;padding:6px 8px}
-      thead th{background:#f1f5f9;text-align:left}
-      tfoot td{font-weight:600}
-      .right{text-align:right}
-      .center{text-align:center}
-      @media print { @page { size: A4; margin: 12mm } }
-    </style>`;
-
-  const head = `
-    <thead>
-      <tr>
-        <th>Codice</th>
-        <th>Descrizione</th>
-        <th class="right">Prezzo</th>
-        <th class="right">CONAI/collo</th>
-        <th class="center">Q.tà</th>
-        <th class="center">Sconto %</th>
-        <th class="right">Prezzo scont.</th>
-        <th class="right">Totale riga</th>
-      </tr>
-    </thead>`;
-
-  const body = state.selected.size
-    ? [...state.selected.values()].map(it=>{
-        const { prezzoScont, totale } = lineCalc(it);
-        return `
-          <tr>
-            <td>${escapeHtml(it.codice)}</td>
-            <td>${escapeHtml(it.descrizione||'')}</td>
-            <td class="right">${fmtEUR(it.prezzo)}</td>
-            <td class="right">${fmtEUR(it.conai||0)}</td>
-            <td class="center">${Number(it.qty||1)}</td>
-            <td class="center">${Number(it.sconto||0)}</td>
-            <td class="right">${fmtEUR(prezzoScont)}</td>
-            <td class="right">${fmtEUR(totale)}</td>
-          </tr>`;
-      }).join('')
-    : `<tr><td colspan="8" class="center" style="color:#64748b">Nessuna riga</td></tr>`;
-
-  const html = `
-    <!doctype html><html><head><meta charset="utf-8"><title>Stampa preventivo</title>${style}</head>
-    <body>
-      <h1>Preventivo</h1>
-      <div class="meta">
-        ${name ? `Nominativo: <strong>${escapeHtml(name)}</strong> – `:''}
-        Data: <strong>${escapeHtml(date)}</strong>
-      </div>
-      <table>
-        ${head}
-        <tbody>${body}</tbody>
-        <tfoot>
-          <tr>
-            <td colspan="7" class="right">Totale imponibile</td>
-            <td class="right">${fmtEUR(total)}</td>
-          </tr>
-        </tfoot>
-      </table>
-      <script>window.onload = () => { window.print(); }</script>
-    </body></html>`;
-
-  const w = window.open('', '_blank');
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
+function copySummary(){
+  const lines = [];
+  lines.push('Codice\tDescrizione\tPrezzo\tCONAI/collo\tQ.tà\tSconto %\tPrezzo scont.\tTotale riga');
+  let total=0;
+  for (const it of state.selected.values()){
+    const { prezzoScont, totale } = lineCalc(it);
+    total += totale;
+    lines.push([
+      it.codice, it.descrizione, fmtEUR(it.prezzo), fmtEUR(it.conai||0),
+      it.qty, it.sconto, fmtEUR(prezzoScont), fmtEUR(totale)
+    ].join('\t'));
+  }
+  lines.push('');
+  lines.push(`Totale imponibile:\t${fmtEUR(total)}`);
+  navigator.clipboard.writeText(lines.join('\n'));
+  const msg=$('quoteMsg'); if (msg) msg.textContent='Riepilogo copiato negli appunti.';
 }
-
-/* Utility piccola per sanificare HTML */
-function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
-}
+</script>
