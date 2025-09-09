@@ -153,8 +153,15 @@ function bindUI(){
   $('btnPrintQuote')?.addEventListener('click', printQuote);
   $('btnClearQuote')?.addEventListener('click', ()=>{
     state.selected.clear();
+// svuota anche il nominativo (lasciamo invariata la data)
+  state.quoteMeta.name = '';
+  const nameEl = document.getElementById('quoteName');
+  if (nameEl) nameEl.value = '';
     renderQuotePanel();
     document.querySelectorAll('.selItem').forEach(i=>{ i.checked=false; });
+// messaggio (opzionale)
+  const msg = document.getElementById('quoteMsg');
+  if (msg) msg.textContent = 'Preventivo svuotato.';
   });
 }
 
