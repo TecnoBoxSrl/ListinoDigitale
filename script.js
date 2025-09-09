@@ -534,7 +534,12 @@ function renderCards(){
 /* ============ PREVENTIVI (lato destro) ============ */
 function addToQuote(p){
   const item = state.selected.get(p.codice) || {
-    codice: p.codice, descrizione: p.descrizione, prezzo: p.prezzo||0, conai: p.conaiPerCollo||0, qty: 1, sconto: 0
+    codice: p.codice,
+    descrizione: p.descrizione,
+    prezzo: p.prezzo || 0,
+    conai: p.conaiPerCollo || 0,
+    qty: 1,
+    sconto: 0
   };
   if (state.selected.has(p.codice)) item.qty += 1;
   state.selected.set(p.codice, item);
@@ -547,18 +552,19 @@ function removeFromQuote(code){
 }
 
 function lineCalc(it){
-  const sconto = Math.min(100, Math.max(0, Number(it.sconto||0)));
-  const prezzoScont = (Number(it.prezzo||0)) * (1 - sconto/100);
-  const totale = prezzoScont * Number(it.qty||0) + (Number(it.conai||0) * Number(it.qty||0));
+  const sconto = Math.min(100, Math.max(0, Number(it.sconto || 0)));
+  const prezzoScont = Number(it.prezzo || 0) * (1 - sconto / 100);
+  const totale = prezzoScont * Number(it.qty || 0) + (Number(it.conai || 0) * Number(it.qty || 0));
   return { prezzoScont, totale };
 }
 
 function renderQuotePanel(){
-  const body=$('quoteBody'), tot=$('quoteTotal'), cnt=$('quoteItemsCount');
+  const body = $('quoteBody'), tot = $('quoteTotal'), cnt = $('quoteItemsCount');
   if (!body || !tot) return;
-  body.innerHTML='';
+  body.innerHTML = '';
 
-  let total=0;
+  let total = 0;
+
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
@@ -568,53 +574,64 @@ function renderQuotePanel(){
       <td class="border px-2 py-1 font-mono">${it.codice}</td>
       <td class="border px-2 py-1"><div class="quote-desc">${it.descrizione}</div></td>
       <td class="border px-2 py-1 text-right">${fmtEUR(it.prezzo)}</td>
-      <td class="border px-2 py-1 text-right">${fmtEUR(it.conai||0)}</td>
+      <td class="border px-2 py-1 text-right">${fmtEUR(it.conai || 0)}</td>
       <td class="border px-2 py-1 text-right">
-        <input type="number" class="w-16 border rounded px-1 py-0.5 text-right inputQty" data-code="${it.codice}" value="${Number(it.qty)||1}" step="1" min="1">
+        <input type="number"
+               class="w-16 border rounded px-1 py-0.5 text-right inputQty"
+               data-code="${it.codice}" value="${Number(it.qty) || 1}" step="1" min="1">
       </td>
       <td class="border px-2 py-1 text-right">
-        <input type="number" class="w-16 border rounded px-1 py-0.5 text-right inputSconto" data-code="${it.codice}" value="${Number(it.sconto)||0}" step="1" min="0" max="100">
+        <input type="number"
+               class="w-16 border rounded px-1 py-0.5 text-right inputSconto"
+               data-code="${it.codice}" value="${Number(it.sconto) || 0}" step="1" min="0" max="100">
       </td>
       <td class="border px-2 py-1 text-right">${fmtEUR(prezzoScont)}</td>
       <td class="border px-2 py-1 text-right">${fmtEUR(totale)}</td>
       <td class="border px-2 py-1 text-center">
         <button class="text-rose-600 underline btnRemove" data-code="${it.codice}">Rimuovi</button>
-      </td>`;
+      </td>
+    `;
     body.appendChild(tr);
   }
 
   tot.textContent = fmtEUR(total);
-  cnt && (cnt.textContent = state.selected.size);
+  if (cnt) cnt.textContent = state.selected.size;
 
-  // bind qty/sconto/remove
+  // qty
   body.querySelectorAll('.inputQty').forEach(inp=>{
     inp.addEventListener('input', (e)=>{
-      const code=e.currentTarget.getAttribute('data-code');
-      const it=state.selected.get(code); if(!it) return;
-      const v = Math.max(1, parseInt(e.target.value||'1',10));
+      const code = e.currentTarget.getAttribute('data-code');
+      const it = state.selected.get(code); if(!it) return;
+      const v = Math.max(1, parseInt(e.target.value || '1', 10));
       it.qty = v; state.selected.set(code, it);
       renderQuotePanel();
     });
   });
+
+  // sconto
   body.querySelectorAll('.inputSconto').forEach(inp=>{
     inp.addEventListener('input', (e)=>{
-      const code=e.currentTarget.getAttribute('data-code');
-      const it=state.selected.get(code); if(!it) return;
-      let v = parseInt(e.target.value||'0',10);
-      if (isNaN(v)) v=0; v=Math.max(0, Math.min(100, v));
+      const code = e.currentTarget.getAttribute('data-code');
+      const it = state.selected.get(code); if(!it) return;
+      let v = parseInt(e.target.value || '0', 10);
+      if (isNaN(v)) v = 0;
+      v = Math.max(0, Math.min(100, v));
       it.sconto = v; state.selected.set(code, it);
       renderQuotePanel();
     });
   });
+
+  // rimuovi
   body.querySelectorAll('.btnRemove').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
-      const code=e.currentTarget.getAttribute('data-code');
+      const code = e.currentTarget.getAttribute('data-code');
       state.selected.delete(code);
-      document.querySelectorAll(`.selItem[data-code="${CSS.escape(code)}"]`).forEach(i=>{ i.checked=false; });
+      document.querySelectorAll(`.selItem[data-code="${CSS.escape(code)}"]`).forEach(i=>{ i.checked = false; });
       renderQuotePanel();
     });
   });
 }
+
 
 /* ============ VALIDAZIONE E EXPORT ============ */
 function validateQuoteMeta() {
