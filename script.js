@@ -382,7 +382,7 @@ function buildCategories(){
     btn.type = 'button';
     btn.textContent = cat;
     btn.className = [
-      'inline-flex items-center justify-center',
+      'inline-flex items-left justify-center',
       'rounded-xl border px-3 py-1.5 text-sm',
       'transition',
       (state.selectedCategory === cat)
