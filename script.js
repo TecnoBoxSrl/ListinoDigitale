@@ -39,18 +39,16 @@ function resizeQuotePanel() {
   const leftAside = document.querySelector('aside.lg\\:col-span-3'); 
   const leftW = leftAside ? leftAside.getBoundingClientRect().width : 0;
 
-  const gutter = 48;                         // margine tra colonne
-  const vw = window.innerWidth;
+  // quanto spazio serve per vedere tutta la tabella
+  const needed = (table.scrollWidth || 0) + 32; // un po’ di padding
 
-  // la tabella ci dice la sua “larghezza ideale”
-  const tableNeeded = table.scrollWidth + 24; // un filo di padding
+  // quanto possiamo al massimo (margine 24px lato finestra)
+  const max = Math.max(320, window.innerWidth - 24);
 
-  // limiti: min per non essere troppo stretta, max per non “invadere” il layout
-  const MIN = 420;                            // minima (modifica pure)
-  const MAX = Math.min(1200, vw - leftW - gutter); // massimo dinamico
+  // usa il min tra needed e max, così se la tabella è enorme compare lo scroll esterno
+  const width = Math.min(needed, max);
 
-  const desired = Math.max(MIN, Math.min(MAX, tableNeeded));
-  panel.style.width = desired + 'px';
+  panel.style.width = width + 'px';
 }
 window.addEventListener('resize', resizeQuotePanel);
 
@@ -257,6 +255,8 @@ async function afterLogin(userId){
     if (info) info.textContent = 'Errore caricamento listino';
   }
 }
+// ⬇️ Regola la larghezza del pannello in base alla tabella
+  resizeQuotePanel();
 
 async function afterLogout(){
   showAuthGate(true);
@@ -631,6 +631,8 @@ function renderQuotePanel(){
     });
   });
 }
+// ⬇️ Regola la larghezza del pannello in base alla tabella
+  resizeQuotePanel();
 
 
 /* ============ VALIDAZIONE E EXPORT ============ */
