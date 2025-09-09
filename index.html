@@ -125,29 +125,18 @@
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
       <!-- SX -->
-      <aside class="lg:col-span-3">
-        <div class="glass rounded-2xl p-4 border">
-          <h2 class="font-semibold mb-3">Categorie</h2>
-          <div id="categoryList" class="flex flex-wrap gap-2"></div>
-          <div class="mt-4">
-            <h3 class="font-semibold mb-2">Filtri</h3>
-            <label class="flex items-center gap-2 text-sm">
-              <input type="checkbox" id="filterDisponibile" class="accent-sky-500"><span>Solo disponibili</span>
-            </label>
-            <label class="flex items-center gap-2 text-sm mt-2">
-              <input type="checkbox" id="filterNovita" class="accent-sky-500"><span>Solo novità</span>
-            </label>
-            <label class="text-sm block mt-3 mb-1">Prezzo max (€)</label>
-            <input id="filterPriceMax" type="number" inputmode="decimal" step="any" lang="it" class="w-full rounded-xl border px-3 py-2 text-sm">
-          </div>
-        </div>
+    <!-- SX: CATEGORIE / FILTRI -->
+<aside class="lg:col-span-3">
+  <div class="glass rounded-2xl p-4 border">
+    <h2 class="font-semibold text-center mb-3">Categorie</h2>
 
-        <div class="glass rounded-2xl p-4 border mt-6" id="adminBox" hidden>
-          <h2 class="font-semibold mb-3">Amministrazione</h2>
-          <button id="btnPublish" class="rounded-xl bg-emerald-600 text-white px-3 py-2 text-sm">Pubblica nuova versione</button>
-          <p class="text-xs text-slate-500 mt-2">Carica CSV → diff → notifica agenti</p>
-        </div>
-      </aside>
+    <!-- PILLS CATEGORIE -->
+    <div id="categoryList" class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center"></div>
+
+   
+  </div>
+</aside>
+
 
       <!-- CENTRO -->
       <section class="lg:col-span-6">
@@ -275,6 +264,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- La tua app -->
-  <script src="./script.js?v=login-gate-18" defer></script>
+  <script src="./script.js?v=login-gate-19" defer></script>
 </body>
 </html>
