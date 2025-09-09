@@ -454,79 +454,110 @@ function renderCards(){
    - nominativo + data
    - esporta: excel / pdf / stampa
 ================================================== */
+/* ============================
+   PREVENTIVI – BLOCCO COMPLETO
+   (sostituisci il tuo con questo)
+============================ */
+
+const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' :
+  Number(n).toLocaleString('it-IT',{style:'currency',currency:'EUR'});
+
+/* Stato selezione righe preventivo
+   (deve esistere in cima al tuo script):
+   state.selected: Map<codice, {codice,descrizione,prezzo,conai,qty,sconto}>
+*/
+if (!state) window.state = { selected:new Map() };
+
+/* ===== PANNELLO A DESTRA ===== */
 function injectQuotePanel(){
-  if ($('quotePanel')) return;
+  const old = document.getElementById('quotePanel');
+  if (old) old.remove();
 
   const panel = document.createElement('aside');
   panel.id='quotePanel';
-  panel.className='fixed top-0 right-0 h-screen w-[520px] max-w-[92vw] bg-white border-l shadow-xl hidden lg:flex z-40';
+  panel.className='lg:col-span-3 glass rounded-2xl p-4 border';
+
   panel.innerHTML = `
-    <div class="h-full w-full flex flex-col">
-      <div class="px-4 py-3 border-b">
-        <div class="flex items-center justify-between gap-3">
-          <h3 class="font-semibold text-base">Preventivo</h3>
-          <div class="flex items-center gap-2">
-            <button id="btnExportExcel" class="rounded-lg bg-sky-600 text-white px-3 py-1.5 text-sm">Excel</button>
-            <button id="btnExportPDF"   class="rounded-lg bg-rose-600 text-white px-3 py-1.5 text-sm">PDF</button>
-            <button id="btnPrint"       class="rounded-lg border px-3 py-1.5 text-sm">Stampa</button>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-3 mt-3">
-          <label class="text-xs">Nominativo
-            <input id="quoteName" type="text" class="w-full rounded-xl border px-2 py-1 text-sm" placeholder="Cliente / Agente">
-          </label>
-          <label class="text-xs">Data
-            <input id="quoteDate" type="date" class="w-full rounded-xl border px-2 py-1 text-sm">
-          </label>
-        </div>
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="font-semibold">Preventivo</h2>
+      <button id="btnClearQuote" class="text-xs underline">Svuota</button>
+    </div>
+
+    <!-- Metadati preventivo -->
+    <div class="grid grid-cols-2 gap-2 mb-3">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Nominativo</label>
+        <input id="quoteName" type="text" class="w-full rounded-xl border px-2 py-1 text-sm" placeholder="Cliente / Azienda">
       </div>
-
-      <div class="overflow-auto flex-1">
-        <table class="w-full text-xs border-collapse" id="quoteTable">
-          <thead class="bg-slate-100 sticky top-0">
-            <tr>
-              <th class="border px-2 py-1">Codice</th>
-              <th class="border px-2 py-1">Descrizione</th>
-              <th class="border px-2 py-1 text-right">Prezzo</th>
-              <th class="border px-2 py-1 text-right">CONAI/collo</th>
-              <th class="border px-2 py-1 text-center">Q.tà</th>
-              <th class="border px-2 py-1 text-center">Sconto %</th>
-              <th class="border px-2 py-1 text-right">Prezzo scont.</th>
-              <th class="border px-2 py-1 text-right">Totale riga</th>
-              <th class="border px-2 py-1 text-center">Azioni</th>
-            </tr>
-          </thead>
-          <tbody id="quoteBody"></tbody>
-        </table>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Data</label>
+        <input id="quoteDate" type="date" class="w-full rounded-xl border px-2 py-1 text-sm">
       </div>
+    </div>
 
-      <div class="border-t p-3 text-sm">
-        <div class="flex items-center justify-between">
-          <span>Totale imponibile</span>
-          <strong id="quoteTotal">—</strong>
-        </div>
-      </div>
-    </div>`;
+    <div class="text-xs text-slate-500 mb-2">
+      <span id="quoteItemsCount">0</span> articoli selezionati
+    </div>
 
-  document.body.appendChild(panel);
+    <div class="overflow-x-auto">
+      <table id="quoteTable" class="w-full text-sm border-collapse">
+        <thead class="bg-slate-100">
+          <tr>
+            <th class="border px-2 py-1 text-left">Codice</th>
+            <th class="border px-2 py-1 text-left">Descrizione</th>
+            <th class="border px-2 py-1 text-right">Prezzo</th>
+            <th class="border px-2 py-1 text-right">CONAI/collo</th>
+            <th class="border px-2 py-1 text-center">Q.tà</th>
+            <th class="border px-2 py-1 text-center">Sconto %</th>
+            <th class="border px-2 py-1 text-right">Prezzo scont.</th>
+            <th class="border px-2 py-1 text-right">Totale riga</th>
+            <th class="border px-2 py-1 text-center">Azioni</th>
+          </tr>
+        </thead>
+        <tbody id="quoteBody"></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="7" class="border px-2 py-1 text-right font-medium">Totale imponibile</td>
+            <td id="quoteTotal" class="border px-2 py-1 text-right font-semibold">€ 0,00</td>
+            <td class="border px-2 py-1"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
 
-  // init valori campi
-  const qn=$('quoteName'), qd=$('quoteDate');
-  if (qn) qn.value = state.quoteName;
-  if (qd) qd.value = state.quoteDate;
+    <div class="mt-3 grid grid-cols-3 gap-2">
+      <button id="btnExportHtml" class="rounded-xl bg-sky-600 text-white py-2 text-sm">Esporta HTML</button>
+      <button id="btnExportPdf"  class="rounded-xl bg-sky-600 text-white py-2 text-sm">Esporta PDF</button>
+      <button id="btnPrint"      class="rounded-xl border py-2 text-sm">Stampa</button>
+    </div>
 
-  qn?.addEventListener('input', e=>{ state.quoteName = e.target.value; });
-  qd?.addEventListener('change', e=>{ state.quoteDate = e.target.value || todayISO(); });
+    <p id="quoteMsg" class="text-[11px] text-slate-500 mt-2"></p>
+  `;
 
-  // azioni
-  $('btnExportExcel')?.addEventListener('click', exportQuoteExcel);
-  $('btnExportPDF')  ?.addEventListener('click', exportQuotePDF);
-  $('btnPrint')      ?.addEventListener('click', printQuote);
+  // inseriscilo nella colonna destra (se usi il layout con 3 colonne)
+  const rightCol = document.querySelector('aside.lg\\:col-span-3:last-of-type');
+  if (rightCol) rightCol.replaceWith(panel);
+  else document.body.appendChild(panel); // fallback
 
-  // mostra su desktop
-  panel.classList.remove('hidden');
+  // default data = oggi
+  const d = document.getElementById('quoteDate');
+  if (d) d.value = new Date().toISOString().slice(0,10);
+
+  // bind pulsanti
+  document.getElementById('btnClearQuote')?.addEventListener('click', ()=>{
+    state.selected.clear();
+    renderQuotePanel();
+    document.querySelectorAll('.selItem').forEach(i=>{ i.checked=false; });
+  });
+  document.getElementById('btnExportHtml')?.addEventListener('click', exportHTML);
+  document.getElementById('btnExportPdf') ?.addEventListener('click', exportPDF);
+  document.getElementById('btnPrint')     ?.addEventListener('click', printQuote);
+
+  // prima render
+  renderQuotePanel();
 }
 
+/* ===== CRUD righe preventivo ===== */
 function addToQuote(p){
   const item = state.selected.get(p.codice) || {
     codice: p.codice,
@@ -534,40 +565,46 @@ function addToQuote(p){
     prezzo: Number(p.prezzo||0),
     conai: Number(p.conaiPerCollo||0),
     qty: 1,
-    sconto: 0
+    sconto: 0,
   };
   if (state.selected.has(p.codice)) item.qty += 1;
   state.selected.set(p.codice, item);
   renderQuotePanel();
 }
-
 function removeFromQuote(code){
   state.selected.delete(code);
   renderQuotePanel();
 }
 
+/* ===== Calcoli riga / totale ===== */
 function lineCalc(it){
-  const sconto = Math.min(100, Math.max(0, Number(it.sconto||0)));
-  const prezzoScont = Number(it.prezzo||0) * (1 - sconto/100);
-  const totale = prezzoScont * Number(it.qty||0) + (Number(it.conai||0) * Number(it.qty||0));
+  const s = Math.max(0, Math.min(100, Number(it.sconto||0)));
+  const prezzoScont = Number(it.prezzo||0) * (1 - s/100);
+  const qty = Math.max(1, Number(it.qty||1));
+  const conai = Number(it.conai||0);
+  const totale = prezzoScont*qty + conai*qty;
   return { prezzoScont, totale };
 }
 
+/* ===== Render tabella preventivo ===== */
 function renderQuotePanel(){
-  const body=$('quoteBody'), tot=$('quoteTotal');
-  if (!body || !tot) return;
+  const body = document.getElementById('quoteBody');
+  const tot  = document.getElementById('quoteTotal');
+  const count= document.getElementById('quoteItemsCount');
+  if (!body || !tot || !count) return;
 
   body.innerHTML='';
-  let total=0;
+  let total=0, rows=0;
 
   for (const it of state.selected.values()){
+    rows++;
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="border px-2 py-1 font-mono">${it.codice}</td>
-      <td class="border px-2 py-1">${it.descrizione}</td>
+      <td class="border px-2 py-1">${it.descrizione||''}</td>
       <td class="border px-2 py-1 text-right">${fmtEUR(it.prezzo)}</td>
       <td class="border px-2 py-1 text-right">${fmtEUR(it.conai||0)}</td>
       <td class="border px-2 py-1 text-center">
@@ -584,13 +621,14 @@ function renderQuotePanel(){
     body.appendChild(tr);
   }
 
+  count.textContent = rows;
   tot.textContent = fmtEUR(total);
 
-  // bind qty/sconto/remove
+  // bind interazioni
   body.querySelectorAll('.inputQty').forEach(inp=>{
     inp.addEventListener('input', (e)=>{
-      const code=e.currentTarget.getAttribute('data-code');
-      const it=state.selected.get(code); if(!it) return;
+      const code = e.currentTarget.getAttribute('data-code');
+      const it = state.selected.get(code); if(!it) return;
       const v = Math.max(1, parseInt(e.target.value||'1',10));
       it.qty = v; state.selected.set(code, it);
       renderQuotePanel();
@@ -598,185 +636,260 @@ function renderQuotePanel(){
   });
   body.querySelectorAll('.inputSconto').forEach(inp=>{
     inp.addEventListener('input', (e)=>{
-      const code=e.currentTarget.getAttribute('data-code');
-      const it=state.selected.get(code); if(!it) return;
+      const code = e.currentTarget.getAttribute('data-code');
+      const it = state.selected.get(code); if(!it) return;
       let v = parseInt(e.target.value||'0',10);
-      if (isNaN(v)) v=0; v=Math.max(0, Math.min(100, v));
+      if (isNaN(v)) v=0; v=Math.max(0,Math.min(100,v));
       it.sconto = v; state.selected.set(code, it);
       renderQuotePanel();
     });
   });
   body.querySelectorAll('.btnRemove').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
-      const code=e.currentTarget.getAttribute('data-code');
+      const code = e.currentTarget.getAttribute('data-code');
       state.selected.delete(code);
-      // deseleziona anche nelle liste
       document.querySelectorAll(`.selItem[data-code="${CSS.escape(code)}"]`).forEach(i=>{ i.checked=false; });
       renderQuotePanel();
     });
   });
 }
 
-/* === EXPORT: EXCEL / PDF / STAMPA === */
-function rowsForExport(){
+/* ====== EXPORT: HTML / PDF / PRINT ====== */
+function currentQuoteMeta(){
+  const name = (document.getElementById('quoteName')?.value || '').trim();
+  const date = (document.getElementById('quoteDate')?.value || new Date().toISOString().slice(0,10));
+  return { name, date };
+}
+
+function buildRowsForExport(){
   const rows = [];
   let total=0;
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
-    rows.push([
-      it.codice,
-      it.descrizione,
-      Number(it.prezzo||0),
-      Number(it.conai||0),
-      Number(it.qty||0),
-      Number(it.sconto||0),
-      Number(prezzoScont||0),
-      Number(totale||0),
-    ]);
+    rows.push({
+      codice: it.codice,
+      descrizione: it.descrizione||'',
+      prezzo: it.prezzo||0,
+      conai: it.conai||0,
+      qty: it.qty||1,
+      sconto: it.sconto||0,
+      prezzoScont,
+      totale
+    });
   }
   return { rows, total };
 }
 
-function exportQuoteExcel(){
-  const { rows, total } = rowsForExport();
-  const header = ['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga'];
-  const aoa = [
-    ['Preventivo','', '', '', '', '', '', ''],
-    ['Nominativo', state.quoteName || '', 'Data', state.quoteDate || todayISO(), '', '', '', ''],
-    [],
-    header,
-    ...rows,
-    [],
-    ['','','','','','','Totale imponibile', total]
-  ];
+/* --- HTML (scarica .html con stessa grafica tabella) --- */
+function exportHTML(){
+  const { name, date } = currentQuoteMeta();
+  const { rows, total } = buildRowsForExport();
 
-  const fname = `preventivo_${(state.quoteName||'').replace(/\s+/g,'_')}_${(state.quoteDate||todayISO())}.xlsx`;
-
-  if (window.XLSX){
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Preventivo');
-    const wbout = XLSX.write(wb, { bookType:'xlsx', type:'array' });
-    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = fname;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  } else {
-    // CSV fallback
-    const csv = aoa.map(r=>r.map(v=>{
-      const s = (v==null)?'':String(v);
-      return /[",;\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
-    }).join(';')).join('\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8'}));
-    a.download = fname.replace('.xlsx','.csv');
-    a.click();
-  }
-}
-
-function exportQuotePDF(){
-  const { rows, total } = rowsForExport();
-  const header = ['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga'];
-
-  if (!window.jspdf || !window.jspdf.jsPDF || !window.jspdf.jsPDF.autoTable){
-    alert('PDF non disponibile (jsPDF non caricato).');
-    return;
-  }
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit:'pt', format:'a4' });
-
-  const left=40, top=40;
-  doc.setFont('helvetica','bold'); doc.setFontSize(14);
-  doc.text('Preventivo', left, top);
-  doc.setFont('helvetica','normal'); doc.setFontSize(10);
-  doc.text(`Nominativo: ${state.quoteName||''}`, left, top+16);
-  doc.text(`Data: ${state.quoteDate||todayISO()}`, left+260, top+16);
-
-  // tabella
-  doc.autoTable({
-    startY: top+32,
-    head: [header],
-    body: rows.map(r=>[
-      r[0], r[1],
-      fmtEUR(r[2]), fmtEUR(r[3]),
-      String(r[4]), String(r[5])+'%',
-      fmtEUR(r[6]), fmtEUR(r[7]),
-    ]),
-    theme: 'grid',
-    styles: { font: 'helvetica', fontSize: 9, cellPadding: 4, halign:'right' },
-    headStyles: { fillColor:[241,245,249], textColor:20, halign:'left' },
-    columnStyles: {
-      0:{ halign:'left', cellWidth:70 },
-      1:{ halign:'left', cellWidth:200 },
-      2:{ cellWidth:70 },
-      3:{ cellWidth:80 },
-      4:{ cellWidth:40 },
-      5:{ cellWidth:60 },
-      6:{ cellWidth:80 },
-      7:{ cellWidth:80 },
-    },
-    margin: { left, right: left },
-  });
-
-  // totale
-  const y = doc.lastAutoTable.finalY + 16;
-  doc.setFont('helvetica','bold'); doc.setFontSize(11);
-  doc.text(`Totale imponibile: ${fmtEUR(total)}`, left, y);
-
-  const fname = `preventivo_${(state.quoteName||'').replace(/\s+/g,'_')}_${(state.quoteDate||todayISO())}.pdf`;
-  doc.save(fname);
-}
-
-function printQuote(){
-  const { rows, total } = rowsForExport();
-  const headHTML = `
+  const style = `
     <style>
-      *{box-sizing:border-box} body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;margin:24px}
-      h1{font-size:18px;margin:0 0 4px} .meta{font-size:12px;color:#475569;margin-bottom:12px}
-      table{border-collapse:collapse;width:100%;font-size:12px}
-      thead{background:#f1f5f9} th,td{border:1px solid #e2e8f0;padding:6px 8px}
-      th{text-align:left} td.num{text-align:right} td.center{text-align:center}
-      .tot{margin-top:12px;font-weight:600}
-      @media print { .no-print{display:none} }
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;color:#0f172a;margin:24px}
+      h1{font-size:20px;margin:0 0 6px}
+      .meta{font-size:12px;color:#64748b;margin-bottom:12px}
+      table{width:100%;border-collapse:collapse;font-size:13px}
+      th,td{border:1px solid #e2e8f0;padding:6px 8px}
+      thead th{background:#f1f5f9;text-align:left}
+      tfoot td{font-weight:600}
+      .right{text-align:right}
+      .center{text-align:center}
     </style>`;
-  const rowsHTML = rows.map(r => `
+
+  const head = `
+    <thead>
       <tr>
-        <td>${escapeHTML(r[0])}</td>
-        <td>${escapeHTML(r[1])}</td>
-        <td class="num">${fmtEUR(r[2])}</td>
-        <td class="num">${fmtEUR(r[3])}</td>
-        <td class="center">${r[4]}</td>
-        <td class="center">${r[5]}%</td>
-        <td class="num">${fmtEUR(r[6])}</td>
-        <td class="num">${fmtEUR(r[7])}</td>
-      </tr>`).join('');
+        <th>Codice</th>
+        <th>Descrizione</th>
+        <th class="right">Prezzo</th>
+        <th class="right">CONAI/collo</th>
+        <th class="center">Q.tà</th>
+        <th class="center">Sconto %</th>
+        <th class="right">Prezzo scont.</th>
+        <th class="right">Totale riga</th>
+      </tr>
+    </thead>`;
+
+  const body = rows.map(r=>`
+    <tr>
+      <td>${escapeHtml(r.codice)}</td>
+      <td>${escapeHtml(r.descrizione)}</td>
+      <td class="right">${fmtEUR(r.prezzo)}</td>
+      <td class="right">${fmtEUR(r.conai)}</td>
+      <td class="center">${r.qty}</td>
+      <td class="center">${r.sconto}</td>
+      <td class="right">${fmtEUR(r.prezzoScont)}</td>
+      <td class="right">${fmtEUR(r.totale)}</td>
+    </tr>`).join('');
 
   const html = `
-    <!doctype html><html><head><meta charset="utf-8">${headHTML}</head>
+    <!doctype html><html><head><meta charset="utf-8"><title>Preventivo</title>${style}</head>
     <body>
       <h1>Preventivo</h1>
       <div class="meta">
-        Nominativo: <strong>${escapeHTML(state.quoteName||'')}</strong> &nbsp;•&nbsp;
-        Data: <strong>${escapeHTML(state.quoteDate||todayISO())}</strong>
+        ${name ? `Nominativo: <strong>${escapeHtml(name)}</strong> – `:''}
+        Data: <strong>${escapeHtml(date)}</strong>
       </div>
       <table>
-        <thead>
+        ${head}
+        <tbody>${body}</tbody>
+        <tfoot>
           <tr>
-            <th>Codice</th><th>Descrizione</th><th>Prezzo</th><th>CONAI/collo</th>
-            <th>Q.tà</th><th>Sconto %</th><th>Prezzo scont.</th><th>Totale riga</th>
+            <td colspan="7" class="right">Totale imponibile</td>
+            <td class="right">${fmtEUR(total)}</td>
           </tr>
-        </thead>
-        <tbody>${rowsHTML || `<tr><td colspan="8" class="center">Nessuna riga</td></tr>`}</tbody>
+        </tfoot>
       </table>
-      <div class="tot">Totale imponibile: ${fmtEUR(total)}</div>
-      <script>window.onload=()=>window.print()</script>
+    </body></html>`;
+
+  const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `preventivo_${date}.html`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* --- PDF (usa jsPDF + autoTable) --- */
+function exportPDF(){
+  const { jsPDF } = window.jspdf || {};
+  if (!jsPDF || !window.jspdf || !window.jspdf.jsPDF){
+    alert('PDF non disponibile (jsPDF non caricato).');
+    return;
+  }
+
+  const { name, date } = currentQuoteMeta();
+  const { rows, total } = buildRowsForExport();
+
+  const doc = new jsPDF({ unit:'pt', format:'a4' });
+  const margin = 36;
+
+  doc.setFontSize(14);
+  doc.text('Preventivo', margin, 40);
+  doc.setFontSize(10);
+  let meta = `Data: ${date}`;
+  if (name) meta = `Nominativo: ${name}  —  ` + meta;
+  doc.text(meta, margin, 58);
+
+  const head = [[
+    'Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga'
+  ]];
+  const body = rows.map(r=>[
+    r.codice,
+    r.descrizione,
+    fmtEUR(r.prezzo),
+    fmtEUR(r.conai),
+    String(r.qty),
+    String(r.sconto),
+    fmtEUR(r.prezzoScont),
+    fmtEUR(r.totale),
+  ]);
+
+  doc.autoTable({
+    startY: 74,
+    head, body,
+    styles: { fontSize: 9, cellPadding: 4, lineColor: [226,232,240], lineWidth: 0.8 },
+    headStyles: { fillColor: [241,245,249], textColor: 0, halign:'left' },
+    columnStyles: {
+      2:{halign:'right'}, 3:{halign:'right'},
+      4:{halign:'center'}, 5:{halign:'center'},
+      6:{halign:'right'}, 7:{halign:'right'}
+    },
+    margin: { left: margin, right: margin }
+  });
+
+  // totale
+  const endY = doc.lastAutoTable.finalY || 74;
+  doc.setFontSize(10);
+  doc.text('Totale imponibile', 400, endY+24, { align:'right' });
+  doc.setFont(undefined, 'bold');
+  doc.text(fmtEUR(total), 540, endY+24, { align:'right' });
+  doc.setFont(undefined, 'normal');
+
+  doc.save(`preventivo_${date}.pdf`);
+}
+
+/* --- Stampa (apre finestra con l’HTML e chiama print) --- */
+function printQuote(){
+  const { name, date } = currentQuoteMeta();
+  const { rows, total } = buildRowsForExport();
+
+  const style = `
+    <style>
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;color:#0f172a;margin:24px}
+      h1{font-size:20px;margin:0 0 6px}
+      .meta{font-size:12px;color:#64748b;margin-bottom:12px}
+      table{width:100%;border-collapse:collapse;font-size:13px}
+      th,td{border:1px solid #e2e8f0;padding:6px 8px}
+      thead th{background:#f1f5f9;text-align:left}
+      tfoot td{font-weight:600}
+      .right{text-align:right}
+      .center{text-align:center}
+      @media print { @page { size: A4; margin: 12mm } }
+    </style>`;
+
+  const head = `
+    <thead>
+      <tr>
+        <th>Codice</th>
+        <th>Descrizione</th>
+        <th class="right">Prezzo</th>
+        <th class="right">CONAI/collo</th>
+        <th class="center">Q.tà</th>
+        <th class="center">Sconto %</th>
+        <th class="right">Prezzo scont.</th>
+        <th class="right">Totale riga</th>
+      </tr>
+    </thead>`;
+
+  const body = state.selected.size
+    ? [...state.selected.values()].map(it=>{
+        const { prezzoScont, totale } = lineCalc(it);
+        return `
+          <tr>
+            <td>${escapeHtml(it.codice)}</td>
+            <td>${escapeHtml(it.descrizione||'')}</td>
+            <td class="right">${fmtEUR(it.prezzo)}</td>
+            <td class="right">${fmtEUR(it.conai||0)}</td>
+            <td class="center">${Number(it.qty||1)}</td>
+            <td class="center">${Number(it.sconto||0)}</td>
+            <td class="right">${fmtEUR(prezzoScont)}</td>
+            <td class="right">${fmtEUR(totale)}</td>
+          </tr>`;
+      }).join('')
+    : `<tr><td colspan="8" class="center" style="color:#64748b">Nessuna riga</td></tr>`;
+
+  const html = `
+    <!doctype html><html><head><meta charset="utf-8"><title>Stampa preventivo</title>${style}</head>
+    <body>
+      <h1>Preventivo</h1>
+      <div class="meta">
+        ${name ? `Nominativo: <strong>${escapeHtml(name)}</strong> – `:''}
+        Data: <strong>${escapeHtml(date)}</strong>
+      </div>
+      <table>
+        ${head}
+        <tbody>${body}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="7" class="right">Totale imponibile</td>
+            <td class="right">${fmtEUR(total)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <script>window.onload = () => { window.print(); }</script>
     </body></html>`;
 
   const w = window.open('', '_blank');
-  w.document.open(); w.document.write(html); w.document.close();
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
 }
 
-function escapeHTML(s){ return String(s||'').replace(/[&<>"]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' })[m]); }
+/* Utility piccola per sanificare HTML */
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+}
