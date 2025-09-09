@@ -12,11 +12,11 @@
     .card:hover{transform:translateY(-2px);transition:.2s}
     .modal-open{overflow:hidden}
 
-  /* 1) La tabella del preventivo non deve restringersi */
-#quoteTable{
-  table-layout: auto;      /* lascia calcolare le colonne in base ai contenuti */
-  width: max-content;      /* si allarga quanto serve */
-  min-width: 960px;        /* una base minima sensata (modifica a piacere) */
+ 
+/* la tabella può allargarsi quanto serve */
+#quoteTable {
+  table-layout: auto;
+  min-width: max-content; /* evita che stringa le colonne */
 }
 
 /* 2) Colonne numeriche: niente a capo */
@@ -34,6 +34,8 @@
 #quoteTable td:nth-child(8){
   white-space: nowrap;
 }
+/* il wrapper della tabella non deve creare un secondo scrollbar */
+#quoteTableWrap { overflow: visible; }
 
 /* 3) Input quantità/sconto: larghezza fissa per non “ballare” */
 #quoteTable input[type="number"]{
@@ -43,14 +45,14 @@
 /* 4) Il pannello resta a destra e fa scroll se la tabella è larga */
 #quotePanel{
   overflow-x: auto;   /* già presente: bene tenerlo */
-  max-width: 1200px;  /* cappello massimo: alzalo se vuoi ancora più ampiezza */
+ 
 }
 
-/* 5) Descrizione: può andare a capo per risparmiare spazio */
-.quote-desc{
+/* Descrizione a capo (non una riga sola) */
+.quote-desc {
   white-space: normal;
   word-break: break-word;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 /* 6) Pulsanti nel pannello: niente a capo nel testo */
@@ -191,9 +193,9 @@
       </div>
 
       <!-- TABELLONE: si adatta al contenuto, scorre orizzontalmente se più largo -->
-      <div class="overflow-x-auto">
+      <div class="quoteTableWrap">
         <table id="quoteTable"
-               class="text-sm border-collapse w-max min-w-[1100px]">
+               class="text-sm border-collapse">
           <thead class="bg-slate-100">
             <tr>
               <th class="border px-2 py-1 text-left whitespace-nowrap">Codice</th>
@@ -273,6 +275,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- La tua app -->
-  <script src="./script.js?v=login-gate-16" defer></script>
+  <script src="./script.js?v=login-gate-17" defer></script>
 </body>
 </html>
