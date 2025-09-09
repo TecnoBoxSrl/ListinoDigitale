@@ -619,4 +619,4 @@ function copySummary(){
   navigator.clipboard.writeText(lines.join('\n'));
   const msg=$('quoteMsg'); if (msg) msg.textContent='Riepilogo copiato negli appunti.';
 }
-</script>
+
