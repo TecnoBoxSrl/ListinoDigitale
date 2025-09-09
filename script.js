@@ -40,6 +40,10 @@ const state = {
   onlyNew: false,
   priceMax: null,
   selected: new Map(),  // codice -> {codice, descrizione, prezzo, conai, qty, sconto}
+  quoteMeta: {
+    name: '',                                       // Nominativo
+    date: new Date().toISOString().slice(0, 10),    // yyyy-mm-dd
+  },
 };
 
 /* ============ BOOT ROBUSTO ============ */
@@ -47,6 +51,21 @@ async function boot(){
   try {
     bindUI(); // aggancia sempre i listener
     $('year') && ( $('year').textContent = new Date().getFullYear() );
+
+// inizializza nominativo+data nel pannello
+const nameEl = document.getElementById('quoteName');
+const dateEl = document.getElementById('quoteDate');
+if (nameEl) {
+  nameEl.value = state.quoteMeta.name;
+  nameEl.addEventListener('input', () => { state.quoteMeta.name = nameEl.value.trim(); });
+}
+if (dateEl) {
+  dateEl.value = state.quoteMeta.date;
+  dateEl.addEventListener('change', () => { state.quoteMeta.date = dateEl.value || new Date().toISOString().slice(0,10); });
+}
+
+
+
 
     // restore session
     if (!supabase) return showAuthGate(true);
@@ -563,10 +582,39 @@ function renderQuotePanel(){
 }
 
 /* ============ EXPORT ============ */
+function validateQuoteMeta() {
+  const msg = document.getElementById('quoteMsg');
+  const nameEl = document.getElementById('quoteName');
+  const dateEl = document.getElementById('quoteDate');
+
+  if (!state.quoteMeta.name) {
+    if (msg) msg.textContent = 'Inserisci il nominativo prima di esportare.';
+    nameEl?.focus();
+    return false;
+  }
+  if (!state.quoteMeta.date) {
+    if (msg) msg.textContent = 'Inserisci la data del preventivo prima di esportare.';
+    dateEl?.focus();
+    return false;
+  }
+  if (msg) msg.textContent = '';
+  return true;
+}
+
 function exportXlsx(){
-  const rows = [
-    ['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']
-  ];
+  if (!validateQuoteMeta()) return;
+
+  const rows = [];
+
+  // header meta
+  rows.push(['Preventivo']);
+  rows.push(['Nominativo', state.quoteMeta.name]);
+  rows.push(['Data', state.quoteMeta.date]);
+  rows.push([]); // riga vuota
+
+  // tabella
+  rows.push(['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']);
+
   let total=0;
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
@@ -578,16 +626,22 @@ function exportXlsx(){
       Number(prezzoScont||0), Number(totale||0),
     ]);
   }
-  rows.push([]); rows.push(['','','','','','','Totale imponibile', Number(total||0)]);
+  rows.push([]);
+  rows.push(['','','','','','','Totale imponibile', Number(total||0)]);
 
-  const filename = `preventivo_${new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')}.xlsx`;
+  const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
+  const filename = `preventivo_${safeName}_${state.quoteMeta.date}.xlsx`;
+
   if (window.XLSX){
     const ws = XLSX.utils.aoa_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Preventivo');
     const wbout = XLSX.write(wb, { bookType:'xlsx', type:'array' });
     const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
     URL.revokeObjectURL(a.href);
   } else {
     // fallback CSV
@@ -597,14 +651,25 @@ function exportXlsx(){
       return s;
     }).join(';')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = filename.replace('.xlsx','.csv'); a.click(); URL.revokeObjectURL(a.href);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename.replace('.xlsx','.csv');
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 }
 
 function copySummary(){
+  if (!validateQuoteMeta()) return;
+
   const lines = [];
+  lines.push(`Preventivo`);
+  lines.push(`Nominativo:\t${state.quoteMeta.name}`);
+  lines.push(`Data:\t${state.quoteMeta.date}`);
+  lines.push('');
+
   lines.push('Codice\tDescrizione\tPrezzo\tCONAI/collo\tQ.tà\tSconto %\tPrezzo scont.\tTotale riga');
+
   let total=0;
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
@@ -616,7 +681,7 @@ function copySummary(){
   }
   lines.push('');
   lines.push(`Totale imponibile:\t${fmtEUR(total)}`);
+
   navigator.clipboard.writeText(lines.join('\n'));
   const msg=$('quoteMsg'); if (msg) msg.textContent='Riepilogo copiato negli appunti.';
 }
-
