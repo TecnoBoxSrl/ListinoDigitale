@@ -480,8 +480,10 @@ function renderListino(){
           <th class="border px-2 py-1 text-center w-8">Sel</th>
           <th class="border px-2 py-1 text-left">Codice</th>
           <th class="border px-2 py-1 text-left">Descrizione</th>
-          <th class="border px-2 py-1 text-left">Conf.</th>
+<th class="border px-2 py-1 text-left">Dimensione</th>
+          <th class="border px-2 py-1 text-left">Unità di vendita</th>
           <th class="border px-2 py-1 text-right">Prezzo</th>
+<th class="border px-2 py-1 text-right">Conai</th>
           <th class="border px-2 py-1 text-center">Img</th>
         </tr>
       </thead>
