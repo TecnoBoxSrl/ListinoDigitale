@@ -28,6 +28,37 @@ const err = (...a) => console.error('[Listino]', ...a);
 const normalize = (s) => (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
 const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 
+
+
+function resizeQuotePanel() {
+  const panel = document.getElementById('quotePanel');
+  const table = document.getElementById('quoteTable');
+  if (!panel || !table) return;
+
+  // quanto spazio occupa la colonna delle categorie a sinistra (se presente)
+  const leftAside = document.querySelector('aside.lg\\:col-span-3'); 
+  const leftW = leftAside ? leftAside.getBoundingClientRect().width : 0;
+
+  const gutter = 48;                         // margine tra colonne
+  const vw = window.innerWidth;
+
+  // la tabella ci dice la sua “larghezza ideale”
+  const tableNeeded = table.scrollWidth + 24; // un filo di padding
+
+  // limiti: min per non essere troppo stretta, max per non “invadere” il layout
+  const MIN = 420;                            // minima (modifica pure)
+  const MAX = Math.min(1200, vw - leftW - gutter); // massimo dinamico
+
+  const desired = Math.max(MIN, Math.min(MAX, tableNeeded));
+  panel.style.width = desired + 'px';
+}
+window.addEventListener('resize', resizeQuotePanel);
+
+resizeQuotePanel();
+
+
+
+
 /* === Stato === */
 const state = {
   role: 'guest',
@@ -535,7 +566,7 @@ function renderQuotePanel(){
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="border px-2 py-1 font-mono">${it.codice}</td>
-      <td class="border px-2 py-1">${it.descrizione}</td>
+      <td class="border px-2 py-1"><div class="quote-desc">${it.descrizione}</div></td>
       <td class="border px-2 py-1 text-right">${fmtEUR(it.prezzo)}</td>
       <td class="border px-2 py-1 text-right">${fmtEUR(it.conai||0)}</td>
       <td class="border px-2 py-1 text-right">
