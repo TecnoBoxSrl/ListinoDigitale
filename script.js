@@ -1,4 +1,4 @@
-<script>
+
 // ===============================
 // Listino Digitale – Tecnobox (vLG-8)
 // - Auth: email/password (login gate)
