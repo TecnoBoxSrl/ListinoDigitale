@@ -15,6 +15,20 @@
     /* Evita a capo sui pulsanti del pannello preventivo */
 #quotePanel button { white-space: nowrap; }
 
+/* rende il pannello “misurabile” e limita un massimo */
+#quotePanel {
+  /* la larghezza finale la settiamo via JS; qui solo massimi/overflow */
+  max-width: 1200px;              /* tetto massimo (modificabile) */
+  overflow-x: auto;               /* safety */
+}
+
+/* Celle descrizione: spezza parole e va a capo */
+.quote-desc {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.2;
+}
+
   </style>
 </head>
 <body class="bg-white text-slate-900">
@@ -229,6 +243,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- La tua app -->
-  <script src="./script.js?v=login-gate-13" defer></script>
+  <script src="./script.js?v=login-gate-14" defer></script>
 </body>
 </html>
