@@ -357,7 +357,7 @@ function buildCategories(){
   allBtn.type = 'button';
   allBtn.textContent = 'TUTTE';
   allBtn.className = [
-    'block w-full text-center',
+    'block w-full text-left',
     'rounded-xl border px-3 py-2 text-sm',
     'transition',
     (state.selectedCategory === 'Tutte')
