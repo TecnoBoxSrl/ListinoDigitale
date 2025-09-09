@@ -341,45 +341,53 @@ async function fetchProducts(){
 
 /* ============ CATEGORIE ============ */
 function buildCategories(){
-  // dedup + sort
-  const set = new Set((state.items || []).map(p => (p.categoria || 'Altro').trim()));
-  const cats = Array.from(set).sort((a,b)=> a.localeCompare(b, 'it', {sensitivity:'base'}));
+  // dedup robusto su chiave normalizzata
+  const map = new Map(); // key -> label originale
+  for (const p of (state.items || [])) {
+    const raw = (p.categoria ?? 'Altro').toString();
+    const key = raw.normalize('NFD').replace(/\p{Diacritic}/gu,'').trim().toLowerCase();
+    const label = raw.trim() || 'Altro';
+    if (!map.has(key)) map.set(key, label);
+  }
+
+  // ordina per etichetta (valore), non per chiave
+  const entries = [...map.entries()]
+    .sort((a,b) => a[1].localeCompare(b[1], 'it'));
 
   const box = document.getElementById('categoryList');
   if (!box) return;
-
   box.innerHTML = '';
 
-  // helper per creare una pill
-  const mkPill = (label, value, isActive) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = label;
-    // niente @apply: classi complete per compatibilità CDN
-    btn.className = [
-      'cat-pill',
-      'rounded-full','border','px-3','py-1.5','text-sm',
-      'bg-white','hover:bg-slate-50','transition',
-      'text-center','whitespace-nowrap'
-    ].join(' ');
-    if (isActive){
-      btn.className += ' bg-sky-600 text-white border-sky-600';
-    }
-    btn.addEventListener('click', ()=>{
-      state._cat = value;   // null = tutte
-      renderView();         // ridisegna lista
-      buildCategories();    // rigenera per aggiornare evidenza attiva
+  const wrap = document.createElement('div');
+  wrap.className = 'cat-list';
+
+  // voce "Tutte" sempre in testa
+  const btnAll = document.createElement('button');
+  btnAll.type = 'button';
+  btnAll.className = 'cat-btn' + (state._catKey ? '' : ' active');
+  btnAll.textContent = 'TUTTE';
+  btnAll.addEventListener('click', () => { state._catKey = null; renderView(); highlightCats(); });
+  wrap.appendChild(btnAll);
+
+  // altre categorie
+  for (const [key, label] of entries){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cat-btn' + (state._catKey===key ? ' active' : '');
+    b.textContent = label;
+    b.setAttribute('data-key', key);
+    b.addEventListener('click', () => { state._catKey = key; renderView(); highlightCats(); });
+    wrap.appendChild(b);
+  }
+
+  box.appendChild(wrap);
+
+  function highlightCats(){
+    box.querySelectorAll('.cat-btn').forEach(el=>{
+      const k = el.getAttribute('data-key');
+      el.classList.toggle('active', (k ? k===state._catKey : !state._catKey));
     });
-    return btn;
-  };
-
-  // 1) voce TUTTE
-  box.appendChild(mkPill('TUTTE', null, !state._cat));
-
-  // 2) resto categorie
-  cats.forEach(cat=>{
-    box.appendChild(mkPill(cat, cat, state._cat === cat));
-  });
+  }
 }
 
 
