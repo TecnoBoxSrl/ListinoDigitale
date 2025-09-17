@@ -5,35 +5,151 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <title>Listino Digitale</title>
 
-  <!-- Tailwind (solo per demo, in prod. meglio build) -->
+  <!-- Tailwind (per demo; in produzione meglio build) -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Libreria Supabase -->
+  <!-- Supabase SDK -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.6/dist/umd/supabase.js" crossorigin="anonymous"></script>
 
-  <!-- Libreria jsPDF + Autotable -->
+  <!-- jsPDF + autotable (per export PDF) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
 
-  <!-- Libreria XLSX -->
+  <!-- XLSX (export Excel) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <style>
-    /* Responsive mobile fix */
+    /* Mobile UX */
     html, body { height: 100%; }
     * { -webkit-tap-highlight-color: rgba(0,0,0,0); }
     @media (max-width: 768px){
-      input, select, button { font-size: 16px; }
+      input, select, button { font-size: 16px; } /* evita zoom iOS */
     }
-    #quoteTable { table-layout: auto; min-width: max-content; }
+    /* Preventivo: testo descrizione che va a capo */
     .quote-desc { white-space: normal; word-break: break-word; line-height: 1.25; }
+    /* Tabella preventivo: niente colonne schiacciate su desktop */
+    #quoteTable { table-layout: auto; min-width: max-content; }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
-  <!-- ... il resto del tuo HTML ... -->
 
-  <!-- Tuo script principale -->
- <script src="script.js?v=1" defer></script>
+  <!-- ==================== GATE AUTENTICAZIONE ==================== -->
+  <section id="authGate" class="min-h-screen flex items-center justify-center">
+    <div class="w-full max-w-md bg-white rounded-2xl shadow-xl p-6">
+      <h1 class="text-2xl font-semibold mb-1">Accedi</h1>
+      <p class="text-sm text-gray-600 mb-6">Inserisci le tue credenziali per continuare.</p>
 
+      <div class="space-y-3">
+        <div>
+          <label class="text-sm font-medium">Email</label>
+          <input id="loginEmail" type="email" class="w-full mt-1 border rounded-lg px-3 py-2 bg-slate-50" placeholder="nome@azienda.it"/>
+        </div>
+        <div>
+          <label class="text-sm font-medium">Password</label>
+          <input id="loginPassword" type="password" class="w-full mt-1 border rounded-lg px-3 py-2 bg-slate-50" placeholder="••••••••"/>
+        </div>
+
+        <button id="btnDoLogin" class="w-full bg-black text-white rounded-lg py-2.5">Accedi</button>
+        <p id="loginMsg" class="text-sm text-rose-600 min-h-[1.25rem]"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== APP ==================== -->
+  <main id="appShell" class="hidden min-h-screen">
+    <!-- Header / controlli -->
+    <header class="sticky top-0 z-20 bg-white/80 backdrop-blur border-b">
+      <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
+        <h1 class="text-xl md:text-2xl font-semibold">Listino Digitale</h1>
+
+        <div class="ml-auto flex items-center gap-2">
+          <input id="searchInput" class="border rounded-lg px-3 py-1.5 w-48 md:w-72" placeholder="Cerca codice o descrizione…" />
+          <select id="sortSelect" class="border rounded-lg px-3 py-1.5">
+            <option value="alpha">Nome A→Z</option>
+            <option value="priceAsc">Prezzo ↑</option>
+            <option value="priceDesc">Prezzo ↓</option>
+            <option value="newest">Più recenti</option>
+          </select>
+          <button id="btnLogout" class="px-3 py-1.5 rounded-lg border whitespace-nowrap">Esci</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Layout a 3 colonne -->
+    <div class="max-w-7xl mx-auto px-4 py-4 grid grid-cols-12 gap-4">
+      <!-- Colonna sinistra: categorie -->
+      <aside class="col-span-12 lg:col-span-3">
+        <div class="bg-white rounded-2xl shadow p-4">
+          <div class="mb-3 flex items-center justify-between">
+            <h2 class="font-semibold">Categorie</h2>
+          </div>
+          <div id="categoryList" class="flex flex-wrap gap-2 items-start">
+            <!-- riempito da JS -->
+          </div>
+        </div>
+      </aside>
+
+      <!-- Colonna centrale: prodotti -->
+      <section class="col-span-12 lg:col-span-6">
+        <div class="bg-white rounded-2xl shadow p-4">
+          <div id="resultInfo" class="text-sm text-gray-500 mb-2"></div>
+
+          <!-- grid/card dei prodotti (semplice, riempita da JS) -->
+          <div id="productGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <!-- riempito da JS -->
+          </div>
+
+          <!-- lista tabellare alternativa (se vorrai abilitarla) -->
+          <div id="listinoContainer" class="hidden"></div>
+        </div>
+      </section>
+
+      <!-- Colonna destra: preventivo -->
+      <aside class="col-span-12 lg:col-span-3">
+        <div id="quotePanel" class="bg-white rounded-2xl shadow p-4 overflow-x-auto">
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="font-semibold">Preventivo</h2>
+          </div>
+
+          <!-- Meta preventivo -->
+          <div class="grid grid-cols-1 gap-2 mb-3">
+            <input id="quoteName" class="border rounded-lg px-3 py-1.5" placeholder="Nominativo (obbligatorio)"/>
+            <input id="quoteDate" type="date" class="border rounded-lg px-3 py-1.5"/>
+            <p id="quoteMsg" class="text-sm text-rose-600"></p>
+          </div>
+
+          <!-- Tabella righe -->
+          <div class="overflow-x-auto">
+            <table id="quoteTable" class="min-w-full text-sm border-collapse">
+              <thead class="text-left border-b bg-slate-50">
+                <tr>
+                  <th class="border px-2 py-1">Codice</th>
+                  <th class="border px-2 py-1">Descrizione</th>
+                  <th class="border px-2 py-1 text-right">Prezzo</th>
+                </tr>
+              </thead>
+              <tbody id="quoteBody"></tbody>
+            </table>
+          </div>
+
+          <div class="mt-3 flex flex-col gap-2">
+            <div class="text-right text-sm">
+              Articoli: <span id="quoteItemsCount">0</span><br>
+              Totale: <strong id="quoteTotal">—</strong>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button id="btnExportXlsx" class="px-3 py-1.5 rounded-lg border whitespace-nowrap">Esporta Excel</button>
+              <button id="btnExportPdf" class="px-3 py-1.5 rounded-lg border whitespace-nowrap">Esporta PDF</button>
+              <button id="btnPrintQuote" class="px-3 py-1.5 rounded-lg border whitespace-nowrap">Stampa</button>
+              <button id="btnClearQuote" class="px-3 py-1.5 rounded-lg border whitespace-nowrap">Svuota</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Script principale (versionato per cache-busting) -->
+  <script src="script.js?v=1" defer></script>
 </body>
 </html>
