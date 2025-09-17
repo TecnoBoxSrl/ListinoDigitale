@@ -5,170 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <title>Listino Digitale</title>
 
-  <!-- Tailwind CDN (ok per demo; in produzione usare build) -->
+  <!-- Tailwind (solo per demo, in prod. meglio build) -->
   <script src="https://cdn.tailwindcss.com"></script>
 
+  <!-- Libreria Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.6/dist/umd/supabase.js" crossorigin="anonymous"></script>
+
+  <!-- Libreria jsPDF + Autotable -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+  <!-- Libreria XLSX -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
   <style>
+    /* Responsive mobile fix */
     html, body { height: 100%; }
     * { -webkit-tap-highlight-color: rgba(0,0,0,0); }
-    .scroll-touch, #quotePanel { -webkit-overflow-scrolling: touch; }
-
-    /* Evita zoom su input iOS */
     @media (max-width: 768px){
       input, select, button { font-size: 16px; }
     }
-
-    /* Safe-area per notch */
-    header, footer {
-      padding-left: max(env(safe-area-inset-left), 0px);
-      padding-right: max(env(safe-area-inset-right), 0px);
-    }
-
-    /* Quote table: mantenere colonne leggibili e niente doppi scroll */
     #quoteTable { table-layout: auto; min-width: max-content; }
-    #quoteTableWrap { overflow: visible; }
-
-    /* Stile descrizione in preventivo (va a capo) */
     .quote-desc { white-space: normal; word-break: break-word; line-height: 1.25; }
-
-    /* Chip categorie “tap-friendly” e allineati a sinistra */
-    #categoryList { display:flex; flex-wrap:wrap; gap:.5rem; align-items:flex-start; }
-    #categoryList button {
-      text-align:left; display:block; padding:.5rem .75rem; border-radius:.75rem;
-    }
-
-    /* Modal immagine: su mobile quasi full-screen */
-    @media (max-width: 640px){
-      #imgModal .max-w-3xl { width: 100vw; margin-top: 0; border-radius: 0; }
-      #imgPreview { max-height: 80vh; }
-    }
-
-    /* Griglia card: su telefoni molto stretti 1 colonna */
-    @media (max-width: 380px){
-      #productGrid { grid-template-columns: 1fr !important; }
-    }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
-  <!-- GATE AUTENTICAZIONE -->
-  <section id="authGate" class="min-h-screen flex items-center justify-center">
-    <div class="w-full max-w-md bg-white rounded-2xl shadow-xl p-6">
-      <h1 class="text-2xl font-semibold mb-1">Accedi</h1>
-      <p class="text-sm text-gray-600 mb-6">Inserisci le tue credenziali per continuare.</p>
-      <form id="loginForm" class="space-y-3">
-        <div>
-          <label class="text-sm font-medium">Email</label>
-          <input id="email" type="email" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="nome@azienda.it"/>
-        </div>
-        <div>
-          <label class="text-sm font-medium">Password</label>
-          <input id="password" type="password" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="••••••••"/>
-        </div>
-        <button class="w-full bg-black text-white rounded-lg py-2.5">Accedi</button>
-      </form>
-    </div>
-  </section>
+  <!-- ... il resto del tuo HTML ... -->
 
-  <!-- APP -->
-  <main id="appShell" class="hidden">
-    <header class="sticky top-0 z-30 bg-white/80 backdrop-blur border-b">
-      <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-2">
-        <button id="menuBtn" class="md:hidden px-3 py-2 border rounded-xl">Menu</button>
-        <h1 class="text-xl md:text-2xl font-semibold">Listino Digitale</h1>
-        <div class="ml-auto flex items-center gap-2">
-          <select id="sortSelect" class="hidden md:block border rounded-lg px-3 py-1.5">
-            <option value="name_asc">Nome A→Z</option>
-            <option value="name_desc">Nome Z→A</option>
-            <option value="price_asc">Prezzo ↑</option>
-            <option value="price_desc">Prezzo ↓</option>
-          </select>
-          <button id="exportBtn" class="px-3 py-1.5 rounded-lg border whitespace-nowrap">Esporta</button>
-          <button id="printBtn" class="px-3 py-1.5 rounded-lg border whitespace-nowrap">Stampa</button>
-          <button id="logoutBtn" class="px-3 py-1.5 rounded-lg border">Esci</button>
-        </div>
-      </div>
-      <!-- menu mobile -->
-      <div id="mobileMenu" class="md:hidden hidden border-t bg-white">
-        <div class="px-4 py-3 space-y-3">
-          <div>
-            <label class="text-sm">Ordina per</label>
-            <select id="sortSelectM" class="w-full border rounded-lg px-3 py-2">
-              <option value="name_asc">Nome A→Z</option>
-              <option value="name_desc">Nome Z→A</option>
-              <option value="price_asc">Prezzo ↑</option>
-              <option value="price_desc">Prezzo ↓</option>
-            </select>
-          </div>
-        </div>
-      </div>
-    </header>
+  <!-- Tuo script principale -->
+ <script src="script.js?v=1" defer></script>
 
-    <div class="max-w-7xl mx-auto px-4 py-4 grid grid-cols-12 gap-4">
-      <!-- CATEGORIE -->
-      <aside class="col-span-12 lg:col-span-3">
-        <div class="bg-white rounded-2xl shadow p-4">
-          <div class="mb-3 flex items-center justify-between">
-            <h2 class="font-semibold">Categorie</h2>
-            <button id="clearFilter" class="text-sm underline">Tutte</button>
-          </div>
-          <div id="categoryList"></div>
-        </div>
-      </aside>
-
-      <!-- PRODOTTI -->
-      <section class="col-span-12 lg:col-span-6">
-        <div class="bg-white rounded-2xl shadow p-4">
-          <div class="mb-3">
-            <input id="searchInput" class="w-full border rounded-lg px-3 py-2" placeholder="Cerca codice o descrizione..." />
-          </div>
-          <div id="productGrid" class="grid grid-cols-2 md:grid-cols-3 gap-3"></div>
-          <div id="noResults" class="hidden text-center text-gray-500 py-8">Nessun articolo trovato</div>
-        </div>
-      </section>
-
-      <!-- PREVENTIVO -->
-      <aside class="col-span-12 lg:col-span-3">
-        <div id="quotePanel" class="bg-white rounded-2xl shadow p-4 overflow-x-auto">
-          <div class="flex items-center justify-between mb-2">
-            <h2 class="font-semibold">Preventivo</h2>
-            <button id="clearQuote" class="text-sm underline">Svuota</button>
-          </div>
-          <div id="quoteTableWrap" class="overflow-x-auto">
-            <table id="quoteTable" class="min-w-full text-sm">
-              <thead class="text-left border-b">
-                <tr>
-                  <th class="py-1 pr-2">Sel</th>
-                  <th class="py-1 pr-2">Codice</th>
-                  <th class="py-1 pr-2">Descrizione</th>
-                  <th class="py-1 pr-2">Dimensione</th>
-                  <th class="py-1 pr-2">Unità</th>
-                  <th class="py-1 pr-2">Prezzo</th>
-                  <th class="py-1 pr-2">Conai</th>
-                  <th class="py-1 pr-2">Img</th>
-                </tr>
-              </thead>
-              <tbody id="quoteBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </aside>
-    </div>
-
-    <!-- Modal immagine -->
-    <div id="imgModal" class="hidden fixed inset-0 z-40 bg-black/60 items-start md:items-center justify-center p-0 md:p-6">
-      <div class="bg-white rounded-2xl shadow max-w-3xl w-full overflow-hidden">
-        <div class="p-2 border-b flex items-center justify-between">
-          <strong>Immagine articolo</strong>
-          <button id="imgClose" class="px-3 py-1.5 border rounded-lg">Chiudi</button>
-        </div>
-        <div class="p-3">
-          <img id="imgPreview" class="max-h-[70vh] w-auto mx-auto" alt="Anteprima" />
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <!-- Script app -->
-  <script src="script.js"></script>
 </body>
 </html>
