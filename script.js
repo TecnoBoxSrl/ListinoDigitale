@@ -1,23 +1,27 @@
 // ===============================
 // Listino Digitale – Tecnobox (vLG-8+PDF/Print) — FIXED
-// - Bugfix: rimosse tag HTML che rompevano il JS
-// - Responsive: quote panel 100% su mobile
-// - Overlay errori: se c’è un errore, lo vedi a schermo
 // ===============================
 
-/* === CONFIG (METTI I TUOI VALORI) === */
+/* === CONFIG === */
 const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
 const STORAGE_BUCKET = 'prodotti';
 
 /* === Supabase client === */
 let supabase;
-try {
+(async function ensureSupabase(){
+  if (!window.supabase) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.6/dist/umd/supabase.js";
+      s.crossOrigin = "anonymous";
+      s.onload = resolve; s.onerror = () => reject(new Error('SDK Supabase non caricato'));
+      document.head.appendChild(s);
+    });
+  }
   supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   console.log('[Boot] Supabase client OK');
-} catch (e) {
-  console.error('[Boot] Errore init Supabase:', e);
-}
+})();
 
 /* === Helpers === */
 const $ = (id) => document.getElementById(id);
@@ -117,7 +121,6 @@ function bindUI(){
   $('btnLogoutM')?.addEventListener('click', doLogout);
 
   $('searchInput')?.addEventListener('input', (e)=>{ state.search = normalize(e.target.value); renderView(); });
-
   $('sortSelect')?.addEventListener('change', (e)=>{ state.sort=e.target.value; renderView(); });
 }
 
