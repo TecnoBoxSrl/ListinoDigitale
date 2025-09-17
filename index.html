@@ -65,6 +65,14 @@
   display: block;     /* così occupano tutta la riga */
   width: 100%;        /* prendono la larghezza piena del contenitore */
 }
+
+/* Forza le tabelle prodotti a riempire la colonna senza scroll */
+#listinoContainer table {
+  width: 100%;
+  table-layout: fixed;  /* le colonne si adattano */
+  word-break: break-word;
+}
+
   </style>
 </head>
 <body class="bg-white text-slate-900">
