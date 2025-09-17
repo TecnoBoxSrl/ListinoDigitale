@@ -35,6 +35,12 @@ function resizeQuotePanel() {
   const table = document.getElementById('quoteTable');
   if (!panel || !table) return;
 
+  // su tablet e mobile: pannello a tutta larghezza
+  if (window.innerWidth <= 1024) {
+    panel.style.width = '100%';
+    return;
+  }
+
   // quanto spazio occupa la colonna delle categorie a sinistra (se presente)
   const leftAside = document.querySelector('aside.lg\\:col-span-3'); 
   const leftW = leftAside ? leftAside.getBoundingClientRect().width : 0;
@@ -50,6 +56,7 @@ function resizeQuotePanel() {
 
   panel.style.width = width + 'px';
 }
+
 window.addEventListener('resize', resizeQuotePanel);
 
 resizeQuotePanel();
