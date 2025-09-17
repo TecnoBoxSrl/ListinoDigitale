@@ -35,19 +35,18 @@ function resizeQuotePanel() {
   const table = document.getElementById('quoteTable');
   if (!panel || !table) return;
 
-  // quanto spazio occupa la colonna delle categorie a sinistra (se presente)
-  const leftAside = document.querySelector('aside.lg\\:col-span-3'); 
+  // Mobile & tablet: pannello fluido al 100%
+  if (window.innerWidth < 1024) {
+    panel.style.width = '100%';
+    return;
+  }
+
+  // Desktop: adatta alla larghezza della tabella, entro i limiti finestra
+  const leftAside = document.querySelector('aside.lg\:col-span-3');
   const leftW = leftAside ? leftAside.getBoundingClientRect().width : 0;
-
-  // quanto spazio serve per vedere tutta la tabella
-  const needed = (table.scrollWidth || 0) + 32; // un po’ di padding
-
-  // quanto possiamo al massimo (margine 24px lato finestra)
-  const max = Math.max(320, window.innerWidth - 24);
-
-  // usa il min tra needed e max, così se la tabella è enorme compare lo scroll esterno
+  const needed = (table.scrollWidth || 0) + 32;
+  const max = Math.max(420, window.innerWidth - 24);
   const width = Math.min(needed, max);
-
   panel.style.width = width + 'px';
 }
 window.addEventListener('resize', resizeQuotePanel);
@@ -161,7 +160,9 @@ function bindUI(){
 
   // Filtri
   $('sortSelect')?.addEventListener('change', (e)=>{ state.sort=e.target.value; renderView(); });
-  $('filterDisponibile')?.addEventListener('change', (e)=>{ state.onlyAvailable=e.target.checked; renderView(); });
+  
+  $('sortSelectM')?.addEventListener('change', (e)=>{ state.sort=e.target.value; renderView(); });
+$('filterDisponibile')?.addEventListener('change', (e)=>{ state.onlyAvailable=e.target.checked; renderView(); });
   $('filterNovita')?.addEventListener('change', (e)=>{ state.onlyNew=e.target.checked; renderView(); });
   $('filterPriceMax')?.addEventListener('input', (e)=>{
     const s = String(e.target.value||'').trim().replace(/\./g,'').replace(',','.');
