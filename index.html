@@ -35,7 +35,7 @@
   white-space: nowrap;
 }
 /* il wrapper della tabella non deve creare un secondo scrollbar */
-#quoteTableWrap { overflow: visible; }
+.quoteTableWrap { overflow: visible; }
 
 /* 3) Input quantità/sconto: larghezza fissa per non “ballare” */
 #quoteTable input[type="number"]{
@@ -144,7 +144,8 @@
     <h2 class="font-semibold text-left mb-3">Categorie</h2>
 
     <!-- PILLS CATEGORIE -->
-    <div id="categoryList" class="grid grid-cols-2 sm:grid-cols-1 gap-2 text-left"></div>
+    <div id="categoryList" class="grid grid-cols-2 sm:grid-cols-1 md:grid-cols-2 gap-2 text-left"></div>
+
 
    
   </div>
