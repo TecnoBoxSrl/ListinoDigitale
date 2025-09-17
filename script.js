@@ -1,5 +1,5 @@
 // ===============================
-// Listino Digitale – Tecnobox (vLG-8+PDF/Print) — FIXED
+// Listino Digitale – Tecnobox (robusto a schema variabile)
 // ===============================
 
 /* === CONFIG === */
@@ -7,7 +7,7 @@ const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
 const STORAGE_BUCKET = 'prodotti';
 
-/* === Supabase client === */
+/* === Supabase client (auto-caricamento SDK se manca) === */
 let supabase;
 (async function ensureSupabase(){
   if (!window.supabase) {
@@ -56,10 +56,9 @@ function resizeQuotePanel() {
   if (!panel || !table) return;
 
   if (window.innerWidth < 1024) {
-    panel.style.width = '100%';  // mobile full width
+    panel.style.width = '100%';
     return;
   }
-
   const needed = (table.scrollWidth || 0) + 32;
   const max = Math.max(320, window.innerWidth - 24);
   panel.style.width = Math.min(needed, max) + 'px';
@@ -72,7 +71,7 @@ const state = {
   items: [],
   view: 'listino',
   search: '',
-  sort: 'alpha',
+  sort: 'alpha',            // alpha | priceAsc | priceDesc | newest
   onlyAvailable: false,
   onlyNew: false,
   priceMax: null,
@@ -157,19 +156,49 @@ async function afterLogout(){
   renderQuotePanel();
 }
 
-/* ============ DATA ============ */
+/* ============ DATA (robusta a nomi colonna diversi) ============ */
 async function fetchProducts(){
+  const info = $('resultInfo');
   try{
-    const { data, error } = await supabase
-      .from('products')
-      .select('codice, descrizione, dimensione, categoria, prezzo, conai, unita, disponibile, novita, updated_at');
+    // Prendiamo tutto e poi mappiamo ai campi che ci servono con fallback.
+    const { data, error } = await supabase.from('products').select('*').order('descrizione', { ascending: true });
     if (error) throw error;
 
-    state.items = data || [];
+    const rows = Array.isArray(data) ? data : [];
+
+    state.items = rows.map(r => ({
+      codice:       r.codice || r.code || r.Codice || '',
+      descrizione:  r.descrizione || r.description || r.Descrizione || '',
+      dimensione:   r.dimensione || r.size || r.Dimensione || '',         // <-- niente errore se manca
+      categoria:    r.categoria || r.category || r.Categoria || 'Altro',
+      sottocategoria: r.sottocategoria || r.subcategory || '',
+      prezzo:       numberOrNull(r.prezzo ?? r.price),
+      conai:        numberOrNull(r.conai ?? r.CONAI),
+      unita:        r.unita || r.unit || r['unità'] || '',
+      disponibile:  boolish(r.disponibile ?? r.available),
+      novita:       boolish(r.novita ?? r.new),
+      updated_at:   r.updated_at || r.updatedAt || '',
+      img:          r.img || r.image || r.image_url || '',                // opzionale
+      tags:         Array.isArray(r.tags) ? r.tags : [],
+    }));
+
     buildCategories();
+    info && (info.textContent = `${state.items.length} articoli`);
   } catch(e){
-    showFatalError('fetchProducts: ' + e.message);
+    info && (info.textContent = 'Errore caricamento listino');
+    showFatalError('fetchProducts: ' + (e.message || String(e)));
   }
+}
+
+function numberOrNull(v){
+  const n = Number(v);
+  return isNaN(n) ? null : n;
+}
+function boolish(v){
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'string') return v === 'true' || v === '1' || v === 'si' || v === 'sì';
+  if (typeof v === 'number') return v === 1;
+  return false;
 }
 
 /* ============ CATEGORIE ============ */
@@ -180,57 +209,166 @@ function buildCategories(){
   const cats = Array.from(set).sort((a,b)=> a.localeCompare(b,'it'));
 
   box.innerHTML = '';
+
+  // Bottone "TUTTE"
   const allBtn = document.createElement('button');
   allBtn.textContent = 'TUTTE';
+  allBtn.className = chipClass(state.selectedCategory === 'Tutte');
   allBtn.onclick = ()=>{ state.selectedCategory='Tutte'; renderView(); buildCategories(); };
   box.appendChild(allBtn);
 
+  // Altre categorie
   cats.forEach(cat=>{
     const btn=document.createElement('button');
     btn.textContent=cat;
+    btn.className = chipClass(state.selectedCategory === cat);
     btn.onclick=()=>{ state.selectedCategory=cat; renderView(); buildCategories(); };
     box.appendChild(btn);
   });
+}
+function chipClass(active){
+  return [
+    'inline-flex items-center justify-center',
+    'rounded-xl border px-3 py-1.5 text-sm',
+    active ? 'bg-slate-200 border-slate-300 text-slate-900' : 'bg-white hover:bg-slate-50'
+  ].join(' ');
 }
 
 /* ============ RENDER ============ */
 function renderView(){
   const arr = applyFilters(state.items);
   const grid=$('productGrid');
-  grid.innerHTML='';
+  grid.innerHTML = '';
+
+  if (!arr.length){
+    grid.innerHTML = '<div class="col-span-full text-center text-slate-500 py-10">Nessun articolo.</div>';
+    renderQuotePanel();
+    return;
+  }
+
   arr.forEach(p=>{
-    const div=document.createElement('div');
-    div.className='border p-2';
-    div.innerHTML = `<b>${p.codice}</b> - ${p.descrizione} - ${fmtEUR(p.prezzo)} (Conai ${fmtEUR(p.conai)})`;
-    grid.appendChild(div);
+    const card=document.createElement('article');
+    card.className='border rounded-xl p-3 bg-white shadow-sm flex flex-col gap-2';
+    card.innerHTML = `
+      <div class="aspect-square bg-slate-100 rounded-lg overflow-hidden grid place-content-center">
+        ${p.img ? `<img src="${p.img}" alt="${escapeHtml(p.descrizione)}" class="w-full h-full object-contain" loading="lazy">`
+                 : `<span class="text-slate-400 text-sm">Nessuna immagine</span>`}
+      </div>
+      <div class="text-xs text-slate-500">${escapeHtml(p.codice)}</div>
+      <div class="font-medium">${escapeHtml(p.descrizione)}</div>
+      <div class="text-sm text-slate-600">${escapeHtml(p.dimensione || '')} <span class="ml-1">${escapeHtml(p.unita || '')}</span></div>
+      <div class="text-sm"><span class="font-semibold">${fmtEUR(p.prezzo)}</span> <span class="text-gray-500">(Conai ${fmtEUR(p.conai)})</span></div>
+      <div class="mt-auto">
+        <button class="addBtn px-3 py-1.5 border rounded-lg w-full">Aggiungi</button>
+      </div>
+    `;
+    card.querySelector('.addBtn')?.addEventListener('click', ()=> addToQuote(p));
+    grid.appendChild(card);
   });
+
   renderQuotePanel();
 }
 
 function applyFilters(arr){
   let out=[...arr];
-  if (state.selectedCategory!=='Tutte'){
-    out = out.filter(p=> (p.categoria||'Altro')===state.selectedCategory);
+
+  if (state.selectedCategory && state.selectedCategory !== 'Tutte'){
+    out = out.filter(p=> (p.categoria || 'Altro') === state.selectedCategory);
   }
   if (state.search){
     const q=state.search;
-    out = out.filter(p => normalize(p.codice+p.descrizione).includes(q));
+    out = out.filter(p => normalize((p.codice||'')+' '+(p.descrizione||'')+' '+(Array.isArray(p.tags)?p.tags.join(' '):'')).includes(q));
+  }
+  if (state.onlyAvailable) out = out.filter(p=>p.disponibile);
+  if (state.onlyNew) out = out.filter(p=>p.novita);
+  if (state.priceMax!=null) out = out.filter(p=> (p.prezzo!=null) && p.prezzo<=state.priceMax);
+
+  switch(state.sort){
+    case 'priceAsc':  out.sort((a,b)=>(a.prezzo??Infinity)-(b.prezzo??Infinity)); break;
+    case 'priceDesc': out.sort((a,b)=>(b.prezzo??-Infinity)-(a.prezzo??-Infinity)); break;
+    case 'newest':    out.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||'')); break;
+    default:          out.sort((a,b)=>(a.descrizione||'').localeCompare(b.descrizione||'','it')); break;
   }
   return out;
 }
 
 /* ============ PREVENTIVO ============ */
 function addToQuote(p){
-  state.selected.set(p.codice, {...p, qty:1, sconto:0});
+  const item = state.selected.get(p.codice) || {
+    codice: p.codice,
+    descrizione: p.descrizione,
+    prezzo: p.prezzo || 0,
+    conai: p.conai || 0,
+    qty: 1,
+    sconto: 0
+  };
+  if (state.selected.has(p.codice)) item.qty += 1;
+  state.selected.set(p.codice, item);
   renderQuotePanel();
 }
+function removeFromQuote(code){
+  state.selected.delete(code);
+  renderQuotePanel();
+}
+function lineCalc(it){
+  const sconto = Math.min(100, Math.max(0, Number(it.sconto || 0)));
+  const prezzoScont = Number(it.prezzo || 0) * (1 - sconto / 100);
+  const totale = prezzoScont * Number(it.qty || 0) + (Number(it.conai || 0) * Number(it.qty || 0));
+  return { prezzoScont, totale };
+}
 function renderQuotePanel(){
-  const body=$('quoteBody');
-  if (!body) return;
-  body.innerHTML='';
+  const body = $('quoteBody'), tot = $('quoteTotal'), cnt = $('quoteItemsCount');
+  if (!body || !tot) return;
+  body.innerHTML = '';
+
+  let total = 0;
+
   for (const it of state.selected.values()){
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${it.codice}</td><td>${it.descrizione}</td><td>${fmtEUR(it.prezzo)}</td>`;
+    const { prezzoScont, totale } = lineCalc(it);
+    total += totale;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="border px-2 py-1 font-mono">${escapeHtml(it.codice)}</td>
+      <td class="border px-2 py-1"><div class="quote-desc">${escapeHtml(it.descrizione)}</div></td>
+      <td class="border px-2 py-1 text-right">${fmtEUR(it.prezzo)}</td>
+    `;
     body.appendChild(tr);
   }
+
+  tot.textContent = fmtEUR(total);
+  if (cnt) cnt.textContent = state.selected.size;
+}
+
+/* ============ Export / stampa (opzionali) ============ */
+function validateQuoteMeta() {
+  const msg = document.getElementById('quoteMsg');
+  const nameEl = document.getElementById('quoteName');
+  const dateEl = document.getElementById('quoteDate');
+
+  if (!state.quoteMeta.name) {
+    if (msg) msg.textContent = 'Inserisci il nominativo prima di procedere.';
+    nameEl?.focus();
+    return false;
+  }
+  if (!state.quoteMeta.date) {
+    if (msg) msg.textContent = 'Inserisci la data del preventivo.';
+    dateEl?.focus();
+    return false;
+  }
+  if (state.selected.size === 0) {
+    if (msg) msg.textContent = 'Seleziona almeno un articolo.';
+    return false;
+  }
+  if (msg) msg.textContent = '';
+  return true;
+}
+
+function escapeHtml(s){
+  return String(s||'')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
 }
