@@ -2,11 +2,10 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <title>Listino Digitale – Tecnobox</title>
   <link rel="manifest" href="./manifest.webmanifest">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
+  <script src="https://cdn.tailwindcss.com"
     .glass{backdrop-filter:blur(12px);background:rgba(255,255,255,.6)}
     .tag{font-size:.75rem;padding:.125rem .5rem;border-radius:999px;border:1px solid rgba(0,0,0,.1)}
     .card:hover{transform:translateY(-2px);transition:.2s}
@@ -64,6 +63,41 @@
   text-align: left;   /* forza allineamento sinistra */
   display: block;     /* così occupano tutta la riga */
   width: 100%;        /* prendono la larghezza piena del contenitore */
+}
+  
+
+/* --- Responsive/mobile enhancements (added) --- */
+
+/* Smooth touch scrolling on iOS for scrollable areas */
+html, body { height: 100%; }
+* { -webkit-tap-highlight-color: rgba(0,0,0,0); }
+.scroll-touch, #quotePanel { -webkit-overflow-scrolling: touch; }
+
+/* Avoid iOS zoom on inputs */
+@media (max-width: 768px){
+  input, select, button { font-size: 16px; }
+}
+
+/* Safe-area paddings for devices with notches */
+header, footer {
+  padding-left: max(env(safe-area-inset-left), 0px);
+  padding-right: max(env(safe-area-inset-right), 0px);
+}
+
+/* Quote table wrapper: prevent double scrolls on small screens */
+#quoteTableWrap { overflow: visible; }
+
+/* Modal immagine: su mobile quasi full-screen */
+@media (max-width: 640px){
+  #imgModal .max-w-3xl { width: 100vw; margin-top: 0; border-radius: 0; }
+  #imgPreview { max-height: 80vh; }
+}
+
+/* Griglia card: 1 colonna sui telefoni extra stretti */
+@media (max-width: 380px){
+  #productGrid { grid-template-columns: 1fr !important; }
+}
+ contenitore */
 }
   </style>
 </head>
