@@ -280,6 +280,9 @@ async function afterLogout(){
   renderQuotePanel();
   $('productGrid') && ( $('productGrid').innerHTML='' );
   $('listinoContainer') && ( $('listinoContainer').innerHTML='' );
+    // 🔔 segnala che l'app è tornata in login → nascondi FAB
+  document.dispatchEvent(new Event('appHidden'));
+
 }
 
 /* ============ DATA ============ */
@@ -1060,7 +1063,10 @@ function syncFabVisibility(){
 document.addEventListener('appReady', function(){
   syncFabVisibility();
 });
-
+// Quando si torna alla login (logout) → nascondi sempre FAB
+document.addEventListener('appHidden', function(){
+  fab.style.display = 'none';
+});
       
 
       function getSelectedCount(){
