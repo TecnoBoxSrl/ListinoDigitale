@@ -93,7 +93,57 @@
 
   main > aside:last-of-type { display: none; }
 }
-    
+   /* ===== Tablet: categorie visibili con SCROLL VERTICALE, prodotti al massimo ===== */
+
+/* Tablet stretti: 768–899px → 1 colonna, categorie sticky con scroll; prodotti sotto, larghi */
+@media (min-width:768px) and (max-width:899.98px){
+  /* Preventivo destro nascosto: su tablet usi il drawer */
+  main > aside:last-of-type { display: none; }
+
+  /* CATEGORIE: riquadro verticale con scroll indipendente (restano visibili) */
+  #catsSticky{
+    position: sticky;
+    top: 92px;                          /* allinea sotto l’header sticky */
+    max-height: calc(100dvh - 92px - 16px);
+    overflow-y: auto;                   /* <-- SCORRIMENTO VERTICALE */
+  }
+
+  /* Mantieni lista verticale (no chip orizzontali) */
+  #categoryList { display: block; overflow: hidden; }
+  #categoryList button { display: block; width: 100%; }
+
+  /* AREA PRODOTTI: riempi tutta la larghezza disponibile del contenitore */
+  #listinoContainer { overflow-x: auto; }
+  #listinoContainer table { width: 100%; table-layout: fixed; }
+}
+
+/* Tablet larghi: 900–1199px → 2 colonne [categorie | prodotti]; categorie scroll verticali */
+@media (min-width:900px) and (max-width:1199.98px){
+  /* Griglia: colonna categorie + colonna prodotti che occupa il resto */
+  main{
+    display: grid;
+    grid-template-columns: 300px minmax(0,1fr);  /* puoi ridurre 300→280 se vuoi più spazio ai prodotti */
+    gap: 1rem;
+  }
+
+  /* Preventivo destro nascosto: su tablet usi il drawer */
+  main > aside:last-of-type { display: none; }
+
+  /* CATEGORIE: sempre visibili con scroll verticale indipendente */
+  #catsSticky{
+    position: sticky;
+    top: 92px;
+    max-height: calc(100dvh - 92px - 16px);
+    overflow-y: auto;                   /* <-- SCORRIMENTO VERTICALE */
+  }
+
+  #categoryList { display: block; overflow: hidden; }
+  #categoryList button { display: block; width: 100%; }
+
+  /* PRODOTTI: occupano tutto lo spazio della seconda colonna */
+  #listinoContainer { overflow-x: auto; }
+  #listinoContainer table { width: 100%; table-layout: fixed; }
+} 
   </style>
 </head>
 <body class="bg-white text-slate-900">
