@@ -703,6 +703,70 @@ function renderQuotePanel(){
       renderQuotePanel();
     });
   });
+
+
+
+
+  // ===== Migliora inserimento: il primo numero digitato SOSTITUISCE il valore =====
+
+  // Qty: seleziona tutto al focus e, se necessario, sovrascrive col primo numero
+  body.querySelectorAll('.inputQty').forEach(inp=>{
+    // seleziona tutto al focus
+    inp.addEventListener('focus', (e)=>{
+      e.target.select();
+      e.target.dataset._firstDigitHandled = 'false';
+    });
+
+    // se l'utente digita un numero come primo tasto → sovrascrivi il contenuto
+    inp.addEventListener('keydown', (e)=>{
+      const isDigit = /^[0-9]$/.test(e.key);
+      if (isDigit && e.target.dataset._firstDigitHandled !== 'true') {
+        // se non c'è selezione totale, forziamo la sostituzione
+        const allSelected = e.target.selectionStart === 0 && e.target.selectionEnd === e.target.value.length;
+        if (!allSelected) {
+          e.preventDefault();
+          e.target.value = e.key;               // prima cifra sostituisce tutto
+          // trigger 'input' per aggiornare lo stato/ricalc
+          e.target.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        e.target.dataset._firstDigitHandled = 'true';
+      }
+      if (e.key === 'Escape') { e.target.blur(); }   // qualità di vita
+    });
+  });
+
+  // Sconto: come qty, ma consenti anche backspace per ripartire da vuoto
+  body.querySelectorAll('.inputSconto').forEach(inp=>{
+    inp.addEventListener('focus', (e)=>{
+      e.target.select();
+      e.target.dataset._firstDigitHandled = 'false';
+    });
+
+    inp.addEventListener('keydown', (e)=>{
+      const isDigit = /^[0-9]$/.test(e.key);
+      if (isDigit && e.target.dataset._firstDigitHandled !== 'true') {
+        const allSelected = e.target.selectionStart === 0 && e.target.selectionEnd === e.target.value.length;
+        if (!allSelected) {
+          e.preventDefault();
+          e.target.value = e.key;               // prima cifra sostituisce tutto
+          e.target.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        e.target.dataset._firstDigitHandled = 'true';
+      }
+      if (e.key === 'Backspace' && e.target.dataset._firstDigitHandled !== 'true') {
+        // se premi backspace come prima azione, riparti da vuoto
+        e.preventDefault();
+        e.target.value = '';
+        e.target.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      if (e.key === 'Escape') { e.target.blur(); }
+    });
+  });
+  
+
+  
+
+  
 }
 // ⬇️ Regola la larghezza del pannello in base alla tabella
   resizeQuotePanel();
