@@ -658,8 +658,8 @@ function renderQuotePanel(){
                class="w-16 border rounded px-1 py-0.5 text-right inputSconto"
                data-code="${it.codice}" value="${Number(it.sconto) || 0}" step="1" min="0" max="100">
       </td>
-      <td class="border px-2 py-1 text-right">${fmtEUR(prezzoScont)}</td>
-      <td class="border px-2 py-1 text-right">${fmtEUR(totale)}</td>
+      <td class="border px-2 py-1 text-right cellPrezzoScont">${fmtEUR(prezzoScont)}</td>
+      <td class="border px-2 py-1 text-right cellTotaleRiga">${fmtEUR(totale)}</td>
       <td class="border px-2 py-1 text-center">
         <button class="text-rose-600 underline btnRemove" data-code="${it.codice}">Rimuovi</button>
       </td>
@@ -670,38 +670,55 @@ function renderQuotePanel(){
   tot.textContent = fmtEUR(total);
   if (cnt) cnt.textContent = state.selected.size;
 
-  // ---- LISTENERS ----
+  // --- Helpers LIVE per aggiornare una riga e il totale senza re-render ---
+  function updateRowCalcLive(rowEl, it){
+    const res = lineCalc(it);
+    const c1 = rowEl.querySelector('.cellPrezzoScont');
+    const c2 = rowEl.querySelector('.cellTotaleRiga');
+    if (c1) c1.textContent = fmtEUR(res.prezzoScont);
+    if (c2) c2.textContent = fmtEUR(res.totale);
+  }
+  function updateQuoteTotalLive(){
+    let t = 0;
+    for (const v of state.selected.values()){
+      t += lineCalc(v).totale;
+    }
+    const totEl = document.getElementById('quoteTotal');
+    if (totEl) totEl.textContent = fmtEUR(t);
+  }
 
-  // Debounce per non perdere il focus mentre si digita
-  if (!window.__quoteRerenderTimer) window.__quoteRerenderTimer = null;
-  const scheduleRerender = (delay=350)=>{
-    clearTimeout(window.__quoteRerenderTimer);
-    window.__quoteRerenderTimer = setTimeout(()=>{ renderQuotePanel(); }, delay);
-  };
-
-  // QTY: aggiorna stato durante la digitazione (debounce), commit su blur/Enter
+  // QTY: aggiorna lo stato mentre digiti, LIVE la riga e il totale; render completo su blur/Enter
   body.querySelectorAll('.inputQty').forEach(inp=>{
     inp.addEventListener('input', (e)=>{
+      const row  = e.currentTarget.closest('tr');
       const code = e.currentTarget.getAttribute('data-code');
-      const it = state.selected.get(code); if(!it) return;
+      const it   = state.selected.get(code); if(!it) return;
+
       const v = Math.max(1, parseInt(e.target.value || '1', 10));
       it.qty = v; state.selected.set(code, it);
-      scheduleRerender(350);
+
+      updateRowCalcLive(row, it);
+      updateQuoteTotalLive();
     });
+    // commit quando confermi
     inp.addEventListener('blur', ()=>{ renderQuotePanel(); });
     inp.addEventListener('keydown', (e)=>{ if (e.key==='Enter') { e.preventDefault(); renderQuotePanel(); } });
   });
 
-  // SCONTO: aggiorna stato durante la digitazione (debounce), commit su blur/Enter
+  // SCONTO: come QTY
   body.querySelectorAll('.inputSconto').forEach(inp=>{
     inp.addEventListener('input', (e)=>{
+      const row  = e.currentTarget.closest('tr');
       const code = e.currentTarget.getAttribute('data-code');
-      const it = state.selected.get(code); if(!it) return;
+      const it   = state.selected.get(code); if(!it) return;
+
       let v = parseInt(e.target.value || '0', 10);
       if (isNaN(v)) v = 0;
       v = Math.max(0, Math.min(100, v));
       it.sconto = v; state.selected.set(code, it);
-      scheduleRerender(350);
+
+      updateRowCalcLive(row, it);
+      updateQuoteTotalLive();
     });
     inp.addEventListener('blur', ()=>{ renderQuotePanel(); });
     inp.addEventListener('keydown', (e)=>{ if (e.key==='Enter') { e.preventDefault(); renderQuotePanel(); } });
