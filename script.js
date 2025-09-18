@@ -1051,7 +1051,16 @@ function escapeHtml(s){
         backdrop.style.display='none';
       }
 
-      fab.addEventListener('click', openDrawer);
+  fab.addEventListener('click', function(){
+    if (drawer.style.transform === 'translateX(0%)') {
+    closeDrawer();   // se è aperto → chiudi
+  } else {
+    openDrawer();    // se è chiuso → apri
+  }
+});
+
+  
+
       drawer.querySelector('#btnCloseDrawer').addEventListener('click', closeDrawer);
       backdrop.addEventListener('click', closeDrawer);
       window.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeDrawer(); });
