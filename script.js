@@ -31,7 +31,7 @@ const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{st
 
 
 function resizeQuotePanel() {
-  const panel = document.getElementById('quotePanel');
+  const panel = document.getElementById('quotePanel'); 
   const table = document.getElementById('quoteTable');
   if (!panel || !table) return;
 
