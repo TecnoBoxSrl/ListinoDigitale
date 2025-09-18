@@ -658,8 +658,8 @@ function renderQuotePanel(){
                class="w-16 border rounded px-1 py-0.5 text-right inputSconto"
                data-code="${it.codice}" value="${Number(it.sconto) || 0}" step="1" min="0" max="100">
       </td>
-      <td class="border px-2 py-1 text-right cellPrezzoScont">${fmtEUR(prezzoScont)}</td>
-      <td class="border px-2 py-1 text-right cellTotaleRiga">${fmtEUR(totale)}</td>
+     <td class="border px-2 py-1 text-right cellPrezzoScont">${fmtEUR(prezzoScont)}</td>
+<td class="border px-2 py-1 text-right cellTotaleRiga">${fmtEUR(totale)}</td>
       <td class="border px-2 py-1 text-center">
         <button class="text-rose-600 underline btnRemove" data-code="${it.codice}">Rimuovi</button>
       </td>
