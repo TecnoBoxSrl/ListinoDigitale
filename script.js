@@ -670,18 +670,29 @@ function renderQuotePanel(){
   tot.textContent = fmtEUR(total);
   if (cnt) cnt.textContent = state.selected.size;
 
-  // qty
+  // ---- LISTENERS ----
+
+  // Debounce per non perdere il focus mentre si digita
+  if (!window.__quoteRerenderTimer) window.__quoteRerenderTimer = null;
+  const scheduleRerender = (delay=350)=>{
+    clearTimeout(window.__quoteRerenderTimer);
+    window.__quoteRerenderTimer = setTimeout(()=>{ renderQuotePanel(); }, delay);
+  };
+
+  // QTY: aggiorna stato durante la digitazione (debounce), commit su blur/Enter
   body.querySelectorAll('.inputQty').forEach(inp=>{
     inp.addEventListener('input', (e)=>{
       const code = e.currentTarget.getAttribute('data-code');
       const it = state.selected.get(code); if(!it) return;
       const v = Math.max(1, parseInt(e.target.value || '1', 10));
       it.qty = v; state.selected.set(code, it);
-      renderQuotePanel();
+      scheduleRerender(350);
     });
+    inp.addEventListener('blur', ()=>{ renderQuotePanel(); });
+    inp.addEventListener('keydown', (e)=>{ if (e.key==='Enter') { e.preventDefault(); renderQuotePanel(); } });
   });
 
-  // sconto
+  // SCONTO: aggiorna stato durante la digitazione (debounce), commit su blur/Enter
   body.querySelectorAll('.inputSconto').forEach(inp=>{
     inp.addEventListener('input', (e)=>{
       const code = e.currentTarget.getAttribute('data-code');
@@ -690,11 +701,13 @@ function renderQuotePanel(){
       if (isNaN(v)) v = 0;
       v = Math.max(0, Math.min(100, v));
       it.sconto = v; state.selected.set(code, it);
-      renderQuotePanel();
+      scheduleRerender(350);
     });
+    inp.addEventListener('blur', ()=>{ renderQuotePanel(); });
+    inp.addEventListener('keydown', (e)=>{ if (e.key==='Enter') { e.preventDefault(); renderQuotePanel(); } });
   });
 
-  // rimuovi
+  // RIMUOVI: elimina riga e deseleziona l'articolo nella lista prodotti
   body.querySelectorAll('.btnRemove').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
       const code = e.currentTarget.getAttribute('data-code');
@@ -704,57 +717,46 @@ function renderQuotePanel(){
     });
   });
 
-
-
-
-  // ===== Migliora inserimento: il primo numero digitato SOSTITUISCE il valore =====
-
-  // Qty: seleziona tutto al focus e, se necessario, sovrascrive col primo numero
+  // ===== UX: al primo numero digitato SOSTITUISCE il contenuto =====
+  // Qty
   body.querySelectorAll('.inputQty').forEach(inp=>{
-    // seleziona tutto al focus
     inp.addEventListener('focus', (e)=>{
       e.target.select();
       e.target.dataset._firstDigitHandled = 'false';
     });
-
-    // se l'utente digita un numero come primo tasto → sovrascrivi il contenuto
     inp.addEventListener('keydown', (e)=>{
       const isDigit = /^[0-9]$/.test(e.key);
       if (isDigit && e.target.dataset._firstDigitHandled !== 'true') {
-        // se non c'è selezione totale, forziamo la sostituzione
         const allSelected = e.target.selectionStart === 0 && e.target.selectionEnd === e.target.value.length;
         if (!allSelected) {
           e.preventDefault();
-          e.target.value = e.key;               // prima cifra sostituisce tutto
-          // trigger 'input' per aggiornare lo stato/ricalc
+          e.target.value = e.key;                         // prima cifra sostituisce
           e.target.dispatchEvent(new Event('input', { bubbles: true }));
         }
         e.target.dataset._firstDigitHandled = 'true';
       }
-      if (e.key === 'Escape') { e.target.blur(); }   // qualità di vita
+      if (e.key === 'Escape') { e.target.blur(); }
     });
   });
 
-  // Sconto: come qty, ma consenti anche backspace per ripartire da vuoto
+  // Sconto
   body.querySelectorAll('.inputSconto').forEach(inp=>{
     inp.addEventListener('focus', (e)=>{
       e.target.select();
       e.target.dataset._firstDigitHandled = 'false';
     });
-
     inp.addEventListener('keydown', (e)=>{
       const isDigit = /^[0-9]$/.test(e.key);
       if (isDigit && e.target.dataset._firstDigitHandled !== 'true') {
         const allSelected = e.target.selectionStart === 0 && e.target.selectionEnd === e.target.value.length;
         if (!allSelected) {
           e.preventDefault();
-          e.target.value = e.key;               // prima cifra sostituisce tutto
+          e.target.value = e.key;
           e.target.dispatchEvent(new Event('input', { bubbles: true }));
         }
         e.target.dataset._firstDigitHandled = 'true';
       }
       if (e.key === 'Backspace' && e.target.dataset._firstDigitHandled !== 'true') {
-        // se premi backspace come prima azione, riparti da vuoto
         e.preventDefault();
         e.target.value = '';
         e.target.dispatchEvent(new Event('input', { bubbles: true }));
@@ -762,12 +764,12 @@ function renderQuotePanel(){
       if (e.key === 'Escape') { e.target.blur(); }
     });
   });
-  
-
-  
-
-  
 }
+
+
+
+
+
 // ⬇️ Regola la larghezza del pannello in base alla tabella
   resizeQuotePanel();
 
