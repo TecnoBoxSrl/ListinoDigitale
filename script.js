@@ -1036,3 +1036,38 @@ function escapeHtml(s){
     }
   });
 })();
+
+// === Aggiornamento FAB su selezione articoli ===
+function updateFabCount() {
+  try {
+    const fab = document.getElementById('btnDrawerQuote');
+    if (!fab) return;
+    const n = (window.state && window.state.selected) ? window.state.selected.size : 0;
+    fab.textContent = `Preventivo (${n})`;
+  } catch {}
+}
+
+// 1) Aggancio al render principale
+const origRenderQuotePanel = window.renderQuotePanel;
+if (typeof origRenderQuotePanel === 'function') {
+  window.renderQuotePanel = function(){
+    origRenderQuotePanel();
+    updateFabCount();
+  };
+}
+
+// 2) Aggancio anche ai click sugli articoli (checkbox o pulsanti di selezione)
+document.addEventListener('click', (e)=>{
+  if (e.target && e.target.closest('[data-add-to-quote]')) {
+    // se usi un attributo personalizzato per aggiungere articoli
+    updateFabCount();
+  }
+  if (e.target && e.target.type === 'checkbox') {
+    // se la selezione articoli avviene con checkbox
+    updateFabCount();
+  }
+});
+
+// 3) Aggiorno subito all’avvio
+document.addEventListener('DOMContentLoaded', updateFabCount);
+
