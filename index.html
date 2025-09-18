@@ -55,6 +55,44 @@
 
 /* --- Tablet (768–1199px) e Desktop (>=1200px) → categorie verticali (default) --- */
 /* non serve codice, restano come già sono (block w-full) */
+
+
+/* ===== Tablet: categorie con scroll verticale indipendente ===== */
+
+/* Tablet larghi: 900–1199px → 2 colonne: [categorie | prodotti] */
+@media (min-width:900px) and (max-width:1199.98px){
+  main {
+    display: grid;
+    grid-template-columns: 300px minmax(0,1fr);
+    gap: 1rem;
+  }
+  main > aside:last-of-type { display: none; }
+
+  #catsSticky{
+    position: sticky;
+    top: 92px;
+    max-height: calc(100dvh - 92px - 16px);
+    overflow-y: auto;
+  }
+
+  #categoryList { display: block; overflow: hidden; }
+  #categoryList button { display: block; width: 100%; }
+}
+
+/* Tablet stretti: 768–899px → 1 colonna, ma categorie sticky con scroll interno */
+@media (min-width:768px) and (max-width:899.98px){
+  #catsSticky{
+    position: sticky;
+    top: 92px;
+    max-height: calc(100dvh - 92px - 16px);
+    overflow-y: auto;
+  }
+
+  #categoryList { display: block; overflow: hidden; }
+  #categoryList button { display: block; width: 100%; }
+
+  main > aside:last-of-type { display: none; }
+}
     
   </style>
 </head>
@@ -130,7 +168,7 @@
       <!-- SX -->
     <!-- SX: CATEGORIE / FILTRI -->
 <aside class="lg:col-span-3">
-  <div class="glass rounded-2xl p-4 border">
+  <div id="catsSticky" class="glass rounded-2xl p-4 border">
     <h2 class="font-semibold text-left mb-3">Categorie</h2>
 
     <!-- PILLS CATEGORIE -->
