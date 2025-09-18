@@ -257,6 +257,12 @@ async function afterLogin(userId){
     showAuthGate(false);
     await fetchProducts();
     renderView();
+       renderView();
+
+    // 🔔 segnala che l'app è pronta → sblocca il FAB
+    document.dispatchEvent(new Event('appReady'));
+
+    
   } catch(e){
     console.error('[afterLogin] err:', e);
     const info = $('resultInfo');
@@ -435,7 +441,7 @@ if (state.selectedCategory && state.selectedCategory !== 'Tutte') {
   out = out.filter(p => (p.categoria || 'Altro') === state.selectedCategory);
 }
 
-<!--
+/*
   if (state._catKey) {
     out = out.filter(p => {
       const raw = (p.categoria ?? 'Altro').toString();
@@ -443,7 +449,7 @@ if (state.selectedCategory && state.selectedCategory !== 'Tutte') {
       return key === state._catKey;
     });
   }
--->
+*/
   if (state.search){
     const q=state.search;
     out = out.filter(p => normalize((p.codice||'')+' '+(p.descrizione||'')+' '+(p.tags||[]).join(' ')).includes(q));
@@ -979,6 +985,22 @@ function escapeHtml(s){
         fab.style.color='#fff';
         fab.style.boxShadow='0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -2px rgba(0,0,0,.05)';
         document.body.appendChild(fab);
+        
+        // Mostra FAB solo se l'app è attiva
+var appShell = document.getElementById('appShell');
+if (appShell && appShell.classList.contains('hidden')) {
+  fab.style.display = 'none';
+}
+
+// Quando l'app viene mostrata (dopo login) → attiva FAB
+document.addEventListener('appReady', function(){
+  // mostra solo sotto i 1200px; su desktop resta nascosto
+  fab.style.display = (window.innerWidth >= 1200) ? 'none' : 'inline-block';
+});
+
+        
+
+        
       }
 
       // Drawer + backdrop
