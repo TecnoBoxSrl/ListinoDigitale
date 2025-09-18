@@ -929,3 +929,60 @@ function escapeHtml(s){
     .replace(/"/g,'&quot;')
     .replace(/'/g,'&#039;');
 }
+
+
+
+// script.js modificato con drawer per tablet/mobile
+// (contenuto invariato fino a renderQuotePanel)
+
+// Aggiunta drawer preventivo
+document.addEventListener('DOMContentLoaded', ()=>{
+  const fab = document.createElement('button');
+  fab.id = 'btnDrawerQuote';
+  fab.textContent = 'Preventivo (0)';
+  fab.style.position='fixed';
+  fab.style.right='16px';
+  fab.style.bottom='16px';
+  fab.style.zIndex='9999';
+  fab.className='rounded-full bg-sky-600 text-white px-4 py-3 shadow-lg lg:hidden';
+  document.body.appendChild(fab);
+
+  const drawer = document.createElement('div');
+  drawer.id='drawerQuote';
+  drawer.className='fixed top-0 right-0 w-[90%] max-w-md h-full bg-white shadow-lg transform translate-x-full transition-transform lg:hidden z-50 overflow-auto';
+  drawer.innerHTML=`
+    <div class="p-3 border-b flex justify-between items-center">
+      <h3 class="font-semibold">Preventivo</h3>
+      <button id="btnCloseDrawer">✕</button>
+    </div>
+    <div class="p-3" id="drawerContent"></div>`;
+  document.body.appendChild(drawer);
+
+  const backdrop = document.createElement('div');
+  backdrop.id='drawerBackdrop';
+  backdrop.className='fixed inset-0 bg-black/40 hidden z-40 lg:hidden';
+  document.body.appendChild(backdrop);
+
+  const openDrawer = ()=>{
+    const qp = document.getElementById('quotePanel');
+    const dc = document.getElementById('drawerContent');
+    if (qp && dc) dc.innerHTML = qp.innerHTML;
+    drawer.classList.remove('translate-x-full');
+    backdrop.classList.remove('hidden');
+  };
+  const closeDrawer = ()=>{
+    drawer.classList.add('translate-x-full');
+    backdrop.classList.add('hidden');
+  };
+
+  fab.addEventListener('click', openDrawer);
+  backdrop.addEventListener('click', closeDrawer);
+  drawer.querySelector('#btnCloseDrawer').addEventListener('click', closeDrawer);
+
+  const updateFab = ()=>{ fab.textContent = `Preventivo (${state.selected.size})`; };
+  const origRenderQuotePanel = renderQuotePanel;
+  renderQuotePanel = function(){
+    origRenderQuotePanel();
+    updateFab();
+  };
+});
