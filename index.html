@@ -183,7 +183,39 @@
     overflow-y: auto;
   }
 }
+/* ===== Drawer Preventivo full-width su tablet (768–1199px) ===== */
+@media (min-width:768px) and (max-width:1199.98px){
+  /* Il pannello si allarga a TUTTA la larghezza del viewport */
+  #drawerQuote{
+    width: 100vw !important;
+    max-width: none !important;
+    left: 0 !important;     /* assicura copertura totale */
+    right: 0 !important;
+  }
 
+  /* Riduci padding interno per guadagnare spazio utile */
+  #drawerQuote #drawerContent{
+    padding: 8px 8px !important;
+  }
+
+  /* Assicura che il contenuto del preventivo sfrutti tutto lo spazio */
+  #drawerQuote #quotePanel{
+    width: 100% !important;
+    min-width: 100% !important;
+    display: block !important;
+  }
+
+  /* Dentro il preventivo: abilita scroll orizzontale della tabella se serve */
+  #drawerQuote .quoteTableWrap{
+    overflow-x: auto !important;
+  }
+
+  /* La tabella può estendersi oltre la larghezza, mantenendo colonne larghe */
+  #drawerQuote #quoteTable{
+    min-width: max-content !important;
+    table-layout: auto !important;
+  }
+}
     
   </style>
 </head>
