@@ -144,6 +144,47 @@
   #listinoContainer { overflow-x: auto; }
   #listinoContainer table { width: 100%; table-layout: fixed; }
 } 
+
+/* ===== Tablet (lg Tailwind): 1024–1199px =====
+   Forza il layout a 2 colonne: [categorie | prodotti],
+   e neutralizza i col-span di Tailwind sui figli. */
+@media (min-width:1024px) and (max-width:1199.98px){
+  /* 2 colonne: 300px categorie + resto ai prodotti */
+  main{
+    display: grid !important;
+    grid-template-columns: 300px minmax(0,1fr) !important;
+    gap: 1rem !important;
+  }
+
+  /* Posizionamento esplicito dei 3 blocchi (ordine DOM: aside sx, section, aside dx) */
+  main > aside:first-of-type{         /* CATEGORIE */
+    grid-column: 1 / 2 !important;
+  }
+  main > section{                     /* PRODOTTI */
+    grid-column: 2 / 3 !important;
+    min-width: 0 !important;          /* IMPORTANTISSIMO: consente di occupare tutto lo spazio */
+  }
+  main > aside:last-of-type{          /* PREVENTIVO: nascosto (usiamo il drawer) */
+    display: none !important;
+  }
+
+  /* Assicura che la tabella riempia la colonna prodotti */
+  #listinoContainer{ overflow-x: auto; }
+  #listinoContainer table{
+    width: 100% !important;
+    table-layout: fixed;
+  }
+
+  /* Categorie: riquadro con scroll verticale indipendente (se hai messo id="catsSticky") */
+  #catsSticky{
+    position: sticky;
+    top: 92px; /* allinea sotto l'header sticky */
+    max-height: calc(100dvh - 92px - 16px);
+    overflow-y: auto;
+  }
+}
+
+    
   </style>
 </head>
 <body class="bg-white text-slate-900">
