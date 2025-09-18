@@ -38,24 +38,24 @@
     #quotePanel button{ white-space: nowrap; }
     #categoryList button { text-align: left; display: block; width: 100%; }
     #listinoContainer table { width: 100%; table-layout: fixed; word-break: break-word; }
+/* --- Categorie orizzontali su cellulare (<768px) --- */
+@media (max-width:767px) {
+  #categoryList {
+    display: flex;
+    overflow-x: auto;
+    gap: .5rem;
+    flex-wrap: nowrap;
+  }
+  #categoryList button {
+    flex: 0 0 auto;
+    width: auto;
+    display: inline-block;
+  }
+}
 
-    /* --- Ottimizzazione per tablet --- */
-    @media (min-width:768px) and (max-width:1199px) {
-      main { grid-template-columns: 1fr; }
-      aside.lg\:col-span-3:last-of-type { display: none; }
-      #listinoContainer table th:nth-child(4),
-      #listinoContainer table td:nth-child(4),
-      #listinoContainer table th:nth-child(5),
-      #listinoContainer table td:nth-child(5),
-      #listinoContainer table th:nth-child(7),
-      #listinoContainer table td:nth-child(7),
-      #listinoContainer table th:nth-child(8),
-      #listinoContainer table td:nth-child(8) { display: none; }
-      #listinoContainer table th, 
-      #listinoContainer table td { padding: .5rem; font-size: .9rem; }
-      #categoryList { display: flex; overflow-x: auto; gap: .5rem; flex-wrap: nowrap; }
-      #categoryList button { flex: 0 0 auto; width: auto; display: inline-block; }
-    }
+/* --- Tablet (768–1199px) e Desktop (>=1200px) → categorie verticali (default) --- */
+/* non serve codice, restano come già sono (block w-full) */
+    
   </style>
 </head>
 <body class="bg-white text-slate-900">
