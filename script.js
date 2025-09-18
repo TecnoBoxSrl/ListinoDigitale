@@ -1043,11 +1043,25 @@ document.addEventListener('appReady', function(){
         document.body.appendChild(backdrop);
       }
 
-      function isDesktop(){ return window.innerWidth >= 1200; }
+      
 
-      function syncFabVisibility(){
-        fab.style.display = isDesktop() ? 'none' : 'inline-block';
-      }
+      function isDesktop(){ return window.innerWidth >= 1200; }
+function isAppActive(){
+  var app = document.getElementById('appShell');
+  return app && !app.classList.contains('hidden');
+}
+
+function syncFabVisibility(){
+  // Mostra il FAB solo se: non è desktop E l'app è visibile (non in login)
+  var shouldShow = !isDesktop() && isAppActive();
+  fab.style.display = shouldShow ? 'inline-block' : 'none';
+}
+// Quando l'app viene mostrata (dopo login) → aggiorna visibilità FAB
+document.addEventListener('appReady', function(){
+  syncFabVisibility();
+});
+
+      
 
       function getSelectedCount(){
         try { return (state && state.selected && typeof state.selected.size === 'number') ? state.selected.size : 0; }
