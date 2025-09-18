@@ -939,13 +939,17 @@ function escapeHtml(s){
 // === PATCH: Drawer preventivo (MOVE original #quotePanel) + FAB counter ===
 // Funziona su tablet/mobile, preserva eventi, input e bottoni del quotePanel.
 
+// === PATCH: Drawer preventivo (MOVE original #quotePanel) + FAB counter ===
+// Funziona su tablet/mobile, preserva eventi, input e bottoni del quotePanel.
+// Nota: qui usiamo 'state' (NON window.state).
+
 (function(){
   if (window.__drawerQuoteInit) return;
   window.__drawerQuoteInit = true;
 
   function docReady(fn){
-    if (document.readyState === 'complete' || document.readyState === 'interactive') { fn(); }
-    else { document.addEventListener('DOMContentLoaded', fn); }
+    if (document.readyState === 'complete' || document.readyState === 'interactive') fn();
+    else document.addEventListener('DOMContentLoaded', fn);
   }
 
   docReady(function initDrawer(){
@@ -953,62 +957,69 @@ function escapeHtml(s){
       var quotePanel = document.getElementById('quotePanel');
       if (!quotePanel) return;
 
-      // Host originale + placeholder
+      // Host originale + placeholder (per rimetterlo al suo posto)
       var host = quotePanel.parentElement;
       var placeholder = document.createElement('div');
       placeholder.id = 'quotePanelHost';
       host.insertBefore(placeholder, quotePanel.nextSibling);
 
-      // Bottone fluttuante FAB
-      var fab = document.createElement('button');
-      fab.id = 'btnDrawerQuote';
-      fab.textContent = 'Preventivo (0)';
-      fab.style.position='fixed';
-      fab.style.right='16px';
-      fab.style.bottom='16px';
-      fab.style.zIndex='9999';
-      fab.style.borderRadius='9999px';
-      fab.style.padding='12px 16px';
-      fab.style.background='#2563EB'; // sky-600
-      fab.style.color='#fff';
-      fab.style.boxShadow='0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -2px rgba(0,0,0,.05)';
-      document.body.appendChild(fab);
+      // Bottone fluttuante (FAB)
+      var fab = document.getElementById('btnDrawerQuote');
+      if (!fab){
+        fab = document.createElement('button');
+        fab.id = 'btnDrawerQuote';
+        fab.textContent = 'Preventivo (0)';
+        fab.style.position='fixed';
+        fab.style.right='16px';
+        fab.style.bottom='16px';
+        fab.style.zIndex='9999';
+        fab.style.borderRadius='9999px';
+        fab.style.padding='12px 16px';
+        fab.style.background='#2563EB'; // sky-600
+        fab.style.color='#fff';
+        fab.style.boxShadow='0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -2px rgba(0,0,0,.05)';
+        document.body.appendChild(fab);
+      }
 
-      // Drawer
-      var drawer = document.createElement('div');
-      drawer.id = 'drawerQuote';
-      drawer.style.position='fixed';
-      drawer.style.top='0';
-      drawer.style.right='0';
-      drawer.style.height='100dvh';
-      drawer.style.width='90vw';
-      drawer.style.maxWidth='420px';
-      drawer.style.background='#fff';
-      drawer.style.boxShadow='0 10px 15px rgba(0,0,0,.2)';
-      drawer.style.transform='translateX(100%)';
-      drawer.style.transition='transform .2s ease';
-      drawer.style.zIndex='9998';
-      drawer.style.display='flex';
-      drawer.style.flexDirection='column';
-      drawer.innerHTML =
-        '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb;">'
-        + '<h3 style="font-weight:600;margin:0">Preventivo</h3>'
-        + '<button id="btnCloseDrawer" aria-label="Chiudi" style="border:1px solid #e5e7eb;border-radius:8px;padding:4px 8px">✕</button>'
-        + '</div>'
-        + '<div id="drawerContent" style="flex:1;overflow:auto;padding:12px 16px"></div>';
-      document.body.appendChild(drawer);
-
+      // Drawer + backdrop
+      var drawer = document.getElementById('drawerQuote');
+      if (!drawer){
+        drawer = document.createElement('div');
+        drawer.id = 'drawerQuote';
+        drawer.style.position='fixed';
+        drawer.style.top='0';
+        drawer.style.right='0';
+        drawer.style.height='100dvh';
+        drawer.style.width='90vw';
+        drawer.style.maxWidth='420px';
+        drawer.style.background='#fff';
+        drawer.style.boxShadow='0 10px 15px rgba(0,0,0,.2)';
+        drawer.style.transform='translateX(100%)';
+        drawer.style.transition='transform .2s ease';
+        drawer.style.zIndex='9998';
+        drawer.style.display='flex';
+        drawer.style.flexDirection='column';
+        drawer.innerHTML =
+          '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb;">'
+          + '<h3 style="font-weight:600;margin:0">Preventivo</h3>'
+          + '<button id="btnCloseDrawer" aria-label="Chiudi" style="border:1px solid #e5e7eb;border-radius:8px;padding:4px 8px">✕</button>'
+          + '</div>'
+          + '<div id="drawerContent" style="flex:1;overflow:auto;padding:12px 16px"></div>';
+        document.body.appendChild(drawer);
+      }
       var drawerContent = drawer.querySelector('#drawerContent');
 
-      // Backdrop
-      var backdrop = document.createElement('div');
-      backdrop.id = 'drawerBackdrop';
-      backdrop.style.position='fixed';
-      backdrop.style.inset='0';
-      backdrop.style.background='rgba(0,0,0,.35)';
-      backdrop.style.zIndex='9997';
-      backdrop.style.display='none';
-      document.body.appendChild(backdrop);
+      var backdrop = document.getElementById('drawerBackdrop');
+      if (!backdrop){
+        backdrop = document.createElement('div');
+        backdrop.id = 'drawerBackdrop';
+        backdrop.style.position='fixed';
+        backdrop.style.inset='0';
+        backdrop.style.background='rgba(0,0,0,.35)';
+        backdrop.style.zIndex='9997';
+        backdrop.style.display='none';
+        document.body.appendChild(backdrop);
+      }
 
       function isDesktop(){ return window.innerWidth >= 1200; }
 
@@ -1016,16 +1027,18 @@ function escapeHtml(s){
         fab.style.display = isDesktop() ? 'none' : 'inline-block';
       }
 
+      function getSelectedCount(){
+        try { return (state && state.selected && typeof state.selected.size === 'number') ? state.selected.size : 0; }
+        catch(e){ return 0; }
+      }
+
       function updateFabCount(){
-        try{
-          var n = (window.state && window.state.selected) ? window.state.selected.size : 0;
-          fab.textContent = 'Preventivo (' + n + ')';
-        }catch(e){}
+        fab.textContent = 'Preventivo (' + getSelectedCount() + ')';
       }
 
       function openDrawer(){
         if (quotePanel && drawerContent && !drawerContent.contains(quotePanel)){
-          drawerContent.appendChild(quotePanel); // MOVE original
+          drawerContent.appendChild(quotePanel); // MOVE originale
         }
         drawer.style.transform='translateX(0%)';
         backdrop.style.display='block';
@@ -1043,7 +1056,7 @@ function escapeHtml(s){
       backdrop.addEventListener('click', closeDrawer);
       window.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeDrawer(); });
 
-      // Resize → se desktop, rimetti pannello
+      // Resize → su desktop rimettiamo a posto il pannello e nascondiamo FAB
       function onResize(){
         syncFabVisibility();
         if (isDesktop()){
@@ -1057,7 +1070,7 @@ function escapeHtml(s){
       window.addEventListener('resize', onResize);
       syncFabVisibility();
 
-      // Monkey-patch renderQuotePanel per aggiornare FAB
+      // 🔑 Aggancia il contatore al render del pannello
       var _origRenderQuotePanel = window.renderQuotePanel;
       if (typeof _origRenderQuotePanel === 'function'){
         window.renderQuotePanel = function(){
@@ -1066,7 +1079,7 @@ function escapeHtml(s){
         };
       }
 
-      // Patch anche add/remove se esistono
+      // 🔒 Rete di sicurezza: patcha add/remove se esistono
       if (typeof window.addToQuote === 'function'){
         var _origAdd = window.addToQuote;
         window.addToQuote = function(p){
@@ -1082,7 +1095,7 @@ function escapeHtml(s){
         };
       }
 
-      // Aggiorno subito al primo avvio
+      // Aggiorna subito al primo avvio
       updateFabCount();
 
     } catch(err){
