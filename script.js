@@ -936,94 +936,157 @@ function escapeHtml(s){
 // - renderQuotePanel, exportXlsx, exportPdf, printQuote, validateQuoteMeta, etc.
 
 // === PATCH: Drawer preventivo che sposta il quotePanel originale + Aggiorna FAB ===
+// === PATCH: Drawer preventivo (MOVE original #quotePanel) + FAB counter ===
+// Funziona su tablet/mobile, preserva eventi, input e bottoni del quotePanel.
+
 (function(){
   if (window.__drawerQuoteInit) return;
   window.__drawerQuoteInit = true;
 
-  document.addEventListener('DOMContentLoaded', ()=>{
-    const mqTabletMobile = window.matchMedia('(max-width: 1199px)');
-    const quotePanel = document.getElementById('quotePanel');
-    if (!quotePanel) return;
+  function docReady(fn){
+    if (document.readyState === 'complete' || document.readyState === 'interactive') { fn(); }
+    else { document.addEventListener('DOMContentLoaded', fn); }
+  }
 
-    let host = quotePanel.parentElement;
-    let placeholder = document.createElement('div');
-    placeholder.id = 'quotePanelHost';
-    host.insertBefore(placeholder, quotePanel.nextSibling);
+  docReady(function initDrawer(){
+    try{
+      var quotePanel = document.getElementById('quotePanel');
+      if (!quotePanel) return;
 
-    const fab = document.createElement('button');
-    fab.id = 'btnDrawerQuote';
-    fab.textContent = 'Preventivo (0)';
-    fab.style.position='fixed';
-    fab.style.right='16px';
-    fab.style.bottom='16px';
-    fab.style.zIndex='9999';
-    fab.className='rounded-full bg-sky-600 text-white px-4 py-3 shadow-lg lg:hidden';
-    document.body.appendChild(fab);
+      // Host originale + placeholder
+      var host = quotePanel.parentElement;
+      var placeholder = document.createElement('div');
+      placeholder.id = 'quotePanelHost';
+      host.insertBefore(placeholder, quotePanel.nextSibling);
 
-    const drawer = document.createElement('div');
-    drawer.id='drawerQuote';
-    drawer.className='fixed top-0 right-0 w-[90%] max-w-md h-full bg-white shadow-lg transform translate-x-full transition-transform lg:hidden z-50 flex flex-col';
-    drawer.innerHTML=`
-      <div class="p-3 border-b flex justify-between items-center">
-        <h3 class="font-semibold">Preventivo</h3>
-        <button id="btnCloseDrawer" aria-label="Chiudi">✕</button>
-      </div>
-      <div id="drawerContent" class="flex-1 overflow-auto p-3"></div>`;
-    document.body.appendChild(drawer);
+      // Bottone fluttuante FAB
+      var fab = document.createElement('button');
+      fab.id = 'btnDrawerQuote';
+      fab.textContent = 'Preventivo (0)';
+      fab.style.position='fixed';
+      fab.style.right='16px';
+      fab.style.bottom='16px';
+      fab.style.zIndex='9999';
+      fab.style.borderRadius='9999px';
+      fab.style.padding='12px 16px';
+      fab.style.background='#2563EB'; // sky-600
+      fab.style.color='#fff';
+      fab.style.boxShadow='0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -2px rgba(0,0,0,.05)';
+      document.body.appendChild(fab);
 
-    const backdrop = document.createElement('div');
-    backdrop.id='drawerBackdrop';
-    backdrop.className='fixed inset-0 bg-black/40 hidden z-40 lg:hidden';
-    document.body.appendChild(backdrop);
+      // Drawer
+      var drawer = document.createElement('div');
+      drawer.id = 'drawerQuote';
+      drawer.style.position='fixed';
+      drawer.style.top='0';
+      drawer.style.right='0';
+      drawer.style.height='100dvh';
+      drawer.style.width='90vw';
+      drawer.style.maxWidth='420px';
+      drawer.style.background='#fff';
+      drawer.style.boxShadow='0 10px 15px rgba(0,0,0,.2)';
+      drawer.style.transform='translateX(100%)';
+      drawer.style.transition='transform .2s ease';
+      drawer.style.zIndex='9998';
+      drawer.style.display='flex';
+      drawer.style.flexDirection='column';
+      drawer.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb;">'
+        + '<h3 style="font-weight:600;margin:0">Preventivo</h3>'
+        + '<button id="btnCloseDrawer" aria-label="Chiudi" style="border:1px solid #e5e7eb;border-radius:8px;padding:4px 8px">✕</button>'
+        + '</div>'
+        + '<div id="drawerContent" style="flex:1;overflow:auto;padding:12px 16px"></div>';
+      document.body.appendChild(drawer);
 
-    const drawerContent = drawer.querySelector('#drawerContent');
-    const btnClose = drawer.querySelector('#btnCloseDrawer');
+      var drawerContent = drawer.querySelector('#drawerContent');
 
-    function openDrawer(){
-      if (quotePanel && drawerContent && !drawerContent.contains(quotePanel)){
-        drawerContent.appendChild(quotePanel);
+      // Backdrop
+      var backdrop = document.createElement('div');
+      backdrop.id = 'drawerBackdrop';
+      backdrop.style.position='fixed';
+      backdrop.style.inset='0';
+      backdrop.style.background='rgba(0,0,0,.35)';
+      backdrop.style.zIndex='9997';
+      backdrop.style.display='none';
+      document.body.appendChild(backdrop);
+
+      function isDesktop(){ return window.innerWidth >= 1200; }
+
+      function syncFabVisibility(){
+        fab.style.display = isDesktop() ? 'none' : 'inline-block';
       }
-      drawer.classList.remove('translate-x-full');
-      backdrop.classList.remove('hidden');
-    }
-    function closeDrawer(){
-      if (placeholder && host && !host.contains(quotePanel)){
-        host.appendChild(quotePanel);
+
+      function updateFabCount(){
+        try{
+          var n = (window.state && window.state.selected) ? window.state.selected.size : 0;
+          fab.textContent = 'Preventivo (' + n + ')';
+        }catch(e){}
       }
-      drawer.classList.add('translate-x-full');
-      backdrop.classList.add('hidden');
-    }
 
-    fab.addEventListener('click', openDrawer);
-    backdrop.addEventListener('click', closeDrawer);
-    btnClose.addEventListener('click', closeDrawer);
-    window.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDrawer(); });
-
-    function handleResize(){
-      if (!mqTabletMobile.matches){
-        if (placeholder && host && !host.contains(quotePanel)){
-          host.appendChild(quotePanel);
+      function openDrawer(){
+        if (quotePanel && drawerContent && !drawerContent.contains(quotePanel)){
+          drawerContent.appendChild(quotePanel); // MOVE original
         }
-        drawer.classList.add('translate-x-full');
-        backdrop.classList.add('hidden');
+        drawer.style.transform='translateX(0%)';
+        backdrop.style.display='block';
       }
-    }
-    mqTabletMobile.addEventListener?.('change', handleResize);
-    window.addEventListener('resize', handleResize);
+      function closeDrawer(){
+        if (placeholder && host && !host.contains(quotePanel)){
+          host.appendChild(quotePanel); // MOVE back
+        }
+        drawer.style.transform='translateX(100%)';
+        backdrop.style.display='none';
+      }
 
-    // 🔑 Sovrascrivi renderQuotePanel UNA SOLA VOLTA
-    const origRenderQuotePanel = window.renderQuotePanel;
-    if (typeof origRenderQuotePanel === 'function'){
-      window.renderQuotePanel = function(){
-        origRenderQuotePanel();
-        try {
-          const n = (window.state && window.state.selected) ? window.state.selected.size : 0;
-          fab.textContent = `Preventivo (${n})`;
-        } catch {}
-      };
-      // Aggiorno subito all’avvio
-      window.renderQuotePanel();
+      fab.addEventListener('click', openDrawer);
+      drawer.querySelector('#btnCloseDrawer').addEventListener('click', closeDrawer);
+      backdrop.addEventListener('click', closeDrawer);
+      window.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeDrawer(); });
+
+      // Resize → se desktop, rimetti pannello
+      function onResize(){
+        syncFabVisibility();
+        if (isDesktop()){
+          if (placeholder && host && !host.contains(quotePanel)){
+            host.appendChild(quotePanel);
+          }
+          drawer.style.transform='translateX(100%)';
+          backdrop.style.display='none';
+        }
+      }
+      window.addEventListener('resize', onResize);
+      syncFabVisibility();
+
+      // Monkey-patch renderQuotePanel per aggiornare FAB
+      var _origRenderQuotePanel = window.renderQuotePanel;
+      if (typeof _origRenderQuotePanel === 'function'){
+        window.renderQuotePanel = function(){
+          _origRenderQuotePanel();
+          updateFabCount();
+        };
+      }
+
+      // Patch anche add/remove se esistono
+      if (typeof window.addToQuote === 'function'){
+        var _origAdd = window.addToQuote;
+        window.addToQuote = function(p){
+          _origAdd(p);
+          updateFabCount();
+        };
+      }
+      if (typeof window.removeFromQuote === 'function'){
+        var _origRem = window.removeFromQuote;
+        window.removeFromQuote = function(code){
+          _origRem(code);
+          updateFabCount();
+        };
+      }
+
+      // Aggiorno subito al primo avvio
+      updateFabCount();
+
+    } catch(err){
+      console.error('[Drawer Patch] init error', err);
     }
   });
 })();
-
