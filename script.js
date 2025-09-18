@@ -931,58 +931,108 @@ function escapeHtml(s){
 }
 
 
+// === PATCH: Drawer preventivo che **sposta** il quotePanel originale ===
+// Requisiti: esistenza di #quotePanel (come nel tuo index) e funzioni già definite:
+// - renderQuotePanel, exportXlsx, exportPdf, printQuote, validateQuoteMeta, etc.
 
-// script.js modificato con drawer per tablet/mobile
-// (contenuto invariato fino a renderQuotePanel)
+(function(){
+  // Evita doppie inizializzazioni
+  if (window.__drawerQuoteInit) return;
+  window.__drawerQuoteInit = true;
 
-// Aggiunta drawer preventivo
-document.addEventListener('DOMContentLoaded', ()=>{
-  const fab = document.createElement('button');
-  fab.id = 'btnDrawerQuote';
-  fab.textContent = 'Preventivo (0)';
-  fab.style.position='fixed';
-  fab.style.right='16px';
-  fab.style.bottom='16px';
-  fab.style.zIndex='9999';
-  fab.className='rounded-full bg-sky-600 text-white px-4 py-3 shadow-lg lg:hidden';
-  document.body.appendChild(fab);
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const mqTabletMobile = window.matchMedia('(max-width: 1199px)');
+    const quotePanel = document.getElementById('quotePanel');
+    if (!quotePanel) return;
 
-  const drawer = document.createElement('div');
-  drawer.id='drawerQuote';
-  drawer.className='fixed top-0 right-0 w-[90%] max-w-md h-full bg-white shadow-lg transform translate-x-full transition-transform lg:hidden z-50 overflow-auto';
-  drawer.innerHTML=`
-    <div class="p-3 border-b flex justify-between items-center">
-      <h3 class="font-semibold">Preventivo</h3>
-      <button id="btnCloseDrawer">✕</button>
-    </div>
-    <div class="p-3" id="drawerContent"></div>`;
-  document.body.appendChild(drawer);
+    // Host originale (dove sta il pannello sul desktop)
+    // Usiamo un placeholder per poter rimettere il pannello al suo posto quando chiudiamo/torniamo desktop
+    let host = quotePanel.parentElement;
+    let placeholder = document.createElement('div');
+    placeholder.id = 'quotePanelHost';
+    host.insertBefore(placeholder, quotePanel.nextSibling);
 
-  const backdrop = document.createElement('div');
-  backdrop.id='drawerBackdrop';
-  backdrop.className='fixed inset-0 bg-black/40 hidden z-40 lg:hidden';
-  document.body.appendChild(backdrop);
+    // Bottone fluttuante
+    const fab = document.createElement('button');
+    fab.id = 'btnDrawerQuote';
+    fab.textContent = 'Preventivo (0)';
+    fab.style.position='fixed';
+    fab.style.right='16px';
+    fab.style.bottom='16px';
+    fab.style.zIndex='9999';
+    fab.className='rounded-full bg-sky-600 text-white px-4 py-3 shadow-lg lg:hidden';
+    document.body.appendChild(fab);
 
-  const openDrawer = ()=>{
-    const qp = document.getElementById('quotePanel');
-    const dc = document.getElementById('drawerContent');
-    if (qp && dc) dc.innerHTML = qp.innerHTML;
-    drawer.classList.remove('translate-x-full');
-    backdrop.classList.remove('hidden');
-  };
-  const closeDrawer = ()=>{
-    drawer.classList.add('translate-x-full');
-    backdrop.classList.add('hidden');
-  };
+    // Drawer + backdrop
+    const drawer = document.createElement('div');
+    drawer.id='drawerQuote';
+    drawer.className='fixed top-0 right-0 w-[90%] max-w-md h-full bg-white shadow-lg transform translate-x-full transition-transform lg:hidden z-50 flex flex-col';
+    drawer.innerHTML=`
+      <div class="p-3 border-b flex justify-between items-center">
+        <h3 class="font-semibold">Preventivo</h3>
+        <button id="btnCloseDrawer" aria-label="Chiudi">✕</button>
+      </div>
+      <div id="drawerContent" class="flex-1 overflow-auto p-3"></div>`;
+    document.body.appendChild(drawer);
 
-  fab.addEventListener('click', openDrawer);
-  backdrop.addEventListener('click', closeDrawer);
-  drawer.querySelector('#btnCloseDrawer').addEventListener('click', closeDrawer);
+    const backdrop = document.createElement('div');
+    backdrop.id='drawerBackdrop';
+    backdrop.className='fixed inset-0 bg-black/40 hidden z-40 lg:hidden';
+    document.body.appendChild(backdrop);
 
-  const updateFab = ()=>{ fab.textContent = `Preventivo (${state.selected.size})`; };
-  const origRenderQuotePanel = renderQuotePanel;
-  renderQuotePanel = function(){
-    origRenderQuotePanel();
-    updateFab();
-  };
-});
+    const drawerContent = drawer.querySelector('#drawerContent');
+    const btnClose = drawer.querySelector('#btnCloseDrawer');
+
+    function openDrawer(){
+      // SPOSTA il pannello originale dentro il drawer (non cloniamo)
+      if (quotePanel && drawerContent && !drawerContent.contains(quotePanel)){
+        drawerContent.appendChild(quotePanel);
+      }
+      drawer.classList.remove('translate-x-full');
+      backdrop.classList.remove('hidden');
+    }
+    function closeDrawer(){
+      // Rimettiamo il pannello al suo host originale
+      if (placeholder && host && !host.contains(quotePanel)){
+        host.appendChild(quotePanel);
+      }
+      drawer.classList.add('translate-x-full');
+      backdrop.classList.add('hidden');
+    }
+
+    fab.addEventListener('click', openDrawer);
+    backdrop.addEventListener('click', closeDrawer);
+    btnClose.addEventListener('click', closeDrawer);
+    window.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDrawer(); });
+
+    // Se passo a desktop mentre il drawer è aperto, rimetto a posto
+    function handleResize(){
+      if (!mqTabletMobile.matches){
+        if (placeholder && host && !host.contains(quotePanel)){
+          host.appendChild(quotePanel);
+        }
+        drawer.classList.add('translate-x-full');
+        backdrop.classList.add('hidden');
+      }
+    }
+    mqTabletMobile.addEventListener?.('change', handleResize);
+    window.addEventListener('resize', handleResize);
+
+    // Aggiorna il testo del FAB con il numero di righe selezionate
+    const origRenderQuotePanel = window.renderQuotePanel;
+    if (typeof origRenderQuotePanel === 'function'){
+      window.renderQuotePanel = function(){
+        origRenderQuotePanel();
+        try{
+          const n = (window.state && window.state.selected) ? window.state.selected.size : 0;
+          fab.textContent = `Preventivo (${n})`;
+        }catch{ /* ignore */ }
+      };
+      // Aggiorna subito una volta all'avvio
+      try{
+        const n0 = (window.state && window.state.selected) ? window.state.selected.size : 0;
+        fab.textContent = `Preventivo (${n0})`;
+      }catch{}
+    }
+  });
+})();
