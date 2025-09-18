@@ -935,8 +935,8 @@ function escapeHtml(s){
 // Requisiti: esistenza di #quotePanel (come nel tuo index) e funzioni già definite:
 // - renderQuotePanel, exportXlsx, exportPdf, printQuote, validateQuoteMeta, etc.
 
+// === PATCH: Drawer preventivo che sposta il quotePanel originale + Aggiorna FAB ===
 (function(){
-  // Evita doppie inizializzazioni
   if (window.__drawerQuoteInit) return;
   window.__drawerQuoteInit = true;
 
@@ -945,14 +945,11 @@ function escapeHtml(s){
     const quotePanel = document.getElementById('quotePanel');
     if (!quotePanel) return;
 
-    // Host originale (dove sta il pannello sul desktop)
-    // Usiamo un placeholder per poter rimettere il pannello al suo posto quando chiudiamo/torniamo desktop
     let host = quotePanel.parentElement;
     let placeholder = document.createElement('div');
     placeholder.id = 'quotePanelHost';
     host.insertBefore(placeholder, quotePanel.nextSibling);
 
-    // Bottone fluttuante
     const fab = document.createElement('button');
     fab.id = 'btnDrawerQuote';
     fab.textContent = 'Preventivo (0)';
@@ -963,7 +960,6 @@ function escapeHtml(s){
     fab.className='rounded-full bg-sky-600 text-white px-4 py-3 shadow-lg lg:hidden';
     document.body.appendChild(fab);
 
-    // Drawer + backdrop
     const drawer = document.createElement('div');
     drawer.id='drawerQuote';
     drawer.className='fixed top-0 right-0 w-[90%] max-w-md h-full bg-white shadow-lg transform translate-x-full transition-transform lg:hidden z-50 flex flex-col';
@@ -984,7 +980,6 @@ function escapeHtml(s){
     const btnClose = drawer.querySelector('#btnCloseDrawer');
 
     function openDrawer(){
-      // SPOSTA il pannello originale dentro il drawer (non cloniamo)
       if (quotePanel && drawerContent && !drawerContent.contains(quotePanel)){
         drawerContent.appendChild(quotePanel);
       }
@@ -992,7 +987,6 @@ function escapeHtml(s){
       backdrop.classList.remove('hidden');
     }
     function closeDrawer(){
-      // Rimettiamo il pannello al suo host originale
       if (placeholder && host && !host.contains(quotePanel)){
         host.appendChild(quotePanel);
       }
@@ -1005,7 +999,6 @@ function escapeHtml(s){
     btnClose.addEventListener('click', closeDrawer);
     window.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDrawer(); });
 
-    // Se passo a desktop mentre il drawer è aperto, rimetto a posto
     function handleResize(){
       if (!mqTabletMobile.matches){
         if (placeholder && host && !host.contains(quotePanel)){
@@ -1018,56 +1011,19 @@ function escapeHtml(s){
     mqTabletMobile.addEventListener?.('change', handleResize);
     window.addEventListener('resize', handleResize);
 
-    // Aggiorna il testo del FAB con il numero di righe selezionate
+    // 🔑 Sovrascrivi renderQuotePanel UNA SOLA VOLTA
     const origRenderQuotePanel = window.renderQuotePanel;
     if (typeof origRenderQuotePanel === 'function'){
       window.renderQuotePanel = function(){
         origRenderQuotePanel();
-        try{
+        try {
           const n = (window.state && window.state.selected) ? window.state.selected.size : 0;
           fab.textContent = `Preventivo (${n})`;
-        }catch{ /* ignore */ }
+        } catch {}
       };
-      // Aggiorna subito una volta all'avvio
-      try{
-        const n0 = (window.state && window.state.selected) ? window.state.selected.size : 0;
-        fab.textContent = `Preventivo (${n0})`;
-      }catch{}
+      // Aggiorno subito all’avvio
+      window.renderQuotePanel();
     }
   });
 })();
-
-// === Aggiornamento FAB su selezione articoli ===
-function updateFabCount() {
-  try {
-    const fab = document.getElementById('btnDrawerQuote');
-    if (!fab) return;
-    const n = (window.state && window.state.selected) ? window.state.selected.size : 0;
-    fab.textContent = `Preventivo (${n})`;
-  } catch {}
-}
-
-// 1) Aggancio al render principale
-const origRenderQuotePanel = window.renderQuotePanel;
-if (typeof origRenderQuotePanel === 'function') {
-  window.renderQuotePanel = function(){
-    origRenderQuotePanel();
-    updateFabCount();
-  };
-}
-
-// 2) Aggancio anche ai click sugli articoli (checkbox o pulsanti di selezione)
-document.addEventListener('click', (e)=>{
-  if (e.target && e.target.closest('[data-add-to-quote]')) {
-    // se usi un attributo personalizzato per aggiungere articoli
-    updateFabCount();
-  }
-  if (e.target && e.target.type === 'checkbox') {
-    // se la selezione articoli avviene con checkbox
-    updateFabCount();
-  }
-});
-
-// 3) Aggiorno subito all’avvio
-document.addEventListener('DOMContentLoaded', updateFabCount);
 
