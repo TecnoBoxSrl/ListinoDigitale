@@ -493,35 +493,37 @@ function renderListino(){
     const table = document.createElement('table');
     table.className='w-full text-sm border-collapse';
     table.innerHTML=`
-      <thead class="bg-slate-100">
-        <tr>
-          <th class="border px-2 py-1 text-center w-8">Sel</th>
-          <th class="border px-2 py-1 text-left">Codice</th>
-          <th class="border px-2 py-1 text-left">Descrizione</th>
-<th class="border px-2 py-1 text-left">Dimensione</th>
-          <th class="border px-2 py-1 text-left">Unità di vendita</th>
-          <th class="border px-2 py-1 text-right">Prezzo</th>
-<th class="border px-2 py-1 text-right">Conai</th>
-          <th class="border px-2 py-1 text-center">Img</th>
-        </tr>
-      </thead>
-      <tbody></tbody>`;
+  <thead class="bg-slate-100">
+    <tr>
+      <th class="border px-2 py-1 text-center w-8">Sel</th>
+      <th class="border px-2 py-1 text-left col-code">Codice</th>
+      <th class="border px-2 py-1 text-left col-desc">Descrizione</th>
+      <th class="border px-2 py-1 text-left">Dimensione</th>
+      <th class="border px-2 py-1 text-left col-unit">Unità di vendita</th>
+      <th class="border px-2 py-1 text-right col-price">Prezzo</th>
+      <th class="border px-2 py-1 text-right col-conai">Conai</th>
+      <th class="border px-2 py-1 text-center col-img">Img</th>
+    </tr>
+  </thead>
+  <tbody></tbody>`;
+
     const tb = table.querySelector('tbody');
 
     for (const p of items){
       const tr = document.createElement('tr');
       const checked = state.selected.has(p.codice) ? 'checked' : '';
       tr.innerHTML = `
-        <td class="border px-2 py-1 text-center"><input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}></td>
-        <td class="border px-2 py-1 whitespace-nowrap font-mono">${p.codice||''}</td>
-        <td class="border px-2 py-1">
-          ${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}
-        </td>
-        <td class="border px-2 py-1">${p.dimensione||''}</td>        
-<td class="border px-2 py-1">${p.unita||''}</td>
-        <td class="border px-2 py-1 text-right">${fmtEUR(p.prezzo)}</td>
-       <td class="border px-2 py-1 text-right">${fmtEUR(p.conai)}</td>
-        <td class="border px-2 py-1 text-center">${p.img?`<button class="text-sky-600 underline btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>`:'—'}</td>`;
+        
+<td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${p.codice||''}</td>
+<td class="border px-2 py-1 col-desc">
+  ${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}
+</td>
+<td class="border px-2 py-1">${p.dimensione||''}</td>
+<td class="border px-2 py-1 col-unit">${p.unita||''}</td>
+<td class="border px-2 py-1 text-right col-price">${fmtEUR(p.prezzo)}</td>
+<td class="border px-2 py-1 text-right col-conai">${fmtEUR(p.conai)}</td>
+<td class="border px-2 py-1 text-center col-img">${p.img?`<button class="text-sky-600 underline btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>`:'—'}</td>
+
       tb.appendChild(tr);
     }
     container.appendChild(table);
