@@ -1165,12 +1165,23 @@ document.addEventListener('appHidden', ()=>{ fab.style.display = 'none'; });
   if (quotePanel && drawerContent && !drawerContent.contains(quotePanel)){
     drawerContent.appendChild(quotePanel); // MOVE originale
   }
+
+  // Calcola la larghezza della tabella
+  const table = document.getElementById('quoteTable');
+  let width = 600; // fallback minimo
+  if (table){
+    // larghezza tabella + un po' di padding
+    width = Math.min(table.scrollWidth + 48, window.innerWidth - 48);
+  }
+
+  drawer.style.width = width + 'px';  // 👈 non full-screen, ma quanto basta
+  drawer.style.maxWidth = '100vw';    // non superare viewport
   drawer.style.transform = 'translateX(0%)';
   backdrop.style.display = 'block';
 
-  // 🔒 blocca lo scroll dello sfondo
-  document.body.classList.add('modal-open');
+  document.body.classList.add('modal-open'); // blocca scroll sfondo
 }
+
 
 function closeDrawer(){
   if (placeholder && host && !host.contains(quotePanel)){
