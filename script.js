@@ -1076,6 +1076,9 @@ function escapeHtml(s){
         fab.style.color='#fff';
         fab.style.boxShadow='0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -2px rgba(0,0,0,.05)';
         document.body.appendChild(fab);
+
+syncFabVisibility(); // stato iniziale coerente
+
         
         // Mostra FAB solo se l'app è attiva
 var appShell = document.getElementById('appShell');
@@ -1083,11 +1086,7 @@ if (appShell && appShell.classList.contains('hidden')) {
   fab.style.display = 'none';
 }
 
-// Quando l'app viene mostrata (dopo login) → attiva FAB
-document.addEventListener('appReady', function(){
-  // mostra solo sotto i 1200px; su desktop resta nascosto
-  fab.style.display = (window.innerWidth >= 1200) ? 'none' : 'inline-block';
-});
+
 
         
 
