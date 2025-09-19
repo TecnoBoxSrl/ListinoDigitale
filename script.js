@@ -523,6 +523,7 @@ function renderListino(){
 <td class="border px-2 py-1 text-right col-price">${fmtEUR(p.prezzo)}</td>
 <td class="border px-2 py-1 text-right col-conai">${fmtEUR(p.conai)}</td>
 <td class="border px-2 py-1 text-center col-img">${p.img?`<button class="text-sky-600 underline btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>`:'—'}</td>
+;
 
       tb.appendChild(tr);
     }
