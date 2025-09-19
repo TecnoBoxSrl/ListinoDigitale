@@ -296,7 +296,14 @@
   }
 }
 
-    
+    /* Colonna "Sel" sempre in una riga */
+#listinoContainer th:first-child,
+#listinoContainer td:first-child {
+  white-space: nowrap;
+  text-align: center;
+  vertical-align: middle;
+}
+
   </style>
 </head>
 <body class="bg-white text-slate-900">
