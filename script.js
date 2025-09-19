@@ -1102,8 +1102,8 @@ if (appShell && appShell.classList.contains('hidden')) {
         drawer.style.top='0';
         drawer.style.right='0';
         drawer.style.height='100dvh';
-        drawer.style.width='90vw';
-        drawer.style.maxWidth='420px';
+        drawer.style.width='100vw';
+        drawer.style.maxWidth='none';
         drawer.style.background='#fff';
         drawer.style.boxShadow='0 10px 15px rgba(0,0,0,.2)';
         drawer.style.transform='translateX(100%)';
@@ -1161,20 +1161,28 @@ document.addEventListener('appHidden', ()=>{ fab.style.display = 'none'; });
         fab.textContent = 'Preventivo (' + getSelectedCount() + ')';
       }
 
-      function openDrawer(){
-        if (quotePanel && drawerContent && !drawerContent.contains(quotePanel)){
-          drawerContent.appendChild(quotePanel); // MOVE originale
-        }
-        drawer.style.transform='translateX(0%)';
-        backdrop.style.display='block';
-      }
-      function closeDrawer(){
-        if (placeholder && host && !host.contains(quotePanel)){
-          host.appendChild(quotePanel); // MOVE back
-        }
-        drawer.style.transform='translateX(100%)';
-        backdrop.style.display='none';
-      }
+     function openDrawer(){
+  if (quotePanel && drawerContent && !drawerContent.contains(quotePanel)){
+    drawerContent.appendChild(quotePanel); // MOVE originale
+  }
+  drawer.style.transform = 'translateX(0%)';
+  backdrop.style.display = 'block';
+
+  // 🔒 blocca lo scroll dello sfondo
+  document.body.classList.add('modal-open');
+}
+
+function closeDrawer(){
+  if (placeholder && host && !host.contains(quotePanel)){
+    host.appendChild(quotePanel); // MOVE back
+  }
+  drawer.style.transform = 'translateX(100%)';
+  backdrop.style.display = 'none';
+
+  // 🔓 riabilita lo scroll dello sfondo
+  document.body.classList.remove('modal-open');
+}
+
 
   fab.addEventListener('click', function(){
     if (drawer.style.transform === 'translateX(0%)') {
