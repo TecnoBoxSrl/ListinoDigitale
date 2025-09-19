@@ -1136,25 +1136,21 @@ document.addEventListener('appReady', function(){
 
       
 
-      function isDesktop(){ return window.innerWidth >= 1200; }
+     function isDesktop(){ return window.innerWidth >= 1200; }
 function isAppActive(){
   var app = document.getElementById('appShell');
   return app && !app.classList.contains('hidden');
 }
 
 function syncFabVisibility(){
-  // Mostra il FAB solo se: non è desktop E l'app è visibile (non in login)
-  var shouldShow = !isDesktop() && isAppActive();
-  fab.style.display = shouldShow ? 'inline-block' : 'none';
+  // FAB visibile SEMPRE quando l’app è attiva (anche su desktop)
+  fab.style.display = isAppActive() ? 'inline-block' : 'none';
 }
-// Quando l'app viene mostrata (dopo login) → aggiorna visibilità FAB
-document.addEventListener('appReady', function(){
-  syncFabVisibility();
-});
-// Quando si torna alla login (logout) → nascondi sempre FAB
-document.addEventListener('appHidden', function(){
-  fab.style.display = 'none';
-});
+
+// eventi di ciclo vita app
+document.addEventListener('appReady',  syncFabVisibility);
+document.addEventListener('appHidden', ()=>{ fab.style.display = 'none'; });
+
       
 
       function getSelectedCount(){
@@ -1196,16 +1192,11 @@ document.addEventListener('appHidden', function(){
       window.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeDrawer(); });
 
       // Resize → su desktop rimettiamo a posto il pannello e nascondiamo FAB
-      function onResize(){
-        syncFabVisibility();
-        if (isDesktop()){
-          if (placeholder && host && !host.contains(quotePanel)){
-            host.appendChild(quotePanel);
-          }
-          drawer.style.transform='translateX(100%)';
-          backdrop.style.display='none';
-        }
-      }
+     function onResize(){
+  // su resize aggiorniamo SOLO la visibilità del FAB
+  syncFabVisibility();
+}
+
       window.addEventListener('resize', onResize);
       syncFabVisibility();
 
