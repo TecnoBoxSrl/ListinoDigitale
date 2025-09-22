@@ -175,7 +175,7 @@ function bindUI(){
 
   // Vista
   $('viewListino')?.addEventListener('click', ()=>{ state.view='listino'; renderView(); });
-  $('viewCard')?.addEventListener('click', ()=>{ state.view='card';    renderView(); });
+ 
 
   // Ricerca live
   const handleSearch = (e)=>{ state.search = normalize(e.target.value); renderView(); };
