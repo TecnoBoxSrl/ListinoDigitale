@@ -1088,6 +1088,7 @@ function escapeHtml(s){
         fab.style.right='16px';
         fab.style.bottom='16px';
         fab.style.zIndex='9999';
+fab.style.pointerEvents='auto';
         fab.style.borderRadius='9999px';
         fab.style.padding='12px 16px';
         fab.style.background='#2563EB'; // sky-600
