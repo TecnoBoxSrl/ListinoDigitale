@@ -516,7 +516,7 @@ function renderListino(){
       <th class="border px-2 py-1 text-center w-8">Sel</th>
       <th class="border px-2 py-1 text-left col-code">Codice</th>
       <th class="border px-2 py-1 text-left col-desc">Descrizione</th>
-      <th class="border px-2 py-1 text-left">Dimensione</th>
+      <th class="border px-2 py-1 text-left col-dim">Dimensione</th>
       <th class="border px-2 py-1 text-left col-unit">Unità di vendita</th>
       <th class="border px-2 py-1 text-right col-price">Prezzo</th>
       <th class="border px-2 py-1 text-right col-conai">Conai</th>
@@ -535,7 +535,7 @@ function renderListino(){
 <td class="border px-2 py-1 text-center"><input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}></td>
         <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${p.codice||''}</td>
   
-<td class="border px-2 py-1 col-desc">
+<td border px-2 py-1 col-dim">
   ${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}
 </td>
 
