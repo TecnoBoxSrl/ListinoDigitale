@@ -580,6 +580,42 @@ function renderListino(){
 
       tb.appendChild(tr);
     }
+
+
+// 1) trova gli items di questa categoria
+const catItems = items; // già filtrati per questa categoria
+
+// 2) stato iniziale dell'header checkbox
+const headCb = table.querySelector('.selAllCat');
+if (headCb) {
+  const selCount = catItems.reduce((n, p) => n + (state.selected.has(p.codice) ? 1 : 0), 0);
+  if (selCount === 0) {
+    headCb.checked = false;
+    headCb.indeterminate = false;
+  } else if (selCount === catItems.length) {
+    headCb.checked = true;
+    headCb.indeterminate = false;
+  } else {
+    headCb.checked = false;
+    headCb.indeterminate = true; // parzialmente selezionati
+  }
+
+  // 3) click: seleziona / deseleziona tutti
+  headCb.addEventListener('change', (e) => {
+    const cat = decodeURIComponent(e.currentTarget.getAttribute('data-cat') || 'Altro');
+    if (e.currentTarget.checked) addCategoryToQuote(cat);
+    else removeCategoryFromQuote(cat);
+
+    // aggiorna stato visivo di tutte le checkbox riga di questa tabella
+    table.querySelectorAll('.selItem').forEach(cb => cb.checked = e.currentTarget.checked);
+    // stato header coerente
+    headCb.indeterminate = false;
+  });
+}
+
+
+    
+
     container.appendChild(table);
   }
 
