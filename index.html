@@ -390,6 +390,52 @@
 }
 
 
+
+
+    /* === FIX specifico: Phone portrait (<768px) === */
+@media (max-width: 767.98px) and (orientation: portrait){
+  /* Il contenitore consente lo scroll orizzontale */
+  #listinoContainer{ overflow-x:auto !important; }
+
+  /* La tabella può allargarsi, non collassare */
+  #listinoContainer table{
+    min-width: 680px !important;   /* 640–760: regola in base a quante colonne vuoi */
+    table-layout: auto !important;
+    width: auto !important;
+  }
+
+  /* Tutte le colonne “tecniche” restano su una riga */
+  th.col-code, td.col-code,
+  th.col-unit, td.col-unit,
+  th.col-price,td.col-price,
+  th.col-conai,td.col-conai{
+    white-space: nowrap !important;
+  }
+
+  /* Descrizione: UNA riga, non andare a capo */
+  th.col-desc, td.col-desc{
+    white-space: nowrap !important;
+  }
+  /* Se vuoi tagliare con puntini (consigliato su phone) */
+  td.col-desc{
+    max-width: 360px !important;   /* aumenta/diminuisci */
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  /* Categorie: chip su una sola riga con scroll orizzontale */
+  #categoryList{
+    display:flex !important;
+    flex-wrap:nowrap !important;
+    gap:.5rem;
+    overflow-x:auto !important;
+  }
+  #categoryList button{
+    flex:0 0 auto; white-space:nowrap;
+  }
+}
+
+    
     
   </style>
 </head>
@@ -604,7 +650,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- forza aggiornamento -->
-<script src="./script.js?v=tablet-drawer-61" defer></script>
+<script src="./script.js?v=tablet-drawer-62" defer></script>
 
 <div id="floatingActions"
      class="fixed z-[9999]
