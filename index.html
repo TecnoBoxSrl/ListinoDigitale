@@ -468,7 +468,17 @@
     line-height: 1.3;
   }
 }
-    
+  /* ===== Tablet (768–1199px): descrizione e dimensione su una riga intera ===== */
+@media (min-width:768px) and (max-width:1199.98px) {
+  #listinoContainer td.col-desc,
+  #listinoContainer th.col-desc,
+  #listinoContainer td.col-dim,
+  #listinoContainer th.col-dim {
+    white-space: nowrap !important;   /* tutto su una riga */
+    overflow: visible !important;     /* niente troncamenti */
+    text-overflow: clip !important;   /* no "..." */
+  }
+}  
   </style>
 </head>
 <body class="bg-white text-slate-900">
