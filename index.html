@@ -479,6 +479,46 @@
     text-overflow: clip !important;   /* no "..." */
   }
 }  
+
+/* ===== Tablet (768–1199px): tabella larga + no spezzature ===== */
+@media (min-width:768px) and (max-width:1199.98px){
+  /* il contenitore può scrollare in orizzontale */
+  #listinoContainer{ overflow-x:auto !important; }
+
+  /* la tabella si allarga quanto serve (niente fixed) */
+  #listinoContainer table{
+    min-width: 1200px !important;   /* regola se vuoi più/meno spazio */
+    table-layout: auto !important;
+  }
+
+  /* allinea meglio le celle */
+  #listinoContainer th, 
+  #listinoContainer td{
+    vertical-align: top;
+  }
+
+  /* larghezze consigliate per non “strizzare” il testo */
+  #listinoContainer .col-code  { width:120px !important; white-space:nowrap; }
+  #listinoContainer .col-desc  {
+    min-width:420px !important;
+    white-space:nowrap !important;
+    word-break:normal !important;
+    overflow-wrap:normal !important;   /* niente spezzature strane */
+    text-overflow:clip !important;
+  }
+  #listinoContainer .col-dim   {
+    min-width:220px !important;
+    white-space:nowrap !important;
+    word-break:normal !important;
+    overflow-wrap:normal !important;
+  }
+  #listinoContainer .col-unit  { width:140px !important; white-space:nowrap; }
+  #listinoContainer .col-price,
+  #listinoContainer .col-conai { width:120px !important; white-space:nowrap; text-align:right; }
+  #listinoContainer .col-img   { width:80px  !important; text-align:center; white-space:nowrap; }
+}
+
+
   </style>
 </head>
 <body class="bg-white text-slate-900">
