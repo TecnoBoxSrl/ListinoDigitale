@@ -530,24 +530,42 @@ function renderListino(){
     for (const p of items){
       const tr = document.createElement('tr');
       const checked = state.selected.has(p.codice) ? 'checked' : '';
-      tr.innerHTML = `
-        
-<td class="border px-2 py-1 text-center"><input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}></td>
-        <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${p.codice||''}</td>
-  
-<td border px-2 py-1 col-dim">
-  ${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}
-</td>
+     tr.innerHTML = `
+  <td class="border px-2 py-1 text-center">
+    <input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}>
+  </td>
 
-      
+  <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">
+    ${p.codice || ''}
+  </td>
 
+  <td class="border px-2 py-1 col-desc">
+    <div class="descText">
+      ${p.descrizione || ''} 
+      ${p.novita ? '<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>' : ''}
+    </div>
+  </td>
 
+  <td class="border px-2 py-1 col-dim">
+    ${p.dimensione || ''}
+  </td>
 
-        <td class="border px-2 py-1">${p.dimensione||''}</td>        
-<td class="border px-2 py-1 col-unit">${p.unita||''}</td>
-        <td class="border px-2 py-1 text-right col-price">${fmtEUR(p.prezzo)}</td>
-       <td class="border px-2 py-1 text-right col-conai">${fmtEUR(p.conai)}</td>
-        <td class="border px-2 py-1 text-center col-img">${p.img?`<button class="text-sky-600 underline btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>`:'—'}</td>`;
+  <td class="border px-2 py-1 col-unit">
+    ${p.unita || ''}
+  </td>
+
+  <td class="border px-2 py-1 text-right col-price">
+    ${fmtEUR(p.prezzo)}
+  </td>
+
+  <td class="border px-2 py-1 text-right col-conai">
+    ${fmtEUR(p.conai)}
+  </td>
+
+  <td class="border px-2 py-1 text-center col-img">
+    ${p.img ? `<button class="text-sky-600 underline btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>` : '—'}
+  </td>
+`;
 
 
 
