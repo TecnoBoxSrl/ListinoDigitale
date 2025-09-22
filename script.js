@@ -268,29 +268,62 @@ async function doLogout(){
 
 async function afterLogin(userId){
   try{
-    // ruolo (opzionale)
-    let role='agent';
-    const { data: prof, error: perr } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle();
-    if (perr) console.warn('[Profiles] warn:', perr.message);
-    if (prof?.role==='admin') role='admin';
-    state.role=role;
+    // Provo a leggere ruolo + display_name dal profilo
+    let role = 'agent';
+    let displayName = '';
 
+    const { data: prof, error: perr } = await supabase
+      .from('profiles')
+      .select('role, display_name')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (perr) console.warn('[Profiles] warn:', perr.message);
+    if (prof?.role === 'admin') role = 'admin';
+    if (prof?.display_name) displayName = prof.display_name;
+
+    // Fallback: prendo anche l'utente auth per full_name/email
+    const { data: userRes } = await supabase.auth.getUser();
+    const user = userRes?.user;
+    if (!displayName) {
+      displayName = user?.user_metadata?.full_name
+                 || user?.user_metadata?.name
+                 || user?.email
+                 || '';
+    }
+
+    state.role = role;
+
+    // Mostra app
     showAuthGate(false);
+
+    // Mostra il nome nell'header (desktop e, se vuoi, mobile)
+    const nameEl = document.getElementById('userName');
+    if (nameEl) {
+      nameEl.textContent = displayName ? `👤 ${displayName}` : '';
+      nameEl.classList.remove('hidden');
+    }
+    const nameElM = document.getElementById('userNameM');
+    if (nameElM) {
+      nameElM.textContent = displayName;
+      nameElM.classList.remove('hidden');
+    }
+
+    // Dati + UI
     await fetchProducts();
     renderView();
-       renderView();
 
-    // 🔔 segnala che l'app è pronta → sblocca il FAB
+    // sblocca FAB
     document.dispatchEvent(new Event('appReady'));
 
-    
   } catch(e){
     console.error('[afterLogin] err:', e);
     const info = $('resultInfo');
     if (info) info.textContent = 'Errore caricamento listino';
   }
 }
-// ⬇️ Regola la larghezza del pannello in base alla tabella
+
+
   resizeQuotePanel();
 
 async function afterLogout(){
@@ -301,6 +334,13 @@ async function afterLogout(){
   renderQuotePanel();
   $('productGrid') && ( $('productGrid').innerHTML='' );
   $('listinoContainer') && ( $('listinoContainer').innerHTML='' );
+
+// nascondi nome utente
+  const nameEl = document.getElementById('userName');
+  if (nameEl) { nameEl.textContent = ''; nameEl.classList.add('hidden'); }
+  const nameElM = document.getElementById('userNameM');
+  if (nameElM) { nameElM.textContent = ''; nameElM.classList.add('hidden'); }
+
     // 🔔 segnala che l'app è tornata in login → nascondi FAB
   document.dispatchEvent(new Event('appHidden'));
 
