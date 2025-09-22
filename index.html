@@ -517,19 +517,19 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- forza aggiornamento -->
-<script src="./script.js?v=tablet-drawer-46" defer></script>
+<script src="./script.js?v=tablet-drawer-47" defer></script>
 
 
-<!-- Floating actions (contenitore fisso) -->
 <div id="floatingActions"
-     class="fixed z-50 bottom-[max(1.25rem,env(safe-area-inset-bottom))]
+     class="fixed z-[9999] bottom-[max(1.25rem,env(safe-area-inset-bottom))]
                     right-[max(1.25rem,env(safe-area-inset-right))]
-                    flex items-center gap-3 pointer-events-none">
-  <!-- il FAB viene spostato qui via JS -->
+                    flex items-center gap-3">
+  <!-- FAB verrà inserito qui da JS -->
   <button id="btnBackToTop"
-          class="hidden pointer-events-auto rounded-full bg-sky-600 text-white w-12 h-12 shadow-lg hover:bg-sky-700 transition grid place-items-center"
+          class="hidden rounded-full bg-sky-600 text-white w-12 h-12 shadow-lg hover:bg-sky-700 transition grid place-items-center"
           aria-label="Torna su">↑</button>
 </div>
+
 
 
 </body>
