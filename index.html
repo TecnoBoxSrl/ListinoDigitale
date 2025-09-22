@@ -362,6 +362,32 @@
 
 
 
+/* ===== SOLO CELLULARE VERTICALE (portrait) ===== */
+@media (max-width: 767.98px) and (orientation: portrait) {
+  /* Categorie tutte in una riga, scroll orizzontale */
+  #categoryList {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: .5rem;
+  }
+  #categoryList button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  /* Tabella prodotti → descrizione su una riga sola con scroll */
+  #listinoContainer table {
+    table-layout: auto;
+    min-width: max-content; /* permette scorrimento orizzontale */
+  }
+  #listinoContainer td.col-desc {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* ... se troppo lunga */
+    max-width: 300px; /* regola tu il limite */
+  }
+}
 
 
     
@@ -578,7 +604,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- forza aggiornamento -->
-<script src="./script.js?v=tablet-drawer-60" defer></script>
+<script src="./script.js?v=tablet-drawer-61" defer></script>
 
 <div id="floatingActions"
      class="fixed z-[9999]
