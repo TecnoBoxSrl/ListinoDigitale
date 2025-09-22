@@ -304,6 +304,39 @@
   vertical-align: middle;
 }
 
+/* === Phone PORTRAIT (<768px) === */
+@media (max-width: 767.98px) and (orientation: portrait){
+
+  /* contenitore: abilita scroll orizzontale */
+  #listinoContainer { overflow-x: auto; }
+
+  /* la tabella può allargarsi e andare in scroll */
+  #listinoContainer table {
+    min-width: 720px;          /* forza larghezza utile per le colonne */
+    table-layout: fixed;       /* distribuisce lo spazio */
+  }
+
+  /* colonne numeriche/codici non vanno a capo */
+  .col-code, .col-unit, .col-price, .col-conai { white-space: nowrap; }
+
+  /* descrizione: massimo 2 righe (clamp) */
+  .desc-2lines {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;     /* limite righe */
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.25;
+    word-break: break-word;
+  }
+
+  /* opzionale: cella descrizione può accettare capo */
+  .col-desc { white-space: normal; }
+}
+
+
+
+
+    
   </style>
 </head>
 <body class="bg-white text-slate-900">
@@ -517,7 +550,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- forza aggiornamento -->
-<script src="./script.js?v=tablet-drawer-54" defer></script>
+<script src="./script.js?v=tablet-drawer-55" defer></script>
 
 <div id="floatingActions"
      class="fixed z-[9999]
