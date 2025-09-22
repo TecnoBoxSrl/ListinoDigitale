@@ -1269,3 +1269,24 @@ function closeDrawer(){
     }
   });
 })();
+
+// === Back to Top button ===
+(function(){
+  const btn = document.getElementById('btnBackToTop');
+  if (!btn) return;
+
+  // Mostra/nasconde il pulsante quando scrolli
+  window.addEventListener('scroll', ()=>{
+    if (window.scrollY > 300) {
+      btn.classList.remove('hidden');
+    } else {
+      btn.classList.add('hidden');
+    }
+  });
+
+  // Azione click: scroll su
+  btn.addEventListener('click', ()=>{
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+
