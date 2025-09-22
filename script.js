@@ -541,11 +541,8 @@ function renderListino(){
   </div>
 </td>
       
-/*
- <td class="border px-2 py-1 col-desc">
-          ${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}
-        </td>
-*/
+
+
 
         <td class="border px-2 py-1">${p.dimensione||''}</td>        
 <td class="border px-2 py-1 col-unit">${p.unita||''}</td>
