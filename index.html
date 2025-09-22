@@ -304,29 +304,34 @@
   vertical-align: middle;
 }
 
-/* === Phone PORTRAIT (<768px) === */
+/* === PHONE PORTRAIT: descrizione in UNA riga, tabella scorrevole === */
 @media (max-width: 767.98px) and (orientation: portrait){
 
-  /* Contenitore tabella scorrevole in orizzontale */
-  #listinoContainer { overflow-x: auto; }
+  /* il contenitore può scorrere orizzontalmente */
+  #listinoContainer { 
+    overflow-x: auto; 
+  }
 
-  /* La tabella può superare la viewport, così scorre */
+  /* la tabella può allargarsi quanto serve */
   #listinoContainer table {
-    min-width: 720px;         /* adatta se serve più o meno spazio */
-    table-layout: auto;
+    min-width: max-content;    /* più robusto di 720px perché segue il contenuto */
+    table-layout: auto;        /* lascia respirare le colonne */
   }
 
-  /* Tutte le celle vanno a capo tranne codici/unità/prezzo */
-  .col-desc { 
-    white-space: normal !important; 
-    word-break: break-word; 
-    line-height: 1.3;
+  /* Descrizione: UNA riga, niente spezzature */
+  .col-desc {
+    white-space: nowrap !important;
+    word-break: normal !important;
+    overflow: visible;         /* assicurati che non ci siano clip */
+    hyphens: none;             /* evita sillabazione automatica */
   }
 
+  /* Le tecniche restano compatte (già lo sono, ribadisco) */
   .col-code, .col-unit, .col-price, .col-conai { 
     white-space: nowrap; 
   }
 }
+
 
 
 
@@ -546,7 +551,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- forza aggiornamento -->
-<script src="./script.js?v=tablet-drawer-58" defer></script>
+<script src="./script.js?v=tablet-drawer-59" defer></script>
 
 <div id="floatingActions"
      class="fixed z-[9999]
