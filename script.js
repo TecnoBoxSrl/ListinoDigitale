@@ -484,20 +484,18 @@ scrollToProductsTopDesktop();  // 👈 aggiungi questa riga
 
 /* ============ RENDER SWITCH ============ */
 function renderView(){
-  const grid=$('productGrid'), listino=$('listinoContainer');
-  if (!grid || !listino) return;
+  const listino = $('listinoContainer');
+  if (!listino) return;
 
-  if (state.view==='listino'){
-    grid.classList.add('hidden');
-    listino.classList.remove('hidden');
-    renderListino();
-  } else {
-    listino.classList.add('hidden');
-    grid.classList.remove('hidden');
-    renderCards();
-  }
-  renderQuotePanel(); // sync pannello a destra
+  // Se in futuro rimetti la vista card, questo continua a funzionare:
+  const grid = $('productGrid'); // può essere null
+  if (grid) grid.classList.add('hidden');   // nascondi sempre la card view
+  listino.classList.remove('hidden');       // mostra il listino tabellare
+
+  renderListino();
+  renderQuotePanel(); // sincronizza il pannello preventivo
 }
+
 
 /* ============ FILTRI ============ */
 function applyFilters(arr){
