@@ -487,22 +487,18 @@
     <header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
 
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-sky-500 grid place-content-center text-white font-bold">TB</div>
+        <div class="w-10 h-10 rounded-xl bg-sky-500 grid place-content-center text-white font-bold">Tecno Box</div>
         <div class="flex-1">
           <h2 class="text-lg font-semibold">Listino Digitale</h2>
           <p class="text-xs text-slate-500">Accesso riservato agli agenti</p>
         </div>
 
-        <div class="hidden md:flex items-center gap-2">
-          <input id="searchInput" type="search" placeholder="Cerca prodotti…" class="w-72 rounded-xl border px-3 py-2 text-sm">
-          <select id="sortSelect" class="rounded-xl border px-3 py-2 text-sm">
-            <option value="alpha">A→Z</option>
-            <option value="priceAsc">Prezzo ↑</option>
-            <option value="priceDesc">Prezzo ↓</option>
-            <option value="newest">Ultimi</option>
-          </select>
-          <button id="btnLogout" class="rounded-xl border px-3 py-2 text-sm">Esci</button>
-        </div>
+       <div class="hidden md:flex items-center gap-2">
+  <input id="searchInput" type="search" placeholder="Cerca prodotti…"
+         class="w-72 rounded-xl border px-3 py-2 text-sm">
+  <button id="btnLogout" class="rounded-xl border px-3 py-2 text-sm">Esci</button>
+</div>
+
 
         <button id="btnMobileMenu" class="md:hidden rounded-lg border px-3 py-2 text-sm">Menu</button>
       </div>
@@ -510,12 +506,7 @@
       <div class="md:hidden px-4 pb-3 space-y-2" id="mobileMenu" hidden>
         <input id="searchInputM" type="search" placeholder="Cerca…" class="w-full rounded-xl border px-3 py-2 text-sm">
         <div class="flex gap-2">
-          <select id="sortSelectM" class="flex-1 rounded-xl border px-3 py-2 text-sm">
-            <option value="alpha">A→Z</option>
-            <option value="priceAsc">Prezzo ↑</option>
-            <option value="priceDesc">Prezzo ↓</option>
-            <option value="newest">Ultimi</option>
-          </select>
+          
           <button id="btnLogoutM" class="rounded-xl border px-3 py-2 text-sm">Esci</button>
         </div>
       </div>
