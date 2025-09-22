@@ -517,18 +517,27 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- forza aggiornamento -->
-<script src="./script.js?v=tablet-drawer-48" defer></script>
+<script src="./script.js?v=tablet-drawer-50" defer></script>
 
 
+<!-- Floating actions: ↑ sopra, FAB sotto. Responsive + safe-area -->
 <div id="floatingActions"
-     class="fixed z-[9999] bottom-[max(1.25rem,env(safe-area-inset-bottom))]
-                    right-[max(1.25rem,env(safe-area-inset-right))]
-                    flex items-center gap-3">
-  <!-- FAB verrà inserito qui da JS -->
+     class="fixed z-[9999]
+            bottom-[max(1rem,env(safe-area-inset-bottom))]
+            right-[max(1rem,env(safe-area-inset-right))]
+            sm:bottom-[max(1.25rem,env(safe-area-inset-bottom))]
+            sm:right-[max(1.25rem,env(safe-area-inset-right))]
+            flex flex-col items-end gap-3">
+  <!-- ↑ Torna su (sempre sopra) -->
   <button id="btnBackToTop"
-          class="hidden rounded-full bg-sky-600 text-white w-12 h-12 shadow-lg hover:bg-sky-700 transition grid place-items-center"
+          class="hidden rounded-full bg-sky-600 text-white
+                 w-12 h-12 sm:w-12 sm:h-12
+                 shadow-lg hover:bg-sky-700 transition
+                 grid place-items-center"
           aria-label="Torna su">↑</button>
+  <!-- Il FAB “Preventivo (n)” verrà inserito qui via JS, sotto a ↑ -->
 </div>
+
 
 
 
