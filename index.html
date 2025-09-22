@@ -435,7 +435,17 @@
   }
 }
 
-    
+ /* Phone portrait: evita la rottura per lettera sulla colonna Dimensione */
+@media (max-width: 767.98px) and (orientation: portrait){
+  th.col-dim, td.col-dim{
+    white-space: nowrap !important;   /* tieni su una riga */
+    word-break: normal !important;    /* non spezzare ogni carattere */
+    overflow: hidden;
+    text-overflow: ellipsis;          /* … se troppo lungo */
+    max-width: 160px;                 /* regola se vuoi più/meno spazio */
+  }
+}
+   
     
   </style>
 </head>
