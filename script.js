@@ -513,10 +513,16 @@ function renderListino(){
     table.innerHTML=`
   <thead class="bg-slate-100">
     <tr>
-      <th class="border px-2 py-1 text-center w-8">
-<input type="checkbox" class="selAllCat" data-cat="${encodeURIComponent(cat)}" title="Seleziona tutti">
-Sel
+     <th class="border px-2 py-1 text-center w-12">
+  <div class="flex flex-col items-center gap-1">
+    <span>Sel</span>
+    <input type="checkbox"
+           class="selAllCat"
+           data-cat="${encodeURIComponent(cat)}"
+           title="Seleziona tutti">
+  </div>
 </th>
+
       <th class="border px-2 py-1 text-left col-code">Codice</th>
       <th class="border px-2 py-1 text-left col-desc">Descrizione</th>
       <th class="border px-2 py-1 text-left col-dim">Dimensione</th>
