@@ -1093,7 +1093,11 @@ function escapeHtml(s){
         fab.style.background='#2563EB'; // sky-600
         fab.style.color='#fff';
         fab.style.boxShadow='0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -2px rgba(0,0,0,.05)';
-        document.body.appendChild(fab);
+        /*document.body.appendChild(fab);*/
+const float = document.getElementById('floatingActions');
+if (float) float.appendChild(fab);
+else document.body.appendChild(fab); // fallback
+
 
 syncFabVisibility(); // stato iniziale coerente
 
