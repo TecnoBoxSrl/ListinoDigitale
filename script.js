@@ -1105,9 +1105,11 @@ fab.style.pointerEvents='auto';
         const float = document.getElementById('floatingActions');
 if (float) float.appendChild(fab); else document.body.appendChild(fab);
 
+/*
 // Abilita click sul FAB nonostante il wrapper abbia pointer-events:none
 fab.style.pointerEvents = 'auto';
 fab.style.zIndex = '9999'; // opzionale, per sicurezza
+*/
 
 
 syncFabVisibility(); // stato iniziale coerente
