@@ -493,7 +493,7 @@ function renderListino(){
   const container = $('listinoContainer'); if(!container) return;
   container.innerHTML='';
 
-  // group by categoria
+  // raggruppa per categoria dopo i filtri
   const byCat = new Map();
   for (const p of applyFilters(state.items)){
     const c = p.categoria || 'Altro';
@@ -505,140 +505,141 @@ function renderListino(){
 
   for (const cat of cats){
     const items = byCat.get(cat).sort((a,b)=>(a.codice||'').localeCompare(b.codice||'','it'));
-    const h = document.createElement('h2'); h.className='text-lg font-semibold mt-2 mb-1'; h.textContent=cat;
+
+    // Titolo categoria
+    const h = document.createElement('h2');
+    h.className='text-lg font-semibold mt-2 mb-1';
+    h.textContent=cat;
     container.appendChild(h);
 
+    // Tabella
     const table = document.createElement('table');
     table.className='w-full text-sm border-collapse';
-    table.innerHTML=`
-  <thead class="bg-slate-100">
-    <tr>
-     <th class="border px-2 py-1 text-center w-12">
-  <div class="flex flex-col items-center gap-1">
-    <span>Sel</span>
-    <input type="checkbox"
-           class="selAllCat"
-           data-cat="${encodeURIComponent(cat)}"
-           title="Seleziona tutti">
-  </div>
-</th>
-
-      <th class="border px-2 py-1 text-left col-code">Codice</th>
-      <th class="border px-2 py-1 text-left col-desc">Descrizione</th>
-      <th class="border px-2 py-1 text-left col-dim">Dimensione</th>
-      <th class="border px-2 py-1 text-left col-unit">Unità di vendita</th>
-      <th class="border px-2 py-1 text-right col-price">Prezzo</th>
-      <th class="border px-2 py-1 text-right col-conai">Conai</th>
-      <th class="border px-2 py-1 text-center col-img">Img</th>
-    </tr>
-  </thead>
-  <tbody></tbody>`;
-
+    table.innerHTML = `
+      <thead class="bg-slate-100">
+        <tr>
+          <th class="border px-2 py-1 text-center w-8">
+            <div>Sel</div>
+            <div class="mt-1">
+              <input type="checkbox" class="selAllCat" data-cat="${encodeURIComponent(cat)}" title="Seleziona tutti">
+            </div>
+          </th>
+          <th class="border px-2 py-1 text-left col-code">Codice</th>
+          <th class="border px-2 py-1 text-left col-desc">Descrizione</th>
+          <th class="border px-2 py-1 text-left col-dim">Dimensione</th>
+          <th class="border px-2 py-1 text-left col-unit">Unità di vendita</th>
+          <th class="border px-2 py-1 text-right col-price">Prezzo</th>
+          <th class="border px-2 py-1 text-right col-conai">Conai</th>
+          <th class="border px-2 py-1 text-center col-img">Img</th>
+        </tr>
+      </thead>
+      <tbody></tbody>`;
     const tb = table.querySelector('tbody');
 
+    // righe
     for (const p of items){
       const tr = document.createElement('tr');
       const checked = state.selected.has(p.codice) ? 'checked' : '';
-     tr.innerHTML = `
-  <td class="border px-2 py-1 text-center">
-    <input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}>
-  </td>
-
-  <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">
-    ${p.codice || ''}
-  </td>
-
-  <td class="border px-2 py-1 col-desc">
-    <div class="descText">
-      ${p.descrizione || ''} 
-      ${p.novita ? '<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>' : ''}
-    </div>
-  </td>
-
-  <td class="border px-2 py-1 col-dim">
-    ${p.dimensione || ''}
-  </td>
-
-  <td class="border px-2 py-1 col-unit">
-    ${p.unita || ''}
-  </td>
-
-  <td class="border px-2 py-1 text-right col-price">
-    ${fmtEUR(p.prezzo)}
-  </td>
-
-  <td class="border px-2 py-1 text-right col-conai">
-    ${fmtEUR(p.conai)}
-  </td>
-
-  <td class="border px-2 py-1 text-center col-img">
-    ${p.img ? `<button class="text-sky-600 underline btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>` : '—'}
-  </td>
-`;
-
-
-
+      tr.innerHTML = `
+        <td class="border px-2 py-1 text-center">
+          <input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}>
+        </td>
+        <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${p.codice||''}</td>
+        <td class="border px-2 py-1 col-desc">
+          ${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}
+        </td>
+        <td class="border px-2 py-1 col-dim">${p.dimensione||''}</td>
+        <td class="border px-2 py-1 col-unit">${p.unita||''}</td>
+        <td class="border px-2 py-1 text-right col-price">${fmtEUR(p.prezzo)}</td>
+        <td class="border px-2 py-1 text-right col-conai">${fmtEUR(p.conai)}</td>
+        <td class="border px-2 py-1 text-center col-img">
+          ${p.img?`<button class="text-sky-600 underline btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>`:'—'}
+        </td>`;
       tb.appendChild(tr);
     }
 
-
-// 1) trova gli items di questa categoria
-const catItems = items; // già filtrati per questa categoria
-
-// 2) stato iniziale dell'header checkbox
-const headCb = table.querySelector('.selAllCat');
-if (headCb) {
-  const selCount = catItems.reduce((n, p) => n + (state.selected.has(p.codice) ? 1 : 0), 0);
-  if (selCount === 0) {
-    headCb.checked = false;
-    headCb.indeterminate = false;
-  } else if (selCount === catItems.length) {
-    headCb.checked = true;
-    headCb.indeterminate = false;
-  } else {
-    headCb.checked = false;
-    headCb.indeterminate = true; // parzialmente selezionati
-  }
-
-  // 3) click: seleziona / deseleziona tutti
-  headCb.addEventListener('change', (e) => {
-    const cat = decodeURIComponent(e.currentTarget.getAttribute('data-cat') || 'Altro');
-    if (e.currentTarget.checked) addCategoryToQuote(cat);
-    else removeCategoryFromQuote(cat);
-
-    // aggiorna stato visivo di tutte le checkbox riga di questa tabella
-    table.querySelectorAll('.selItem').forEach(cb => cb.checked = e.currentTarget.checked);
-    // stato header coerente
-    headCb.indeterminate = false;
-  });
-}
-
-
-    
-
     container.appendChild(table);
-  }
 
-  // bind checkbox e immagini
-  container.querySelectorAll('.selItem').forEach(chk=>{
-    chk.addEventListener('change', (e)=>{
-      const code = e.currentTarget.getAttribute('data-code');
-      const prod = state.items.find(x=>x.codice===code);
-      if (!prod) return;
-      if (e.currentTarget.checked) addToQuote(prod);
-      else removeFromQuote(code);
+    // ======== LISTENER: header "Sel" (select all/deselect all per categoria) ========
+    const headCb = table.querySelector('.selAllCat');
+    if (headCb){
+      // stato iniziale header: checked / indeterminate / unchecked
+      const selCount = items.reduce((n,p)=> n + (state.selected.has(p.codice)?1:0), 0);
+      if (selCount === 0){
+        headCb.checked = false;
+        headCb.indeterminate = false;
+      } else if (selCount === items.length){
+        headCb.checked = true;
+        headCb.indeterminate = false;
+      } else {
+        headCb.checked = false;
+        headCb.indeterminate = true;
+      }
+
+      headCb.addEventListener('change', (e)=>{
+        const checkAll = e.currentTarget.checked;
+        // per evitare mille re-render, accumula e poi un unico refresh pannello
+        let changed = false;
+        for (const p of items){
+          const isSel = state.selected.has(p.codice);
+          if (checkAll && !isSel){
+            addToQuote(p); // questa re-renderizza il pannello, ma va bene anche così
+            changed = true;
+            // spunta la riga corrispondente
+            const rowCb = table.querySelector(`.selItem[data-code="${CSS.escape(p.codice)}"]`);
+            if (rowCb) rowCb.checked = true;
+          } else if (!checkAll && isSel){
+            removeFromQuote(p.codice);
+            changed = true;
+            const rowCb = table.querySelector(`.selItem[data-code="${CSS.escape(p.codice)}"]`);
+            if (rowCb) rowCb.checked = false;
+          }
+        }
+        // stato header coerente
+        headCb.indeterminate = false;
+        headCb.checked = checkAll;
+        // (il pannello e il contatore FAB sono già aggiornati dalle add/remove)
+      });
+    }
+
+    // ======== LISTENER: righe .selItem (selezione singola + refresh header immediato) ========
+    table.querySelectorAll('.selItem').forEach(chk=>{
+      chk.addEventListener('change', (e)=>{
+        const code = e.currentTarget.getAttribute('data-code');
+        const prod = state.items.find(x=>x.codice===code);
+        if (!prod) return;
+        if (e.currentTarget.checked) addToQuote(prod);
+        else removeFromQuote(code);
+
+        // refresh immediato stato header per questa categoria
+        if (headCb){
+          const selNow = items.reduce((n,p)=> n + (state.selected.has(p.codice)?1:0), 0);
+          if (selNow === 0){
+            headCb.checked = false;
+            headCb.indeterminate = false;
+          } else if (selNow === items.length){
+            headCb.checked = true;
+            headCb.indeterminate = false;
+          } else {
+            headCb.checked = false;
+            headCb.indeterminate = true;
+          }
+        }
+      });
     });
-  });
-  container.querySelectorAll('.btnImg').forEach(btn=>{
-    btn.addEventListener('click', (e)=>{
-      const src=e.currentTarget.getAttribute('data-src');
-      const title=decodeURIComponent(e.currentTarget.getAttribute('data-title')||'');
-      const img=$('imgPreview'), ttl=$('imgTitle');
-      if (img){ img.src=src; img.alt=title; }
-      if (ttl){ ttl.textContent=title; }
-      toggleModal('imgModal', true);
+
+    // ======== LISTENER: immagini ========
+    table.querySelectorAll('.btnImg').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        const src=e.currentTarget.getAttribute('data-src');
+        const title=decodeURIComponent(e.currentTarget.getAttribute('data-title')||'');
+        const img=$('imgPreview'), ttl=$('imgTitle');
+        if (img){ img.src=src; img.alt=title; }
+        if (ttl){ ttl.textContent=title; }
+        toggleModal('imgModal', true);
+      });
     });
-  });
+  }
 }
 
 /* ============ CARD view ============ */
