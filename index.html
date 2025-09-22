@@ -457,7 +457,17 @@
     line-height: 1.3;
   }
 }
-
+/* ===== Tablet (768–1199px): descrizione max 2 righe ===== */
+@media (min-width:768px) and (max-width:1199.98px) {
+  #listinoContainer td.col-desc {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;         /* massimo 2 righe */
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    white-space: normal !important;  /* consenti a capo */
+    line-height: 1.3;
+  }
+}
     
   </style>
 </head>
@@ -679,7 +689,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- forza aggiornamento -->
-<script src="./script.js?v=tablet-drawer-69" defer></script>
+<script src="./script.js?v=tablet-drawer-70" defer></script>
 
 <div id="floatingActions"
      class="fixed z-[9999]
