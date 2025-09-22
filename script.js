@@ -1084,9 +1084,11 @@ function escapeHtml(s){
         fab = document.createElement('button');
         fab.id = 'btnDrawerQuote';
         fab.textContent = 'Preventivo (0)';
-        fab.style.position='fixed';
+        
+/*fab.style.position='fixed';
         fab.style.right='16px';
         fab.style.bottom='16px';
+*/
         fab.style.zIndex='9999';
 fab.style.pointerEvents='auto';
         fab.style.borderRadius='9999px';
