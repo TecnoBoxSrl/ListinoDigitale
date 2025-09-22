@@ -212,6 +212,11 @@ function bindUI(){
   if (nameEl) nameEl.value = '';
     renderQuotePanel();
     document.querySelectorAll('.selItem').forEach(i=>{ i.checked=false; });
+// 🔴 deseleziona anche i checkbox di categoria
+  document.querySelectorAll('.selAllCat').forEach(cb=>{
+    cb.checked = false;
+    cb.indeterminate = false;
+  });
 // messaggio (opzionale)
   const msg = document.getElementById('quoteMsg');
   if (msg) msg.textContent = 'Preventivo svuotato.';
