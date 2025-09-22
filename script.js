@@ -4,7 +4,7 @@
 // - Ricerca live, vista listino/card
 // - Preventivi a destra (export XLSX/PDF/Print)
 // - Log estesi per debugging
-// ===============================
+// =============================== 
 
 /* === CONFIG (METTI I TUOI VALORI) === */
 const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';           // <-- tuo URL-->
