@@ -28,20 +28,18 @@ const err = (...a) => console.error('[Listino]', ...a);
 const normalize = (s) => (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
 const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 
-// === Scroll: porta in alto l'area prodotti (considera header sticky) ===
-function scrollToProductsTopDesktop(){
-  if (window.innerWidth < 1200) return; // solo desktop, come richiesto
 
-  const productsEl = document.getElementById('listinoContainer')
-                   || document.getElementById('productGrid')
-                   || document.querySelector('main');
+
+// Scrolla fino alla barra "Cerca prodotti…" tenendo conto dell'header sticky
+function scrollToProductsHeader(){
+  const target = document.getElementById('productsHeader') || document.getElementById('searchInput');
+  if (!target) return;
+
   const header = document.querySelector('header');
   const headerH = header ? header.getBoundingClientRect().height : 0;
 
-  if (productsEl){
-    const y = productsEl.getBoundingClientRect().top + window.pageYOffset - (headerH + 8);
-    window.scrollTo({ top: y, behavior: 'smooth' });
-  }
+  const y = target.getBoundingClientRect().top + window.pageYOffset - (headerH + 8);
+  window.scrollTo({ top: y, behavior: 'smooth' });
 }
 
 
@@ -447,7 +445,7 @@ function buildCategories(){
     state.selectedCategory = 'Tutte';
     renderView();        // aggiorna listino
     buildCategories();   // aggiorna evidenziazione
-scrollToProductsTopDesktop();  // 👈 aggiungi questa riga
+scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodotti"
   });
   box.appendChild(allBtn);
 
@@ -473,7 +471,7 @@ scrollToProductsTopDesktop();  // 👈 aggiungi questa riga
       state.selectedCategory = cat;
       renderView();
       buildCategories();
-scrollToProductsTopDesktop();  // 👈 aggiungi questa riga
+scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodotti"
     });
     box.appendChild(btn);
   });
