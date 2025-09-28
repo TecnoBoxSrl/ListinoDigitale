@@ -518,6 +518,15 @@
   #listinoContainer .col-img   { width:80px  !important; text-align:center; white-space:nowrap; }
 }
 
+/* === Logo header === */
+#siteLogo{
+  width: 140px;      /* imposta qui la tua larghezza “pre-stabilita” */
+  height: auto;      /* mantiene le proporzioni dell’SVG */
+  display: block;
+}
+@media (max-width: 767.98px){
+  #siteLogo{ width: 120px; }  /* opzionale: leggermente più piccolo su mobile */
+}
 
   </style>
 </head>
@@ -547,9 +556,15 @@
     <header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
 
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3">
-        <div class="h-10 rounded-xl grid place-content-center text-white font-bold px-4"
-     style="background:#45ac49">
-  Tecno Box
+        
+<!-- Logo a sinistra: si apre in nuova scheda -->
+<a href="https://www.tecnobox.it"
+   target="_blank" rel="noopener"
+   class="shrink-0 flex items-center"
+   aria-label="Vai al sito Tecnobox (si apre in una nuova scheda)">
+  <img src="./logo.svg" alt="Tecnobox" id="siteLogo">
+</a>
+
 </div>
 
         <div class="flex-1">
