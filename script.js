@@ -320,8 +320,9 @@ async function doLogout(){
 }
 
 async function afterLogin(userId){
+  console.log('[afterLogin] start for', userId);
   try{
-    // profilo
+    // profilo → solo per nome visualizzato (non blocca il resto)
     let role = 'agent';
     let displayName = '';
 
@@ -343,25 +344,26 @@ async function afterLogin(userId){
                  || user?.email
                  || '';
     }
-
     state.role = role;
 
     // Nome in header
     const nameEl = $('userName'); if (nameEl) { nameEl.textContent = displayName ? `👤 ${displayName}` : ''; nameEl.classList.remove('hidden'); }
     const nameElM = $('userNameM'); if (nameElM) { nameElM.textContent = displayName; nameElM.classList.remove('hidden'); }
 
-    // Dati + UI
-    await fetchProducts();   // popola state.items + buildCategories + renderView (immediato)
-    // Segnale per FAB
+    // 🔹 CARICA PRODOTTI
+    await fetchProducts();
+
+    // Sblocca FAB e log
     document.dispatchEvent(new Event('appReady'));
+    console.log('[afterLogin] done. items=', state.items.length);
 
   } catch(e){
     console.error('[afterLogin] err:', e);
     const info = $('resultInfo');
-    if (info) info.textContent = 'Errore caricamento listino';
-    // Non nascondiamo l’app, così puoi vedere l’errore in console
+    if (info) info.textContent = 'Errore caricamento listino: ' + (e?.message || e);
   }
 }
+
 
 async function afterLogout(){
   showAuthGate(true);
@@ -378,57 +380,41 @@ async function afterLogout(){
 async function fetchProducts(){
   console.log('[Data] fetchProducts…');
   const info = $('resultInfo');
+  info && (info.textContent = 'Caricamento…');
 
   try{
+    // SELECT robusta: tutte le colonne + relazione immagini (se c’è)
     const { data, error } = await supabase
       .from('products')
-      .select(`
-        id,
-        codice,
-        descrizione,
-        dimensione,
-        categoria,
-        sottocategoria,
-        prezzo,
-        conai,
-        unita,
-        disponibile,
-        novita,
-        pack,
-        pallet,
-        tags,
-        updated_at,
-        product_media(id,kind,path,sort)
-      `)
+      .select('*, product_media (id, kind, path, sort)')
       .order('descrizione', { ascending: true });
 
     if (error) throw error;
 
-    // 1) Mappo subito (UI immediata)
+    // 1) mappa subito per mostrare la UI anche senza immagini firmate
     const items = (data || []).map(p => {
       const mediaImgs = (p.product_media || [])
         .filter(m => m.kind === 'image')
         .sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
       const firstImgPath = mediaImgs[0]?.path || '';
-
       return {
-        codice: p.codice,
-        descrizione: p.descrizione,
-        dimensione: p.dimensione,
-        categoria: p.categoria,
-        sottocategoria: p.sottocategoria,
-        prezzo: p.prezzo,
-        conai: p.conai,
-        unita: p.unita,
-        disponibile: p.disponibile,
-        novita: p.novita,
-        pack: p.pack,
-        pallet: p.pallet,
+        codice: p.codice || '',
+        descrizione: p.descrizione || '',
+        dimensione: p.dimensione || '',     // se la colonna non esiste → sarà undefined e diventa ''
+        categoria: p.categoria || 'Altro',
+        sottocategoria: p.sottocategoria || '',
+        prezzo: p.prezzo ?? null,
+        conai: p.conai ?? null,
+        unita: p.unita || '',
+        disponibile: !!p.disponibile,
+        novita: !!p.novita,
+        pack: p.pack ?? null,
+        pallet: p.pallet ?? null,
         tags: p.tags || [],
-        updated_at: p.updated_at,
+        updated_at: p.updated_at || '',
         conaiPerCollo: 0,
-        img: '',                // firmata dopo
-        _imgPath: firstImgPath, // memorizzo path
+        img: '',                // URL firmata arriverà dopo
+        _imgPath: firstImgPath, // path grezzo nello storage
       };
     });
 
@@ -436,14 +422,15 @@ async function fetchProducts(){
 
     // 2) UI SUBITO
     buildCategories();
-    info && (info.textContent = `${items.length} articoli`);
     renderView();
-    console.log('[Data] prodotti:', items.length);
+    info && (info.textContent = `${items.length} articoli`);
+    console.log('[Data] prodotti caricati:', items.length);
 
-    // 3) Immagini in background (concurrency)
+    // 3) Firma immagini in background (non blocca la UI)
     if (STORAGE_BUCKET){
-      const MAX_CONCURRENCY = 12;
+      const MAX_CONCURRENCY = 8;
       let i = 0;
+
       async function worker(){
         while (i < state.items.length){
           const idx = i++;
@@ -455,24 +442,25 @@ async function fetchProducts(){
               .createSignedUrl(path, 600);
             if (!sErr && signed?.signedUrl){
               state.items[idx].img = signed.signedUrl;
-              const btn = document.querySelector(
-                `.btnImg[data-code="${CSS.escape(state.items[idx].codice)}"]`
-              );
-              if (btn) btn.dataset.src = signed.signedUrl;
+              // aggiorna eventuale bottone foto già renderizzato
+              const btn = document.querySelector(`.btnImg[data-code="${CSS.escape(state.items[idx].codice)}"]`);
+              if (btn) btn.setAttribute('data-src', signed.signedUrl);
             }
           }catch(e){
             console.warn('[Storage] signed URL err:', e?.message || e);
           }
         }
       }
-      await Promise.all(Array.from({length:MAX_CONCURRENCY}, worker));
+      // avvia i worker ma NON attendere (niente await Promises) → la UI resta pronta
+      Array.from({length:MAX_CONCURRENCY}, worker);
     }
 
   } catch(e){
-    console.error('[Data] fetchProducts error', e);
+    console.error('[Data] fetchProducts error:', e);
     info && (info.textContent = 'Errore caricamento listino: ' + (e?.message || e));
   }
 }
+
 
 /* ============ CATEGORIE ============ */
 function buildCategories(){
@@ -575,6 +563,7 @@ function applyFilters(arr){
 /* ============ LISTINO (tabellare) ============ */
 function renderListino(){
   const container = $('listinoContainer'); if(!container) return;
+  console.log('[UI] renderListino start. items=', (state.items||[]).length, 'search=', state.search, 'cat=', state.selectedCategory);
   container.innerHTML='';
 
   // raggruppa per categoria dopo filtri
