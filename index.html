@@ -558,53 +558,35 @@
 
 
 <header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3
+  <div class="max-w-8xl px-4 sm:px-6 lg:px-8 py-2
               flex items-center justify-between gap-4">
+    <!-- SINISTRA: LOGO -->
+    <a href="https://www.tecnobox.net" target="_blank" rel="noopener"
+       class="shrink-0 flex items-center" aria-label="Vai al sito Tecnobox">
+      <img src="./logo.svg" alt="Tecnobox" id="siteLogo"
+           class="block" />
+    </a>
 
-    <!-- SINISTRA: Logo + testi -->
-    <div class="flex items-center gap-4 min-w-0">
-      <a href="https://www.tecnobox.net"
-         target="_blank" rel="noopener"
-         class="shrink-0 flex items-center"
-         aria-label="Vai al sito Tecnobox (nuova scheda)">
-        <img src="./logo.svg" alt="Tecnobox" id="siteLogo"
-             class="h-8 w-auto" />
-      </a>
-      <div class="truncate">
-        <h2 class="text-lg font-semibold leading-tight">Listino Digitale</h2>
-        <p class="text-xs text-slate-500 leading-tight">Accesso riservato agli agenti</p>
-      </div>
-    </div>
-
-    <!-- DESTRA: (Desktop) search + nome + Esci -->
-    <div class="hidden md:flex items-center gap-3">
-      <input id="searchInput" type="search" placeholder="Cerca prodotti…"
-             class="w-72 rounded-lg border px-3 py-2 text-sm" />
-
+    <!-- DESTRA: Nome utente + Esci -->
+    <div class="hidden md:flex items-center gap-3 ml-auto">
       <span id="userName"
             class="hidden md:inline whitespace-nowrap text-sm text-slate-600"
             title="Utente loggato"></span>
-
       <button id="btnLogout"
               class="rounded-lg bg-red-600 hover:bg-red-700 text-white px-2.5 py-1.5 text-sm">
         Esci
       </button>
     </div>
 
-    <!-- (Mobile) pulsante per aprire il menu -->
+    <!-- Menu mobile -->
     <button id="btnMobileMenu"
-            class="md:hidden rounded-lg border px-3 py-2 text-sm">
-      Menu
-    </button>
+            class="md:hidden rounded-lg border px-3 py-2 text-sm">Menu</button>
   </div>
 
-  <!-- MENU MOBILE -->
+  <!-- Dropdown mobile -->
   <div class="md:hidden px-4 pb-3 space-y-2" id="mobileMenu" hidden>
-    <input id="searchInputM" type="search" placeholder="Cerca…"
-           class="w-full rounded-xl border px-2 py-1.5 text-sm">
-
+    <!-- (su mobile, il cerca lo spostiamo nella sezione prodotti, quindi qui lo togliamo) -->
     <span id="userNameM" class="hidden text-sm text-slate-600"></span>
-
     <div class="flex gap-2">
       <button id="btnLogoutM"
               class="rounded-lg bg-red-600 hover:bg-red-700 text-white px-2 py-1.5 text-sm">
@@ -613,7 +595,6 @@
     </div>
   </div>
 </header>
-
 
 
 
