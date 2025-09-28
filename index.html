@@ -558,16 +558,20 @@
 
 
 <header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
-  <div class="max-w-8xl px-4 sm:px-6 lg:px-8 py-2
-              flex items-center justify-between gap-4">
-    <!-- SINISTRA: LOGO -->
-    <a href="https://www.tecnobox.net" target="_blank" rel="noopener"
-       class="shrink-0 flex items-center" aria-label="Vai al sito Tecnobox">
-      <img src="./logo.svg" alt="Tecnobox" id="siteLogo"
-           class="block" />
-    </a>
+  <div class="max-w-8xl px-4 sm:px-6 lg:px-8 py-2 flex items-center justify-between gap-4">
+    <!-- SINISTRA: Logo + testi -->
+    <div class="flex items-center gap-3">
+      <a href="https://www.tecnobox.net" target="_blank" rel="noopener"
+         class="shrink-0 flex items-center" aria-label="Vai al sito Tecnobox">
+        <img src="./logo.svg" alt="Tecnobox" id="siteLogo" class="block" />
+      </a>
+      <div class="leading-tight">
+        <h2 class="text-lg font-semibold">Listino Digitale</h2>
+        <p class="text-xs text-slate-500">Accesso riservato agli agenti</p>
+      </div>
+    </div>
 
-    <!-- DESTRA: Nome utente + Esci -->
+    <!-- DESTRA: Nome utente + Esci (desktop/tablet) -->
     <div class="hidden md:flex items-center gap-3 ml-auto">
       <span id="userName"
             class="hidden md:inline whitespace-nowrap text-sm text-slate-600"
@@ -578,14 +582,12 @@
       </button>
     </div>
 
-    <!-- Menu mobile -->
-    <button id="btnMobileMenu"
-            class="md:hidden rounded-lg border px-3 py-2 text-sm">Menu</button>
+    <!-- Toggle menu (solo mobile) -->
+    <button id="btnMobileMenu" class="md:hidden rounded-lg border px-3 py-2 text-sm">Menu</button>
   </div>
 
-  <!-- Dropdown mobile -->
+  <!-- Menu mobile -->
   <div class="md:hidden px-4 pb-3 space-y-2" id="mobileMenu" hidden>
-    <!-- (su mobile, il cerca lo spostiamo nella sezione prodotti, quindi qui lo togliamo) -->
     <span id="userNameM" class="hidden text-sm text-slate-600"></span>
     <div class="flex gap-2">
       <button id="btnLogoutM"
@@ -595,6 +597,7 @@
     </div>
   </div>
 </header>
+
 
 
 
