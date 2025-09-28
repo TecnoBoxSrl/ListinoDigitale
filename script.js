@@ -30,6 +30,59 @@ const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{st
 
 
 
+// Escaping per regex
+function escapeRegex(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// Evidenzia i token della query dentro 'text'.
+// 1) tenta match case-insensitive diretto
+// 2) se non trova nulla, ripete con confronto accent-insensitive (NFD)
+function highlightText(text, rawQuery){
+  const t = String(text ?? '');
+  const q = String(rawQuery ?? '').trim();
+  if (!t || !q) return escapeHtml(t);
+
+  // tokenizza la query (spazi multipli) ed elimina token cortissimi
+  const tokens = q.split(/\s+/).filter(w => w.length >= 2);
+  if (!tokens.length) return escapeHtml(t);
+
+  // --- Tentativo 1: regex case-insensitive semplice ---
+  const rx = new RegExp('(' + tokens.map(escapeRegex).join('|') + ')', 'gi');
+  if (rx.test(t)){
+    return escapeHtml(t).replace(rx, m => `<mark class="highlight">${escapeHtml(m)}</mark>`);
+  }
+
+  // --- Tentativo 2: accent-insensitive ---
+  // creiamo mappa posizioni lavorando su versioni NFD senza diacritici
+  const base = t.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
+  const marks = Array(t.length).fill(false);
+
+  tokens.forEach(tok=>{
+    const ntok = tok.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
+    if (!ntok) return;
+    let start = 0;
+    while (true){
+      const idx = base.indexOf(ntok, start);
+      if (idx === -1) break;
+      // marca intervallo nella stringa originale (stessa lunghezza)
+      for (let i = idx; i < idx + ntok.length && i < marks.length; i++) marks[i] = true;
+      start = idx + ntok.length;
+    }
+  });
+
+  // ricostruisci HTML con <mark> sugli intervalli marcati
+  let out = '', open = false;
+  for (let i=0; i<t.length; i++){
+    const ch = t[i];
+    if (marks[i] && !open){ out += '<mark class="highlight">'; open = true; }
+    if (!marks[i] && open){ out += '</mark>'; open = false; }
+    out += escapeHtml(ch);
+  }
+  if (open) out += '</mark>';
+  return out;
+}
+
+
+
 // Scrolla fino alla barra "Cerca prodotti…" tenendo conto dell'header sticky
 function scrollToProductsHeader(){
   const target = document.getElementById('productsHeader') || document.getElementById('searchInput');
@@ -84,6 +137,7 @@ const state = {
   items: [],
   view: 'listino',   // 'listino' | 'card'
   search: '',
+  rawSearch: '',   // 👈 query originale così com’è digitata (per highlight)
   sort: 'alpha',     // 'alpha' | 'priceAsc' | 'priceDesc' | 'newest'
   onlyAvailable: false,
   onlyNew: false,
@@ -233,9 +287,12 @@ function bindUI(){
  
 
   // Ricerca live
-  const handleSearch = (e)=>{ state.search = normalize(e.target.value); renderView(); };
-  $('searchInput')?.addEventListener('input', handleSearch);
-  $('searchInputM')?.addEventListener('input', handleSearch);
+ const handleSearch = (e)=>{
+  state.rawSearch = e.target.value || '';        // 👈 salva query grezza
+  state.search    = normalize(state.rawSearch);  // 👈 quella normalizzata per i filtri
+  renderView();
+};
+
 
   // Filtri
   $('sortSelect')?.addEventListener('change', (e)=>{ state.sort=e.target.value; renderView(); });
@@ -614,7 +671,12 @@ function renderListino(){
     byCat.get(c).push(p);
   }
   const cats = [...byCat.keys()].sort((a,b)=>a.localeCompare(b,'it'));
-  if (!cats.length){ container.innerHTML='<div class="text-slate-500 py-10 text-center">Nessun articolo.</div>'; return; }
+  if (!cats.length){
+    container.innerHTML = '<div class="text-slate-500 py-10 text-center">Nessun articolo.</div>';
+    return;
+  }
+
+  const q = state.search || '';
 
   for (const cat of cats){
     const items = byCat.get(cat).sort((a,b)=>(a.codice||'').localeCompare(b.codice||'','it'));
@@ -622,7 +684,7 @@ function renderListino(){
     // Titolo categoria
     const h = document.createElement('h2');
     h.className='text-lg font-semibold mt-2 mb-1';
-    h.textContent=cat;
+    h.textContent = cat;
     container.appendChild(h);
 
     // Tabella
@@ -653,20 +715,30 @@ function renderListino(){
     for (const p of items){
       const tr = document.createElement('tr');
       const checked = state.selected.has(p.codice) ? 'checked' : '';
+
+      // Celle con evidenziazione (safe + <mark>)
+      const htmlCodice = highlightText(p.codice || '', q);
+      const htmlDescr  = highlightText(p.descrizione || '', q);
+      const htmlDim    = highlightText(p.dimensione || '', q);
+      const htmlUnita  = highlightText(p.unita || '', q);
+
       tr.innerHTML = `
         <td class="border px-2 py-1 text-center">
           <input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}>
         </td>
-        <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${p.codice||''}</td>
+        <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${htmlCodice}</td>
         <td class="border px-2 py-1 col-desc">
-          ${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}
+          ${htmlDescr}
+          ${p.novita ? '<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>' : ''}
         </td>
-        <td class="border px-2 py-1 col-dim">${p.dimensione||''}</td>
-        <td class="border px-2 py-1 col-unit">${p.unita||''}</td>
+        <td class="border px-2 py-1 col-dim">${htmlDim}</td>
+        <td class="border px-2 py-1 col-unit">${htmlUnita}</td>
         <td class="border px-2 py-1 text-right col-price">${fmtEUR(p.prezzo)}</td>
         <td class="border px-2 py-1 text-right col-conai">${fmtEUR(p.conai)}</td>
         <td class="border px-2 py-1 text-center col-img">
-          ${p.img?`<button class="text-sky-600 underline btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>`:'—'}
+          ${p.img
+            ? `<button class="text-sky-600 underline btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>`
+            : '—'}
         </td>`;
       tb.appendChild(tr);
     }
@@ -691,27 +763,20 @@ function renderListino(){
 
       headCb.addEventListener('change', (e)=>{
         const checkAll = e.currentTarget.checked;
-        // per evitare mille re-render, accumula e poi un unico refresh pannello
-        let changed = false;
         for (const p of items){
           const isSel = state.selected.has(p.codice);
           if (checkAll && !isSel){
-            addToQuote(p); // questa re-renderizza il pannello, ma va bene anche così
-            changed = true;
-            // spunta la riga corrispondente
+            addToQuote(p);
             const rowCb = table.querySelector(`.selItem[data-code="${CSS.escape(p.codice)}"]`);
             if (rowCb) rowCb.checked = true;
           } else if (!checkAll && isSel){
             removeFromQuote(p.codice);
-            changed = true;
             const rowCb = table.querySelector(`.selItem[data-code="${CSS.escape(p.codice)}"]`);
             if (rowCb) rowCb.checked = false;
           }
         }
-        // stato header coerente
         headCb.indeterminate = false;
         headCb.checked = checkAll;
-        // (il pannello e il contatore FAB sono già aggiornati dalle add/remove)
       });
     }
 
@@ -724,7 +789,6 @@ function renderListino(){
         if (e.currentTarget.checked) addToQuote(prod);
         else removeFromQuote(code);
 
-        // refresh immediato stato header per questa categoria
         if (headCb){
           const selNow = items.reduce((n,p)=> n + (state.selected.has(p.codice)?1:0), 0);
           if (selNow === 0){
