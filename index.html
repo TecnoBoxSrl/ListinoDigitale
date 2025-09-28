@@ -555,22 +555,20 @@
   <section id="appShell" class="hidden">
     <header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
 
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3">
-        
-<!-- Logo a sinistra: si apre in nuova scheda -->
-<a href="https://www.tecnobox.it"
-   target="_blank" rel="noopener"
-   class="shrink-0 flex items-center"
-   aria-label="Vai al sito Tecnobox (si apre in una nuova scheda)">
-  <img src="./logo.svg" alt="Tecnobox" id="siteLogo">
-</a>
-
+      <!-- Logo a sinistra + testi a destra -->
+<div class="flex items-center gap-3">
+  <a href="https://www.tecnobox.net"
+     target="_blank" rel="noopener"
+     class="shrink-0 flex items-center"
+     aria-label="Vai al sito Tecnobox (nuova scheda)">
+    <img src="./logo.svg" alt="Tecnobox" id="siteLogo">
+  </a>
+  <div>
+    <h2 class="text-lg font-semibold">Listino Digitale</h2>
+    <p class="text-xs text-slate-500">Accesso riservato agli agenti</p>
+  </div>
 </div>
 
-        <div class="flex-1">
-          <h2 class="text-lg font-semibold">Listino Digitale</h2>
-          <p class="text-xs text-slate-500">Accesso riservato agli agenti</p>
-        </div>
 
        <div class="hidden md:flex items-center gap-2">
   <input id="searchInput" type="search" placeholder="Cerca prodotti…"
