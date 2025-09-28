@@ -554,55 +554,73 @@
 
   <!-- ====== APP (nascosta finché non loggato) ====== -->
   <section id="appShell" class="hidden">
-    <header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
 
-      <!-- Logo a sinistra + testi a destra -->
-<div class="flex items-center gap-4">
-  <a href="https://www.tecnobox.net"
-     target="_blank" rel="noopener"
-     class="shrink-0 flex items-center"
-     aria-label="Vai al sito Tecnobox (nuova scheda)">
-    <img src="./logo.svg" alt="Tecnobox" id="siteLogo">
-  </a>
-  <div>
-    <h2 class="text-lg font-semibold">Listino Digitale</h2>
-    <p class="text-xs text-slate-500">Accesso riservato agli agenti</p>
+
+
+<header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3
+              flex items-center justify-between gap-4">
+
+    <!-- SINISTRA: Logo + testi -->
+    <div class="flex items-center gap-4 min-w-0">
+      <a href="https://www.tecnobox.net"
+         target="_blank" rel="noopener"
+         class="shrink-0 flex items-center"
+         aria-label="Vai al sito Tecnobox (nuova scheda)">
+        <img src="./logo.svg" alt="Tecnobox" id="siteLogo"
+             class="h-8 w-auto" />
+      </a>
+      <div class="truncate">
+        <h2 class="text-lg font-semibold leading-tight">Listino Digitale</h2>
+        <p class="text-xs text-slate-500 leading-tight">Accesso riservato agli agenti</p>
+      </div>
+    </div>
+
+    <!-- DESTRA: (Desktop) search + nome + Esci -->
+    <div class="hidden md:flex items-center gap-3">
+      <input id="searchInput" type="search" placeholder="Cerca prodotti…"
+             class="w-72 rounded-lg border px-3 py-2 text-sm" />
+
+      <span id="userName"
+            class="hidden md:inline whitespace-nowrap text-sm text-slate-600"
+            title="Utente loggato"></span>
+
+      <button id="btnLogout"
+              class="rounded-lg bg-red-600 hover:bg-red-700 text-white px-2.5 py-1.5 text-sm">
+        Esci
+      </button>
+    </div>
+
+    <!-- (Mobile) pulsante per aprire il menu -->
+    <button id="btnMobileMenu"
+            class="md:hidden rounded-lg border px-3 py-2 text-sm">
+      Menu
+    </button>
   </div>
-</div>
+
+  <!-- MENU MOBILE -->
+  <div class="md:hidden px-4 pb-3 space-y-2" id="mobileMenu" hidden>
+    <input id="searchInputM" type="search" placeholder="Cerca…"
+           class="w-full rounded-xl border px-2 py-1.5 text-sm">
+
+    <span id="userNameM" class="hidden text-sm text-slate-600"></span>
+
+    <div class="flex gap-2">
+      <button id="btnLogoutM"
+              class="rounded-lg bg-red-600 hover:bg-red-700 text-white px-2 py-1.5 text-sm">
+        Esci
+      </button>
+    </div>
+  </div>
+</header>
 
 
-       <div class="hidden md:flex items-center gap-2">
-  <input id="searchInput" type="search" placeholder="Cerca prodotti…"
-         class="w-72 rounded-xl border px-3 py-2 text-sm">
 
 
-<!-- dentro l’header, vicino a Esci -->
-<span id="userName"
-      class="hidden md:inline whitespace-nowrap text-sm text-slate-600"
-      title="Utente loggato"></span>
+    
 
-
-  <button id="btnLogout" class="rounded-xl bg-red-600 hover:bg-red-700 text-white px-3 py-2 text-sm">Esci</button>
-</div>
-
-
-        <button id="btnMobileMenu" class="md:hidden rounded-lg border px-3 py-2 text-sm">Menu</button>
-      </div>
-
-      <div class="md:hidden px-4 pb-3 space-y-2" id="mobileMenu" hidden>
-        <input id="searchInputM" type="search" placeholder="Cerca…" class="w-full rounded-xl border px-2 py-1.5 text-sm">
-
-        <!-- 👇 Qui mostriamo il nome utente loggato -->
-  <span id="userNameM" class="hidden text-sm text-slate-600"></span>
-
-        <div class="flex gap-2">
-          
-          <button id="btnLogoutM" class="rounded-xl bg-red-600 hover:bg-red-700 text-white px-2 py-1.5 text-sm">Esci</button>
-        </div>
-      </div>
-    </header>
-
-    <main class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+    
+ <main class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
 
 <!--
 <main
