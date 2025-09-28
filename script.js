@@ -96,13 +96,17 @@ const state = {
 selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
 };
 
+
 /* ============ BOOT ROBUSTO ============ */
 async function boot(){
-  try {
-    bindUI(); // aggancia sempre i listener
-    $('year') && ( $('year').textContent = new Date().getFullYear() );
+  // helper per messaggi nel gate di login
+  const setLoginMsg = (t)=>{ const m = document.getElementById('loginMsg'); if(m) m.textContent = t||''; };
 
-    // inizializza nominativo+data nel pannello
+  // Carica sempre i listener base e meta UI
+  try {
+    bindUI();
+    const y = document.getElementById('year'); if (y) y.textContent = new Date().getFullYear();
+
     const nameEl = document.getElementById('quoteName');
     const dateEl = document.getElementById('quoteDate');
     if (nameEl) {
@@ -113,41 +117,94 @@ async function boot(){
       dateEl.value = state.quoteMeta.date;
       dateEl.addEventListener('change', () => { state.quoteMeta.date = dateEl.value || new Date().toISOString().slice(0,10); });
     }
+  } catch(e){
+    console.error('[Boot] init UI error:', e);
+  }
 
-    // restore session
-    if (!supabase) return showAuthGate(true);
+  // Supabase pronto?
+  if (!supabase){
+    console.error('[Boot] Supabase UMD non disponibile.');
+    showAuthGate(true);
+    setLoginMsg('Errore: Supabase non inizializzato (vedi console).');
+    return;
+  }
 
+  // Funzione che tenta il caricamento “vero” dell’app dopo login
+  async function tryLoadApp(userId){
+    setLoginMsg('Accesso in corso…');
+    console.log('[Boot] tryLoadApp for user:', userId);
+
+    try {
+      // Esegue il tuo flusso standard
+      await afterLogin(userId);
+
+      // ✅ Post-condizioni minime per considerare il boot riuscito
+      // 1) Lista prodotti caricata (>0). Se per te può essere 0, cambia soglia a >=0 e togli questo check.
+      if (!Array.isArray(state.items) || state.items.length === 0){
+        throw new Error('Nessun prodotto caricato (0). Verifica la tabella "products", policy RLS e permessi.');
+      }
+
+      // 2) Contenitore lista esiste
+      if (!document.getElementById('listinoContainer')){
+        throw new Error('Elemento #listinoContainer non trovato nel DOM.');
+      }
+
+      // Se tutto ok → mostra app
+      showAuthGate(false);
+      setLoginMsg('');
+      console.log('[Boot] App visibile: prodotti=', state.items.length);
+    } catch(e){
+      // ❌ Qualcosa è andato storto → resta sul gate e spiega perché
+      console.error('[Boot] Caricamento app FALLITO:', e);
+      showAuthGate(true);
+      setLoginMsg('Errore durante il caricamento: ' + (e?.message || e));
+    }
+  }
+
+  try {
+    // Sessione esistente?
     const { data:{ session }, error } = await supabase.auth.getSession();
     if (error) console.warn('[Auth] getSession warn:', error);
-    if (session?.user) {
-      console.log('[Auth] sessione presente', session.user.id);
-      await afterLogin(session.user.id);
+
+    if (session?.user){
+      console.log('[Auth] Sessione presente all’avvio:', session.user.id);
+      await tryLoadApp(session.user.id);
     } else {
-      console.log('[Auth] nessuna sessione. Mostro login gate');
+      console.log('[Auth] Nessuna sessione: mostro il gate di login');
       showAuthGate(true);
+      setLoginMsg('');
     }
 
-    // ascolta cambi di auth
+    // Listener cambi di stato auth (entra SOLO se il caricamento va a buon fine)
     supabase.auth.onAuthStateChange(async (event, sess)=>{
-      console.log('[Auth] onAuthStateChange:', event, !!sess?.user);
-      if (sess?.user) await afterLogin(sess.user.id);
-      else await afterLogout();
+      console.log('[Auth] onAuthStateChange:', event, sess);
+
+      if (sess?.user){
+        console.log('[Auth] Utente loggato:', sess.user.email, sess.user.id);
+        await tryLoadApp(sess.user.id);
+      } else {
+        console.warn('[Auth] Utente non loggato → logout UI');
+        await afterLogout();
+        showAuthGate(true);
+        setLoginMsg('');
+      }
     });
 
-  } catch (e) {
-    console.error('[Boot] eccezione:', e);
+  } catch(e){
+    console.error('[Boot] eccezione generale:', e);
     showAuthGate(true);
-    const m = $('loginMsg');
-    if (m) m.textContent = 'Errore di inizializzazione. Vedi console.';
+    const m = document.getElementById('loginMsg');
+    if (m) m.textContent = 'Errore di inizializzazione: ' + (e?.message || e);
   }
 }
 
-// Avvia subito se il DOM è già pronto (defer) oppure su DOMContentLoaded
+// Avvio
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
   boot();
 } else {
   document.addEventListener('DOMContentLoaded', boot);
 }
+
 
 /* ============ UI BASE ============ */
 function showAuthGate(show){
