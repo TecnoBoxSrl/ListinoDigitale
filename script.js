@@ -546,6 +546,39 @@ async function fetchProducts(){
   }
 }
 
+
+// Escape per sicurezza HTML (tu ce l’hai già)
+function escapeHtml(s){
+  return String(s||'')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+}
+
+// Normalizza stringhe: lowercase, senza accenti
+function normalize(s){
+  return s
+    ? s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+    : '';
+}
+
+// Evidenzia le corrispondenze con <mark>
+function highlightMatch(text, query){
+  if (!query) return escapeHtml(text);   // se non c’è ricerca → solo escape
+  const normText = normalize(text);
+  const normQuery = normalize(query);
+  const idx = normText.indexOf(normQuery);
+  if (idx === -1) return escapeHtml(text); // nessuna corrispondenza
+
+  const before = escapeHtml(text.slice(0, idx));
+  const match  = escapeHtml(text.slice(idx, idx + query.length));
+  const after  = escapeHtml(text.slice(idx + query.length));
+  return `${before}<mark class="bg-yellow-200">${match}</mark>${after}`;
+}
+
+
 /* ============ CATEGORIE ============ */
 function buildCategories(){
   const box = document.getElementById('categoryList');
@@ -1283,14 +1316,6 @@ function printQuote(){
   win.document.close();
 }
 
-function escapeHtml(s){
-  return String(s||'')
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;')
-    .replace(/'/g,'&#039;');
-}
 
 
 // === PATCH: Drawer preventivo che **sposta** il quotePanel originale ===
