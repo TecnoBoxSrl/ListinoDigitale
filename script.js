@@ -234,21 +234,36 @@ async function doLogin(){
   const password = $('loginPassword')?.value || '';
   const msg = $('loginMsg');
   if (!email || !password){ if(msg) msg.textContent = 'Inserisci email e password.'; return; }
-  if(msg) msg.textContent = 'Accesso in corso…';
+  if (msg) msg.textContent = 'Accesso in corso…';
+
   try {
+    console.log('[Auth] signInWithPassword…');
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       console.warn('[Auth] signIn error:', error);
-      msg && (msg.textContent = 'Accesso non riuscito: ' + error.message);
+      if (msg) msg.textContent = 'Accesso non riuscito: ' + error.message;
       return;
     }
+
     console.log('[Auth] signIn OK', data?.user?.id);
-    await afterLogin(data.user.id);
+
+    // 👇 MOSTRA SUBITO L’APP (anche se afterLogin dovesse dare errore)
+    showAuthGate(false);
+    if (msg) msg.textContent = '';
+
+    try {
+      await afterLogin(data.user.id);
+    } catch (e) {
+      console.error('[afterLogin] errore:', e);
+      const info = $('resultInfo');
+      if (info) info.textContent = 'Login effettuato. Caricamento listino…';
+    }
   } catch (e) {
     console.error('[Auth] eccezione login:', e);
-    msg && (msg.textContent = 'Errore accesso. Vedi console.');
+    if (msg) msg.textContent = 'Errore accesso. Vedi console.';
   }
 }
+
 
 async function sendReset(){
   const email = $('loginEmail')?.value?.trim();
