@@ -558,7 +558,7 @@ function escapeHtml(s){
 }
 
 // Normalizza stringhe: lowercase, senza accenti
-function normalize(s){
+function normalizeText(s){
   return s
     ? s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
     : '';
@@ -567,8 +567,8 @@ function normalize(s){
 // Evidenzia le corrispondenze con <mark>
 function highlightMatch(text, query){
   if (!query) return escapeHtml(text);   // se non c’è ricerca → solo escape
-  const normText = normalize(text);
-  const normQuery = normalize(query);
+  const normText = normalizeText(text);
+  const normQuery = normalizeText(query);
   const idx = normText.indexOf(normQuery);
   if (idx === -1) return escapeHtml(text); // nessuna corrispondenza
 
