@@ -169,7 +169,6 @@ function bindUI(){
 
   // Logout
   $('btnLogout')?.addEventListener('click', doLogout);
-  $('btnLogoutM')?.addEventListener('click', doLogout);
 
   // Vista
   $('viewListino')?.addEventListener('click', ()=>{ state.view='listino'; renderView(); });
@@ -194,9 +193,6 @@ function bindUI(){
   imgBackdrop?.addEventListener('click', ()=>toggleModal('imgModal', false));
   imgClose?.addEventListener('click', ()=>toggleModal('imgModal', false));
   document.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape' && !imgModal?.classList.contains('hidden')) toggleModal('imgModal', false); });
-
-  // Mobile menu
-  $('btnMobileMenu')?.addEventListener('click', ()=>{ const m = $('mobileMenu'); if(m) m.hidden = !m.hidden; });
 
   // Preventivi (azioni pannello)
   $('btnExportXlsx')?.addEventListener('click', exportXlsx);
@@ -301,12 +297,6 @@ async function afterLogin(userId){
       nameEl.textContent = displayName ? `👤 ${displayName}` : '';
       nameEl.classList.remove('hidden');
     }
-    const nameElM = document.getElementById('userNameM');
-    if (nameElM) {
-      nameElM.textContent = displayName;
-      nameElM.classList.remove('hidden');
-    }
-
     // Dati + UI
     await fetchProducts();
     renderView();
@@ -336,9 +326,6 @@ async function afterLogout(){
 // nascondi nome utente
   const nameEl = document.getElementById('userName');
   if (nameEl) { nameEl.textContent = ''; nameEl.classList.add('hidden'); }
-  const nameElM = document.getElementById('userNameM');
-  if (nameElM) { nameElM.textContent = ''; nameElM.classList.add('hidden'); }
-
     // 🔔 segnala che l'app è tornata in login → nascondi FAB
   document.dispatchEvent(new Event('appHidden'));
 
