@@ -336,9 +336,7 @@ async function fetchProducts(){
   console.log('[Data] fetchProducts…');
   const info = $('resultInfo');
   try{
-    const { data, error } = await supabase
-      .from('products')
-      .select(`
+    const fullSelect = `
         id,
         codice,
         descrizione,
@@ -355,10 +353,40 @@ async function fetchProducts(){
         tags,
         updated_at,
         product_media(id,kind,path,sort)
-      `)
+      `;
+
+    let { data, error } = await supabase
+      .from('products')
+      .select(fullSelect)
       .order('descrizione', { ascending: true });
 
-    if (error) throw error;
+    if (error) {
+      const msg = String(error.message || '').toLowerCase();
+      const missingExtra = msg.includes('dimensione') || msg.includes('conai');
+      if (missingExtra) {
+        console.warn('[Data] prodotti senza colonne dimensione/conai, retry fallback');
+        ({ data, error } = await supabase
+          .from('products')
+          .select(`
+            id,
+            codice,
+            descrizione,
+            categoria,
+            sottocategoria,
+            prezzo,
+            unita,
+            disponibile,
+            novita,
+            pack,
+            pallet,
+            tags,
+            updated_at,
+            product_media(id,kind,path,sort)
+          `)
+          .order('descrizione', { ascending: true }));
+      }
+      if (error) throw error;
+    }
 
     const items = [];
     for (const p of (data || [])) {
@@ -379,11 +407,12 @@ async function fetchProducts(){
       items.push({
         codice: p.codice,
         descrizione: p.descrizione,
+        dimensione: p.dimensione ?? '',
         dimensione: p.dimensione,
         categoria: p.categoria,
         sottocategoria: p.sottocategoria,
         prezzo: p.prezzo,
-        conai: p.conai,
+        conai: p.conai ?? null,
         unita: p.unita,
         disponibile: p.disponibile,
         novita: p.novita,
