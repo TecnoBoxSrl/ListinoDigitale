@@ -80,6 +80,49 @@
       display: none;
     }
 
+    .category-letter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+
+    .category-letter-button {
+      font-size: 0.75rem;
+      line-height: 1;
+      padding: 0.35rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid rgba(15, 23, 42, 0.18);
+      background: #ffffff;
+      color: #0f172a;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      min-width: 2.1rem;
+      text-align: center;
+      transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      cursor: pointer;
+    }
+
+    .category-letter-button:hover {
+      background: #f8fafc;
+    }
+
+    .category-letter-button.is-active {
+      background: #0369a1;
+      border-color: #0369a1;
+      color: #ffffff;
+    }
+
+    .category-letter-button.is-disabled,
+    .category-letter-button[disabled] {
+      opacity: 0.45;
+      cursor: default;
+      pointer-events: none;
+      background: #f1f5f9;
+      border-color: rgba(15, 23, 42, 0.12);
+      color: rgba(15, 23, 42, 0.45);
+    }
+
     #listinoContainer table {
       width: 100%;
       table-layout: fixed;
@@ -552,6 +595,20 @@
     <div id="catsSticky" class="glass rounded-2xl p-4 border">
       <div class="flex items-center justify-between mb-3 gap-3">
         <h2 class="font-semibold text-left">Categorie</h2>
+      </div>
+
+      <div id="categoryMobileTools" class="lg:hidden mt-3 space-y-3">
+        <div class="space-y-1">
+          <label for="categorySearchInput" class="block text-xs font-medium text-slate-600 uppercase tracking-wide">
+            Cerca categoria
+          </label>
+          <input id="categorySearchInput" type="search" placeholder="Digita il nome della categoria"
+                 class="w-full rounded-xl border px-3 py-2 text-sm">
+        </div>
+        <div class="space-y-2">
+          <div class="text-xs font-medium text-slate-600 uppercase tracking-wide">Filtra per lettera</div>
+          <div id="categoryLetterBar" class="category-letter-bar"></div>
+        </div>
       </div>
 
       <!-- PILLS CATEGORIE -->
