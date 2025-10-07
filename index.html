@@ -81,7 +81,27 @@
       width: 140px;
       height: auto;
       display: block;
-      margin-left: 40px;
+      margin: 0;
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-left: auto;
     }
 
     .highlight {
@@ -91,6 +111,31 @@
     }
 
     @media (max-width: 767.98px) {
+      .header-inner {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+
+      .header-brand {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 0.5rem;
+      }
+
+      .header-controls {
+        flex-direction: column;
+        align-items: center;
+        margin-left: 0;
+        width: 100%;
+        gap: 0.5rem;
+      }
+
+      .header-controls button {
+        width: auto;
+      }
+
       #categoryList {
         display: flex;
         gap: .5rem;
@@ -107,6 +152,16 @@
 
       #listinoContainer {
         overflow-x: auto;
+      }
+
+      main > aside {
+        display: none;
+      }
+
+      #productsHeader {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
       }
 
       #listinoContainer table {
@@ -132,8 +187,7 @@
       #listinoContainer td.col-conai {
         white-space: nowrap;
       }
-
-      #siteLogo { width: 120px; }
+      #siteLogo { width: 120px; margin: 0 auto; }
     }
 
     @media (min-width: 768px) and (max-width: 899.98px) {
@@ -298,11 +352,11 @@
 
 
 <header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
-  <div class="max-w-8xl px-4 sm:px-6 lg:px-8 py-2 flex items-center justify-between gap-4">
-    <!-- SINISTRA: Logo + testi -->
-    <div class="flex items-center gap-3">
+  <div class="header-inner max-w-8xl px-4 sm:px-6 lg:px-8 py-3">
+    <!-- Brand -->
+    <div class="header-brand">
       <a href="https://www.tecnobox.net" target="_blank" rel="noopener"
-         class="shrink-0 flex items-center" aria-label="Vai al sito Tecnobox">
+         class="shrink-0 flex items-center justify-center md:justify-start" aria-label="Vai al sito Tecnobox">
         <img src="./logo.svg" alt="Tecnobox" id="siteLogo" class="block" />
       </a>
       <div class="leading-tight">
@@ -311,27 +365,13 @@
       </div>
     </div>
 
-    <!-- DESTRA: Nome utente + Esci (desktop/tablet) -->
-    <div class="hidden md:flex items-center gap-3 ml-auto">
+    <!-- User info -->
+    <div class="header-controls">
       <span id="userName"
-            class="hidden md:inline whitespace-nowrap text-sm text-slate-600"
+            class="hidden whitespace-nowrap text-sm text-slate-600"
             title="Utente loggato"></span>
       <button id="btnLogout"
-              class="rounded-lg bg-red-600 hover:bg-red-700 text-white px-2.5 py-1.5 text-sm">
-        Esci
-      </button>
-    </div>
-
-    <!-- Toggle menu (solo mobile) -->
-    <button id="btnMobileMenu" class="md:hidden rounded-lg border px-3 py-2 text-sm">Menu</button>
-  </div>
-
-  <!-- Menu mobile -->
-  <div class="md:hidden px-4 pb-3 space-y-2" id="mobileMenu" hidden>
-    <span id="userNameM" class="hidden text-sm text-slate-600"></span>
-    <div class="flex gap-2">
-      <button id="btnLogoutM"
-              class="rounded-lg bg-red-600 hover:bg-red-700 text-white px-2 py-1.5 text-sm">
+              class="rounded-lg bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 text-sm">
         Esci
       </button>
     </div>
