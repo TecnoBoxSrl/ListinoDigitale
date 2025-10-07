@@ -1571,6 +1571,152 @@ function createQuoteDrawer(){
 
   ensureInit();
 
+
+      const title = document.createElement('h3');
+      title.textContent = 'Preventivo';
+      title.className = 'text-base font-semibold';
+
+      closeBtn = document.createElement('button');
+      closeBtn.id = 'btnCloseDrawer';
+      closeBtn.type = 'button';
+      closeBtn.className = 'rounded-lg border border-slate-200 px-3 py-1 text-sm hover:bg-slate-50';
+      closeBtn.setAttribute('aria-label', 'Chiudi');
+      closeBtn.textContent = '✕';
+
+      header.append(title, closeBtn);
+
+      drawerContent = document.createElement('div');
+      drawerContent.id = 'drawerContent';
+      Object.assign(drawerContent.style, {
+        flex: '1',
+        overflow: 'auto',
+        padding: '12px 16px'
+      });
+
+      drawer.append(header, drawerContent);
+      document.body.appendChild(drawer);
+    } else {
+      drawerContent = drawer.querySelector('#drawerContent') || drawer;
+      closeBtn = drawer.querySelector('#btnCloseDrawer');
+    }
+
+    backdrop = document.getElementById('drawerBackdrop');
+    if (!backdrop){
+      backdrop = document.createElement('div');
+      backdrop.id = 'drawerBackdrop';
+      Object.assign(backdrop.style, {
+        position: 'fixed',
+        inset: '0',
+        background: 'rgba(15,23,42,.35)',
+        zIndex: '9997',
+        display: 'none'
+      });
+      document.body.appendChild(backdrop);
+    }
+
+    fab.addEventListener('click', toggleDrawer);
+    closeBtn?.addEventListener('click', closeDrawer);
+    backdrop.addEventListener('click', closeDrawer);
+    window.addEventListener('resize', handleResize);
+    document.addEventListener('appReady', handleAppReady);
+    document.addEventListener('appHidden', handleAppHidden);
+
+    initialized = true;
+    updateCount();
+    syncVisibility();
+
+    return true;
+  }
+
+  function handleResize(){
+    syncVisibility();
+    if (isOpen) updateDrawerWidth();
+  }
+
+  function handleAppReady(){
+    ensureInit();
+    syncVisibility();
+  }
+
+  function handleAppHidden(){
+    closeDrawer();
+    if (fab) fab.style.display = 'none';
+  }
+
+  function isAppActive(){
+    const app = $('appShell');
+    return !!(app && !app.classList.contains('hidden'));
+  }
+
+  function syncVisibility(){
+    if (!fab) return;
+    fab.style.display = isAppActive() ? 'inline-flex' : 'none';
+  }
+
+  function updateDrawerWidth(){
+    if (!drawer) return;
+    const viewport = Math.max(window.innerWidth || 0, 320);
+    if (viewport <= 768){
+      drawer.style.width = '100vw';
+      return;
+    }
+    const table = document.getElementById('quoteTable');
+    const tableWidth = (table?.scrollWidth || 0) + 48;
+    const maxWidth = Math.max(360, viewport - 48);
+    const width = Math.min(Math.max(420, tableWidth), maxWidth);
+    drawer.style.width = `${width}px`;
+  }
+
+  function movePanelToDrawer(){
+    const panel = $('quotePanel');
+    if (panel && drawerContent && !drawerContent.contains(panel)){
+      drawerContent.appendChild(panel);
+      panel.style.width = '100%';
+    }
+  }
+
+  function movePanelBack(){
+    const panel = $('quotePanel');
+    if (panel && host && placeholder && host.contains(placeholder)){
+      host.insertBefore(panel, placeholder);
+      panel.style.width = '';
+    }
+  }
+
+  function openDrawer(){
+    if (!ensureInit()) return;
+    movePanelToDrawer();
+    updateDrawerWidth();
+    drawer.style.transform = 'translateX(0%)';
+    backdrop.style.display = 'block';
+    document.body.classList.add('modal-open');
+    isOpen = true;
+  }
+
+  function closeDrawer(){
+    if (!initialized) return;
+    movePanelBack();
+    drawer.style.transform = 'translateX(100%)';
+    backdrop.style.display = 'none';
+    document.body.classList.remove('modal-open');
+    isOpen = false;
+    resizeQuotePanel();
+  }
+
+  function toggleDrawer(){
+    if (isOpen) closeDrawer();
+    else openDrawer();
+  }
+
+  function updateCount(){
+    if (!fab) return;
+    const count = state.selected.size;
+    fab.textContent = `Preventivo (${count})`;
+    fab.setAttribute('aria-label', `Apri preventivo (${count}) articoli`);
+  }
+
+  ensureInit();
+
   return {
     updateCount,
     syncVisibility,
