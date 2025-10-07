@@ -97,6 +97,19 @@
       gap: 0.75rem;
     }
 
+    .header-copy {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 0.125rem;
+    }
+
+    .header-copy h2,
+    .header-copy p {
+      margin: 0;
+    }
+
     .header-controls {
       display: flex;
       align-items: center;
@@ -193,12 +206,14 @@
       .header-inner {
         display: grid;
         grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+        grid-template-rows: auto auto;
         grid-template-areas:
-          "logo copy"
-          "logo controls";
+          "logo controls"
+          "copy copy";
         column-gap: 0.75rem;
         row-gap: 0.5rem;
         align-items: start;
+        justify-items: stretch;
       }
 
       .header-brand {
@@ -219,12 +234,11 @@
 
       .header-copy {
         grid-area: copy;
-        text-align: right;
-        justify-self: end;
-        align-self: start;
-        display: flex;
-        flex-direction: column;
-        gap: 0.15rem;
+        justify-self: center;
+        align-self: center;
+        text-align: center;
+        align-items: center;
+        gap: 0.25rem;
       }
 
       .header-controls {
@@ -260,12 +274,11 @@
       }
 
       .header-copy {
-        display: flex;
         flex-direction: column;
         align-items: flex-start;
-        justify-content: center;
+        gap: 0.125rem;
         text-align: left;
-        gap: 0.15rem;
+        white-space: normal;
       }
 
       .header-controls {
