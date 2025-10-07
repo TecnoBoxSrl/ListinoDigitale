@@ -216,8 +216,50 @@ const state = {
     name: '',                                       // Nominativo
     date: new Date().toISOString().slice(0, 10),    // yyyy-mm-dd
   },
-selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
+  selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
 };
+
+let categoryLayoutBound = false;
+
+function relocateCategoryPanel(){
+  const panel = document.getElementById('catsSticky');
+  const desktopAnchor = document.getElementById('categoryPanelDesktopAnchor');
+  const mobileAnchor = document.getElementById('categoryPanelMobileAnchor');
+  if (!panel || !desktopAnchor || !mobileAnchor) return;
+
+  const isDesktop = window.matchMedia ? window.matchMedia('(min-width: 1024px)').matches : window.innerWidth >= 1024;
+  const target = isDesktop ? desktopAnchor : mobileAnchor;
+  if (target && panel.parentElement !== target) {
+    target.appendChild(panel);
+  }
+}
+
+function applyCategoryOrientation(){
+  const list = document.getElementById('categoryList');
+  if (!list) return;
+
+  const isDesktop = window.matchMedia
+    ? window.matchMedia('(min-width: 1024px)').matches
+    : window.innerWidth >= 1024;
+  const orientation = isDesktop ? 'vertical' : 'horizontal';
+
+  list.classList.remove('orientation-horizontal', 'orientation-vertical');
+  list.classList.add(`orientation-${orientation}`);
+}
+
+function initCategoryLayout(){
+  if (categoryLayoutBound) return;
+  categoryLayoutBound = true;
+
+  const handleLayoutChange = () => {
+    relocateCategoryPanel();
+    applyCategoryOrientation();
+  };
+
+  handleLayoutChange();
+  window.addEventListener('resize', handleLayoutChange);
+  window.addEventListener('orientationchange', handleLayoutChange);
+}
 
 /* ============ BOOT ROBUSTO ============ */
 async function boot(){
@@ -335,6 +377,8 @@ function bindUI(){
   const msg = document.getElementById('quoteMsg');
   if (msg) msg.textContent = 'Preventivo svuotato.';
   });
+
+  initCategoryLayout();
 }
 
 function toggleModal(id, show=true){
@@ -643,7 +687,7 @@ function buildCategories(){
   allBtn.type = 'button';
   allBtn.textContent = 'TUTTE';
   allBtn.className = [
-    'block w-full text-left',
+    'inline-flex items-center justify-center w-full text-left',
     'rounded-xl border px-3 py-2 text-sm',
     'transition',
     (state.selectedCategory === 'Tutte')
@@ -660,7 +704,7 @@ scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodott
 
   // separatore per andare a capo
   const br = document.createElement('div');
-  br.className = 'w-full h-0 my-2';
+  br.className = 'category-break w-full h-0 my-2';
   box.appendChild(br);
 
   // --- Altre categorie: chip su righe successive, no duplicati ---
@@ -669,7 +713,7 @@ scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodott
     btn.type = 'button';
     btn.textContent = cat;
     btn.className = [
-      'inline-flex items-left justify-center',
+      'inline-flex items-center justify-center w-full text-left',
       'rounded-xl border px-3 py-1.5 text-sm',
       'transition',
       (state.selectedCategory === cat)
@@ -685,8 +729,7 @@ scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodott
     box.appendChild(btn);
   });
 
-  // stile del contenitore (se non l’hai già messo in HTML)
-  box.classList.add('flex','flex-wrap','gap-2','items-start');
+  applyCategoryOrientation();
 }
 
 /* ============ RENDER SWITCH ============ */
