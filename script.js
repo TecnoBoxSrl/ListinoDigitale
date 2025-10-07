@@ -355,9 +355,11 @@ async function fetchProducts(){
         id,
         codice,
         descrizione,
+        dimensione,
         categoria,
         sottocategoria,
         prezzo,
+        conai,
         unita,
         disponibile,
         novita,
@@ -390,7 +392,7 @@ async function fetchProducts(){
       items.push({
         codice: p.codice,
         descrizione: p.descrizione,
-       dimensione: p.dimensione,
+        dimensione: p.dimensione,
         categoria: p.categoria,
         sottocategoria: p.sottocategoria,
         prezzo: p.prezzo,
@@ -402,7 +404,6 @@ async function fetchProducts(){
         pallet: p.pallet,
         tags: p.tags || [],
         updated_at: p.updated_at,
-        conaiPerCollo: 0,
         img: imgUrl,
       });
     }
@@ -743,8 +744,8 @@ function addToQuote(p){
   const item = state.selected.get(p.codice) || {
     codice: p.codice,
     descrizione: p.descrizione,
-    prezzo: p.prezzo || 0,
-    conai: p.conaiPerCollo || 0,
+    prezzo: Number(p.prezzo) || 0,
+    conai: Number(p.conai) || 0,
     qty: 1,
     sconto: 0
   };
@@ -821,41 +822,89 @@ function renderQuotePanel(){
     if (totEl) totEl.textContent = fmtEUR(t);
   }
 
-  // QTY: aggiorna lo stato mentre digiti, LIVE la riga e il totale; render completo su blur/Enter
-  body.querySelectorAll('.inputQty').forEach(inp=>{
-    inp.addEventListener('input', (e)=>{
-      const row  = e.currentTarget.closest('tr');
-      const code = e.currentTarget.getAttribute('data-code');
-      const it   = state.selected.get(code); if(!it) return;
+  // Input numerici (quantità/sconto) gestiti con helper comune
+  const bindNumberField = (selector, { normalize, apply, keydownExtra }) => {
+    body.querySelectorAll(selector).forEach(inp => {
+      const syncValue = (raw) => {
+        const row  = inp.closest('tr');
+        const code = inp.getAttribute('data-code');
+        const it   = state.selected.get(code);
+        if (!it) return;
 
-      const v = Math.max(1, parseInt(e.target.value || '1', 10));
-      it.qty = v; state.selected.set(code, it);
+        const value = normalize(raw, it);
+        apply(it, value);
+        state.selected.set(code, it);
 
-      updateRowCalcLive(row, it);
-      updateQuoteTotalLive();
+        updateRowCalcLive(row, it);
+        updateQuoteTotalLive();
+      };
+
+      inp.addEventListener('input', (e) => {
+        syncValue(e.target.value);
+      });
+
+      inp.addEventListener('focus', (e) => {
+        e.target.select();
+        e.target.dataset._firstDigitHandled = 'false';
+      });
+
+      inp.addEventListener('blur', () => { renderQuotePanel(); });
+
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          renderQuotePanel();
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.target.blur();
+          return;
+        }
+
+        const isDigit = /^[0-9]$/.test(e.key);
+        if (isDigit && e.target.dataset._firstDigitHandled !== 'true') {
+          const allSelected = e.target.selectionStart === 0 && e.target.selectionEnd === e.target.value.length;
+          if (!allSelected) {
+            e.preventDefault();
+            e.target.value = e.key;
+            e.target.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          e.target.dataset._firstDigitHandled = 'true';
+        }
+
+        if (keydownExtra) {
+          keydownExtra(e);
+        }
+      });
     });
-    // commit quando confermi
-    inp.addEventListener('blur', ()=>{ renderQuotePanel(); });
-    inp.addEventListener('keydown', (e)=>{ if (e.key==='Enter') { e.preventDefault(); renderQuotePanel(); } });
+  };
+
+  bindNumberField('.inputQty', {
+    normalize: (raw) => {
+      const parsed = parseInt(String(raw || '').trim(), 10);
+      return Math.max(1, Number.isNaN(parsed) ? 1 : parsed);
+    },
+    apply: (item, value) => {
+      item.qty = value;
+    }
   });
 
-  // SCONTO: come QTY
-  body.querySelectorAll('.inputSconto').forEach(inp=>{
-    inp.addEventListener('input', (e)=>{
-      const row  = e.currentTarget.closest('tr');
-      const code = e.currentTarget.getAttribute('data-code');
-      const it   = state.selected.get(code); if(!it) return;
-
-      let v = parseInt(e.target.value || '0', 10);
-      if (isNaN(v)) v = 0;
-      v = Math.max(0, Math.min(100, v));
-      it.sconto = v; state.selected.set(code, it);
-
-      updateRowCalcLive(row, it);
-      updateQuoteTotalLive();
-    });
-    inp.addEventListener('blur', ()=>{ renderQuotePanel(); });
-    inp.addEventListener('keydown', (e)=>{ if (e.key==='Enter') { e.preventDefault(); renderQuotePanel(); } });
+  bindNumberField('.inputSconto', {
+    normalize: (raw) => {
+      const parsed = parseInt(String(raw || '').trim(), 10);
+      if (Number.isNaN(parsed)) return 0;
+      return Math.max(0, Math.min(100, parsed));
+    },
+    apply: (item, value) => {
+      item.sconto = value;
+    },
+    keydownExtra: (e) => {
+      if (e.key === 'Backspace' && e.target.dataset._firstDigitHandled !== 'true') {
+        e.preventDefault();
+        e.target.value = '';
+        e.target.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
   });
 
   // RIMUOVI: elimina riga e deseleziona l'articolo nella lista prodotti
@@ -868,61 +917,9 @@ function renderQuotePanel(){
     });
   });
 
-  // ===== UX: al primo numero digitato SOSTITUISCE il contenuto =====
-  // Qty
-  body.querySelectorAll('.inputQty').forEach(inp=>{
-    inp.addEventListener('focus', (e)=>{
-      e.target.select();
-      e.target.dataset._firstDigitHandled = 'false';
-    });
-    inp.addEventListener('keydown', (e)=>{
-      const isDigit = /^[0-9]$/.test(e.key);
-      if (isDigit && e.target.dataset._firstDigitHandled !== 'true') {
-        const allSelected = e.target.selectionStart === 0 && e.target.selectionEnd === e.target.value.length;
-        if (!allSelected) {
-          e.preventDefault();
-          e.target.value = e.key;                         // prima cifra sostituisce
-          e.target.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        e.target.dataset._firstDigitHandled = 'true';
-      }
-      if (e.key === 'Escape') { e.target.blur(); }
-    });
-  });
-
-  // Sconto
-  body.querySelectorAll('.inputSconto').forEach(inp=>{
-    inp.addEventListener('focus', (e)=>{
-      e.target.select();
-      e.target.dataset._firstDigitHandled = 'false';
-    });
-    inp.addEventListener('keydown', (e)=>{
-      const isDigit = /^[0-9]$/.test(e.key);
-      if (isDigit && e.target.dataset._firstDigitHandled !== 'true') {
-        const allSelected = e.target.selectionStart === 0 && e.target.selectionEnd === e.target.value.length;
-        if (!allSelected) {
-          e.preventDefault();
-          e.target.value = e.key;
-          e.target.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        e.target.dataset._firstDigitHandled = 'true';
-      }
-      if (e.key === 'Backspace' && e.target.dataset._firstDigitHandled !== 'true') {
-        e.preventDefault();
-        e.target.value = '';
-        e.target.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-      if (e.key === 'Escape') { e.target.blur(); }
-    });
-  });
-}
-
-
-
-
-
-// ⬇️ Regola la larghezza del pannello in base alla tabella
   resizeQuotePanel();
+  quoteDrawer.updateCount();
+}
 
 
 /* ============ VALIDAZIONE E EXPORT ============ */
@@ -1157,247 +1154,227 @@ function escapeHtml(s){
 }
 
 
-// === PATCH: Drawer preventivo che **sposta** il quotePanel originale ===
-// Requisiti: esistenza di #quotePanel (come nel tuo index) e funzioni già definite:
-// - renderQuotePanel, exportXlsx, exportPdf, printQuote, validateQuoteMeta, etc.
+/* ============ DRAWER PREVENTIVO (MOBILE/TABLET) ============ */
+const quoteDrawer = createQuoteDrawer();
 
-// === PATCH: Drawer preventivo che sposta il quotePanel originale + Aggiorna FAB ===
-// === PATCH: Drawer preventivo (MOVE original #quotePanel) + FAB counter ===
-// Funziona su tablet/mobile, preserva eventi, input e bottoni del quotePanel.
+function createQuoteDrawer(){
+  let initialized = false;
+  let host;
+  let placeholder;
+  let fab;
+  let drawer;
+  let drawerContent;
+  let backdrop;
+  let closeBtn;
+  let isOpen = false;
 
-// === PATCH: Drawer preventivo (MOVE original #quotePanel) + FAB counter ===
-// Funziona su tablet/mobile, preserva eventi, input e bottoni del quotePanel.
-// Nota: qui usiamo 'state' (NON window.state).
+  function ensureInit(){
+    if (initialized) return true;
 
-(function(){
-  if (window.__drawerQuoteInit) return;
-  window.__drawerQuoteInit = true;
+    const panel = $('quotePanel');
+    if (!panel) return false;
 
-  function docReady(fn){
-    if (document.readyState === 'complete' || document.readyState === 'interactive') fn();
-    else document.addEventListener('DOMContentLoaded', fn);
-  }
+    host = panel.parentElement;
+    if (!host) return false;
 
-  docReady(function initDrawer(){
-    try{
-      var quotePanel = document.getElementById('quotePanel');
-      if (!quotePanel) return;
+    placeholder = document.createElement('div');
+    placeholder.id = 'quotePanelHost';
+    host.insertBefore(placeholder, panel.nextSibling);
 
-      // Host originale + placeholder (per rimetterlo al suo posto)
-      var host = quotePanel.parentElement;
-      var placeholder = document.createElement('div');
-      placeholder.id = 'quotePanelHost';
-      host.insertBefore(placeholder, quotePanel.nextSibling);
-
-      // Bottone fluttuante (FAB)
-      var fab = document.getElementById('btnDrawerQuote');
-      if (!fab){
-        fab = document.createElement('button');
-        fab.id = 'btnDrawerQuote';
-        fab.textContent = 'Preventivo (0)';
-        
-/*fab.style.position='fixed';
-        fab.style.right='16px';
-        fab.style.bottom='16px';
-*/
-        fab.style.zIndex='9999';
-fab.style.pointerEvents='auto';
-        fab.style.borderRadius='9999px';
-        fab.style.padding='12px 16px';
-        fab.style.background='#2563EB'; // sky-600
-        fab.style.color='#fff';
-        fab.style.boxShadow='0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -2px rgba(0,0,0,.05)';
-       /* document.body.appendChild(fab);*/
-
-
-
-
-
-        const float = document.getElementById('floatingActions');
-if (float) float.appendChild(fab); else document.body.appendChild(fab);
-
-/*
-// Abilita click sul FAB nonostante il wrapper abbia pointer-events:none
-fab.style.pointerEvents = 'auto';
-fab.style.zIndex = '9999'; // opzionale, per sicurezza
-*/
-
-
-syncFabVisibility(); // stato iniziale coerente
-
-        
-        // Mostra FAB solo se l'app è attiva
-var appShell = document.getElementById('appShell');
-if (appShell && appShell.classList.contains('hidden')) {
-  fab.style.display = 'none';
-}
-
-
-
-        
-
-        
-      }
-
-      // Drawer + backdrop
-      var drawer = document.getElementById('drawerQuote');
-      if (!drawer){
-        drawer = document.createElement('div');
-        drawer.id = 'drawerQuote';
-        drawer.style.position='fixed';
-        drawer.style.top='0';
-        drawer.style.right='0';
-        drawer.style.height='100dvh';
-        drawer.style.width='100vw';
-        drawer.style.maxWidth='none';
-        drawer.style.background='#fff';
-        drawer.style.boxShadow='0 10px 15px rgba(0,0,0,.2)';
-        drawer.style.transform='translateX(100%)';
-        drawer.style.transition='transform .2s ease';
-        drawer.style.zIndex='9998';
-        drawer.style.display='flex';
-        drawer.style.flexDirection='column';
-        drawer.innerHTML =
-          '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb;">'
-          + '<h3 style="font-weight:600;margin:0">Preventivo</h3>'
-          + '<button id="btnCloseDrawer" aria-label="Chiudi" style="border:1px solid #e5e7eb;border-radius:8px;padding:4px 8px">✕</button>'
-          + '</div>'
-          + '<div id="drawerContent" style="flex:1;overflow:auto;padding:12px 16px"></div>';
-        document.body.appendChild(drawer);
-      }
-      var drawerContent = drawer.querySelector('#drawerContent');
-
-      var backdrop = document.getElementById('drawerBackdrop');
-      if (!backdrop){
-        backdrop = document.createElement('div');
-        backdrop.id = 'drawerBackdrop';
-        backdrop.style.position='fixed';
-        backdrop.style.inset='0';
-        backdrop.style.background='rgba(0,0,0,.35)';
-        backdrop.style.zIndex='9997';
-        backdrop.style.display='none';
-        document.body.appendChild(backdrop);
-      }
-
-      
-
-     function isDesktop(){ return window.innerWidth >= 1200; }
-function isAppActive(){
-  var app = document.getElementById('appShell');
-  return app && !app.classList.contains('hidden');
-}
-
-function syncFabVisibility(){
-  // FAB visibile SEMPRE quando l’app è attiva (anche su desktop)
-  fab.style.display = isAppActive() ? 'inline-block' : 'none';
-}
-
-// eventi di ciclo vita app
-document.addEventListener('appReady',  syncFabVisibility);
-document.addEventListener('appHidden', ()=>{ fab.style.display = 'none'; });
-
-      
-
-      function getSelectedCount(){
-        try { return (state && state.selected && typeof state.selected.size === 'number') ? state.selected.size : 0; }
-        catch(e){ return 0; }
-      }
-
-      function updateFabCount(){
-        fab.textContent = 'Preventivo (' + getSelectedCount() + ')';
-      }
-
-     function openDrawer(){
-  if (quotePanel && drawerContent && !drawerContent.contains(quotePanel)){
-    drawerContent.appendChild(quotePanel); // MOVE originale
-  }
-
-  // Calcola la larghezza della tabella
-  const table = document.getElementById('quoteTable');
-  let width = 600; // fallback minimo
-  if (table){
-    // larghezza tabella + un po' di padding
-    width = Math.min(table.scrollWidth + 48, window.innerWidth - 48);
-  }
-
-  drawer.style.width = width + 'px';  // 👈 non full-screen, ma quanto basta
-  drawer.style.maxWidth = '100vw';    // non superare viewport
-  drawer.style.transform = 'translateX(0%)';
-  backdrop.style.display = 'block';
-
-  document.body.classList.add('modal-open'); // blocca scroll sfondo
-}
-
-
-function closeDrawer(){
-  if (placeholder && host && !host.contains(quotePanel)){
-    host.appendChild(quotePanel); // MOVE back
-  }
-  drawer.style.transform = 'translateX(100%)';
-  backdrop.style.display = 'none';
-
-  // 🔓 riabilita lo scroll dello sfondo
-  document.body.classList.remove('modal-open');
-}
-
-
-  fab.addEventListener('click', function(){
-    if (drawer.style.transform === 'translateX(0%)') {
-    closeDrawer();   // se è aperto → chiudi
-  } else {
-    openDrawer();    // se è chiuso → apri
-  }
-});
-
-  
-
-      drawer.querySelector('#btnCloseDrawer').addEventListener('click', closeDrawer);
-      backdrop.addEventListener('click', closeDrawer);
-      window.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeDrawer(); });
-
-      // Resize → su desktop rimettiamo a posto il pannello e nascondiamo FAB
-     function onResize(){
-  // su resize aggiorniamo SOLO la visibilità del FAB
-  syncFabVisibility();
-}
-
-      window.addEventListener('resize', onResize);
-      syncFabVisibility();
-
-      // 🔑 Aggancia il contatore al render del pannello
-      var _origRenderQuotePanel = window.renderQuotePanel;
-      if (typeof _origRenderQuotePanel === 'function'){
-        window.renderQuotePanel = function(){
-          _origRenderQuotePanel();
-          updateFabCount();
-        };
-      }
-
-      // 🔒 Rete di sicurezza: patcha add/remove se esistono
-      if (typeof window.addToQuote === 'function'){
-        var _origAdd = window.addToQuote;
-        window.addToQuote = function(p){
-          _origAdd(p);
-          updateFabCount();
-        };
-      }
-      if (typeof window.removeFromQuote === 'function'){
-        var _origRem = window.removeFromQuote;
-        window.removeFromQuote = function(code){
-          _origRem(code);
-          updateFabCount();
-        };
-      }
-
-      // Aggiorna subito al primo avvio
-      updateFabCount();
-
-    } catch(err){
-      console.error('[Drawer Patch] init error', err);
+    fab = document.getElementById('btnDrawerQuote');
+    if (!fab){
+      fab = document.createElement('button');
+      fab.id = 'btnDrawerQuote';
+      fab.type = 'button';
+      fab.textContent = 'Preventivo (0)';
+      fab.className = [
+        'rounded-full bg-blue-600 text-white px-4 py-2 text-sm font-medium',
+        'shadow-lg transition hover:bg-blue-500',
+        'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
+      ].join(' ');
+      const float = document.getElementById('floatingActions');
+      (float || document.body).appendChild(fab);
     }
-  });
-})();
 
+    drawer = document.getElementById('drawerQuote');
+    if (!drawer){
+      drawer = document.createElement('div');
+      drawer.id = 'drawerQuote';
+      Object.assign(drawer.style, {
+        position: 'fixed',
+        top: '0',
+        right: '0',
+        height: '100dvh',
+        width: '100vw',
+        maxWidth: '100vw',
+        background: '#fff',
+        boxShadow: '0 18px 40px rgba(15,23,42,.25)',
+        transform: 'translateX(100%)',
+        transition: 'transform .2s ease',
+        zIndex: '9998',
+        display: 'flex',
+        flexDirection: 'column'
+      });
+
+      const header = document.createElement('div');
+      header.className = 'flex items-center justify-between px-4 py-3 border-b border-slate-200';
+
+      const title = document.createElement('h3');
+      title.textContent = 'Preventivo';
+      title.className = 'text-base font-semibold';
+
+      closeBtn = document.createElement('button');
+      closeBtn.id = 'btnCloseDrawer';
+      closeBtn.type = 'button';
+      closeBtn.className = 'rounded-lg border border-slate-200 px-3 py-1 text-sm hover:bg-slate-50';
+      closeBtn.setAttribute('aria-label', 'Chiudi');
+      closeBtn.textContent = '✕';
+
+      header.append(title, closeBtn);
+
+      drawerContent = document.createElement('div');
+      drawerContent.id = 'drawerContent';
+      Object.assign(drawerContent.style, {
+        flex: '1',
+        overflow: 'auto',
+        padding: '12px 16px'
+      });
+
+      drawer.append(header, drawerContent);
+      document.body.appendChild(drawer);
+    } else {
+      drawerContent = drawer.querySelector('#drawerContent') || drawer;
+      closeBtn = drawer.querySelector('#btnCloseDrawer');
+    }
+
+    backdrop = document.getElementById('drawerBackdrop');
+    if (!backdrop){
+      backdrop = document.createElement('div');
+      backdrop.id = 'drawerBackdrop';
+      Object.assign(backdrop.style, {
+        position: 'fixed',
+        inset: '0',
+        background: 'rgba(15,23,42,.35)',
+        zIndex: '9997',
+        display: 'none'
+      });
+      document.body.appendChild(backdrop);
+    }
+
+    fab.addEventListener('click', toggleDrawer);
+    closeBtn?.addEventListener('click', closeDrawer);
+    backdrop.addEventListener('click', closeDrawer);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', handleResize);
+    document.addEventListener('appReady', handleAppReady);
+    document.addEventListener('appHidden', handleAppHidden);
+
+    initialized = true;
+    updateCount();
+    syncVisibility();
+
+    return true;
+  }
+
+  function onKeyDown(e){
+    if (e.key === 'Escape') closeDrawer();
+  }
+
+  function handleResize(){
+    syncVisibility();
+    if (isOpen) updateDrawerWidth();
+  }
+
+  function handleAppReady(){
+    ensureInit();
+    syncVisibility();
+  }
+
+  function handleAppHidden(){
+    closeDrawer();
+    if (fab) fab.style.display = 'none';
+  }
+
+  function isAppActive(){
+    const app = $('appShell');
+    return !!(app && !app.classList.contains('hidden'));
+  }
+
+  function syncVisibility(){
+    if (!fab) return;
+    fab.style.display = isAppActive() ? 'inline-flex' : 'none';
+  }
+
+  function updateDrawerWidth(){
+    if (!drawer) return;
+    const viewport = Math.max(window.innerWidth || 0, 320);
+    if (viewport <= 768){
+      drawer.style.width = '100vw';
+      return;
+    }
+    const table = document.getElementById('quoteTable');
+    const tableWidth = (table?.scrollWidth || 0) + 48;
+    const maxWidth = Math.max(360, viewport - 48);
+    const width = Math.min(Math.max(420, tableWidth), maxWidth);
+    drawer.style.width = `${width}px`;
+  }
+
+  function movePanelToDrawer(){
+    const panel = $('quotePanel');
+    if (panel && drawerContent && !drawerContent.contains(panel)){
+      drawerContent.appendChild(panel);
+      panel.style.width = '100%';
+    }
+  }
+
+  function movePanelBack(){
+    const panel = $('quotePanel');
+    if (panel && host && placeholder && host.contains(placeholder)){
+      host.insertBefore(panel, placeholder);
+      panel.style.width = '';
+    }
+  }
+
+  function openDrawer(){
+    if (!ensureInit()) return;
+    movePanelToDrawer();
+    updateDrawerWidth();
+    drawer.style.transform = 'translateX(0%)';
+    backdrop.style.display = 'block';
+    document.body.classList.add('modal-open');
+    isOpen = true;
+  }
+
+  function closeDrawer(){
+    if (!initialized) return;
+    movePanelBack();
+    drawer.style.transform = 'translateX(100%)';
+    backdrop.style.display = 'none';
+    document.body.classList.remove('modal-open');
+    isOpen = false;
+    resizeQuotePanel();
+  }
+
+  function toggleDrawer(){
+    if (isOpen) closeDrawer();
+    else openDrawer();
+  }
+
+  function updateCount(){
+    if (!fab) return;
+    const count = state.selected.size;
+    fab.textContent = `Preventivo (${count})`;
+    fab.setAttribute('aria-label', `Apri preventivo (${count}) articoli`);
+  }
+
+  ensureInit();
+
+  return {
+    updateCount,
+    syncVisibility,
+    close: closeDrawer
+  };
+}
 // === Back to Top button ===
 (function(){
   const btn = document.getElementById('btnBackToTop');
