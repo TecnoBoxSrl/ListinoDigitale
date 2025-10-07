@@ -7,18 +7,107 @@
 // =============================== 
 
 /* === CONFIG (METTI I TUOI VALORI) === */
-const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';           // <-- tuo URL-->
+const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';           // <-- tuo URL -->
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w'; // <-- tua anon key
 const STORAGE_BUCKET = 'prodotti'; // se usi 'media', cambia qui
 
 /* === Supabase (UMD globale) === */
-let supabase;
-try {
-  if (!window.supabase) throw new Error('window.supabase non presente (UMD non caricato).');
-  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  console.log('[Boot] Supabase client OK');
-} catch (e) {
-  console.error('[Boot] Errore init Supabase:', e);
+let supabase = null;
+let supabaseInitWarned = false;
+let supabaseRetryTimer = null;
+let supabaseRetryCount = 0;
+const MAX_SUPABASE_RETRIES = 10;
+let authListenerBound = false;
+
+function ensureSupabaseClient(){
+  if (supabase) return supabase;
+
+  if (!window.supabase?.createClient){
+    if (!supabaseInitWarned){
+      console.error('[Boot] Supabase client non disponibile (UMD non caricato).');
+      supabaseInitWarned = true;
+    }
+    return null;
+  }
+
+  try {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    console.log('[Boot] Supabase client OK');
+  } catch (error) {
+    console.error('[Boot] Errore init Supabase:', error);
+    supabase = null;
+  }
+
+  return supabase;
+}
+
+function scheduleSupabaseRetry(){
+  if (supabaseRetryTimer) return;
+
+  const msg = $('loginMsg');
+  if (msg && !msg.textContent) {
+    msg.textContent = 'Connessione al servizio in corso…';
+  }
+
+  supabaseRetryTimer = setTimeout(async ()=>{
+    supabaseRetryTimer = null;
+
+    if (ensureSupabaseClient()){
+      supabaseRetryCount = 0;
+      if (msg && msg.textContent?.startsWith('Connessione')) msg.textContent = '';
+      await startAuthFlow();
+      return;
+    }
+
+    supabaseRetryCount += 1;
+    console.warn(`[Boot] Supabase non disponibile (tentativo ${supabaseRetryCount}/${MAX_SUPABASE_RETRIES}).`);
+
+    if (supabaseRetryCount < MAX_SUPABASE_RETRIES){
+      scheduleSupabaseRetry();
+    } else if (msg) {
+      msg.textContent = 'Servizio di autenticazione non raggiungibile. Controlla la connessione e ricarica la pagina.';
+    }
+  }, 1200);
+}
+
+let uiBound = false;
+let yearInitialised = false;
+let quoteMetaBound = false;
+
+async function startAuthFlow(){
+  try {
+    const client = ensureSupabaseClient();
+    if (!client) {
+      scheduleSupabaseRetry();
+      return;
+    }
+
+    const { data:{ session }, error } = await client.auth.getSession();
+    if (error) console.warn('[Auth] getSession warn:', error);
+
+    if (session?.user) {
+      console.log('[Auth] sessione presente', session.user.id);
+      await afterLogin(session.user.id);
+    } else {
+      console.log('[Auth] nessuna sessione. Mostro login gate');
+      showAuthGate(true);
+    }
+
+    if (!authListenerBound) {
+      client.auth.onAuthStateChange(async (event, sess)=>{
+        console.log('[Auth] onAuthStateChange:', event, !!sess?.user);
+        if (sess?.user) await afterLogin(sess.user.id);
+        else await afterLogout();
+      });
+      authListenerBound = true;
+    }
+
+  } catch (error) {
+    console.error('[Boot] startAuthFlow error:', error);
+    showAuthGate(true);
+    const m = $('loginMsg');
+    if (m) m.textContent = 'Errore di inizializzazione. Vedi console.';
+  }
 }
 
 /* === Helpers === */
@@ -100,39 +189,33 @@ selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
 async function boot(){
   try {
     bindUI(); // aggancia sempre i listener
-    $('year') && ( $('year').textContent = new Date().getFullYear() );
 
-    // inizializza nominativo+data nel pannello
-    const nameEl = document.getElementById('quoteName');
-    const dateEl = document.getElementById('quoteDate');
-    if (nameEl) {
-      nameEl.value = state.quoteMeta.name;
-      nameEl.addEventListener('input', () => { state.quoteMeta.name = nameEl.value.trim(); });
-    }
-    if (dateEl) {
-      dateEl.value = state.quoteMeta.date;
-      dateEl.addEventListener('change', () => { state.quoteMeta.date = dateEl.value || new Date().toISOString().slice(0,10); });
+    if (!yearInitialised && $('year')) {
+      $('year').textContent = new Date().getFullYear();
+      yearInitialised = true;
     }
 
-    // restore session
-    if (!supabase) return showAuthGate(true);
+    if (!quoteMetaBound) {
+      const nameEl = document.getElementById('quoteName');
+      const dateEl = document.getElementById('quoteDate');
+      if (nameEl) {
+        nameEl.value = state.quoteMeta.name;
+        nameEl.addEventListener('input', () => { state.quoteMeta.name = nameEl.value.trim(); });
+      }
+      if (dateEl) {
+        dateEl.value = state.quoteMeta.date;
+        dateEl.addEventListener('change', () => { state.quoteMeta.date = dateEl.value || new Date().toISOString().slice(0,10); });
+      }
+      quoteMetaBound = true;
+    }
 
-    const { data:{ session }, error } = await supabase.auth.getSession();
-    if (error) console.warn('[Auth] getSession warn:', error);
-    if (session?.user) {
-      console.log('[Auth] sessione presente', session.user.id);
-      await afterLogin(session.user.id);
-    } else {
-      console.log('[Auth] nessuna sessione. Mostro login gate');
+    if (!ensureSupabaseClient()) {
       showAuthGate(true);
+      scheduleSupabaseRetry();
+      return;
     }
 
-    // ascolta cambi di auth
-    supabase.auth.onAuthStateChange(async (event, sess)=>{
-      console.log('[Auth] onAuthStateChange:', event, !!sess?.user);
-      if (sess?.user) await afterLogin(sess.user.id);
-      else await afterLogout();
-    });
+    await startAuthFlow();
 
   } catch (e) {
     console.error('[Boot] eccezione:', e);
@@ -159,6 +242,9 @@ function showAuthGate(show){
 }
 
 function bindUI(){
+  if (uiBound) return;
+  uiBound = true;
+
   // Login
   $('btnDoLogin')?.addEventListener('click', doLogin);
   const email = $('loginEmail'), pass = $('loginPassword');
@@ -232,8 +318,14 @@ async function doLogin(){
   const msg = $('loginMsg');
   if (!email || !password){ if(msg) msg.textContent = 'Inserisci email e password.'; return; }
   if(msg) msg.textContent = 'Accesso in corso…';
+  const client = ensureSupabaseClient();
+  if (!client){
+    if (msg) msg.textContent = 'Servizio di autenticazione non disponibile. Riprovo…';
+    scheduleSupabaseRetry();
+    return;
+  }
   try {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
     if (error) {
       console.warn('[Auth] signIn error:', error);
       msg && (msg.textContent = 'Accesso non riuscito: ' + error.message);
@@ -252,12 +344,21 @@ async function sendReset(){
   const msg = $('loginMsg');
   if (!email){ msg && (msg.textContent='Inserisci email per il reset.'); return; }
   const site = window.location.origin + window.location.pathname;
-  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: site });
+  const client = ensureSupabaseClient();
+  if (!client){
+    if (msg) msg.textContent = 'Servizio non disponibile. Riprova più tardi.';
+    scheduleSupabaseRetry();
+    return;
+  }
+  const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: site });
   msg && (msg.textContent = error ? ('Reset non riuscito: '+error.message) : 'Email di reset inviata.');
 }
 
 async function doLogout(){
   try {
+    const client = ensureSupabaseClient();
+    if (client?.auth) {
+      await client.auth.signOut();
     if (supabase?.auth) {
       await supabase.auth.signOut();
     }
@@ -269,11 +370,14 @@ async function doLogout(){
 
 async function afterLogin(userId){
   try{
+    const client = ensureSupabaseClient();
+    if (!client) throw new Error('Supabase non inizializzato');
+
     // Provo a leggere ruolo + display_name dal profilo
     let role = 'agent';
     let displayName = '';
 
-    const { data: prof, error: perr } = await supabase
+    const { data: prof, error: perr } = await client
       .from('profiles')
       .select('role, display_name')
       .eq('id', userId)
@@ -284,7 +388,7 @@ async function afterLogin(userId){
     if (prof?.display_name) displayName = prof.display_name;
 
     // Fallback: prendo anche l'utente auth per full_name/email
-    const { data: userRes } = await supabase.auth.getUser();
+    const { data: userRes } = await client.auth.getUser();
     const user = userRes?.user;
     if (!displayName) {
       displayName = user?.user_metadata?.full_name
@@ -343,6 +447,9 @@ async function fetchProducts(){
   console.log('[Data] fetchProducts…');
   const info = $('resultInfo');
   try{
+    const client = ensureSupabaseClient();
+    if (!client) throw new Error('Supabase non inizializzato');
+
     const fullSelect = `
         id,
         codice,
@@ -362,6 +469,7 @@ async function fetchProducts(){
         product_media(id,kind,path,sort)
       `;
 
+    let { data, error } = await client
     let { data, error } = await supabase
       .from('products')
       .select(fullSelect)
@@ -372,6 +480,7 @@ async function fetchProducts(){
       const missingExtra = msg.includes('dimensione') || msg.includes('conai');
       if (missingExtra) {
         console.warn('[Data] prodotti senza colonne dimensione/conai, retry fallback');
+        ({ data, error } = await client
         ({ data, error } = await supabase
           .from('products')
           .select(`
@@ -404,7 +513,7 @@ async function fetchProducts(){
 
       let imgUrl = '';
       if (mediaImgs[0]) {
-        const { data: signed, error: sErr } = await supabase
+        const { data: signed, error: sErr } = await client
           .storage.from(STORAGE_BUCKET)
           .createSignedUrl(mediaImgs[0].path, 600);
         if (sErr) console.warn('[Storage] signedURL warn:', sErr.message);
@@ -1188,6 +1297,15 @@ async function handleGlobalEscape(e){
     e.preventDefault();
     toggleModal('imgModal', false);
     return;
+
+async function handleGlobalEscape(e){
+  if (e.key !== 'Escape') return;
+
+  const imgModal = $('imgModal');
+  if (imgModal && !imgModal.classList.contains('hidden')) {
+    e.preventDefault();
+    toggleModal('imgModal', false);
+    return;
   }
 
   if (quoteDrawer?.isOpen?.()) {
@@ -1217,6 +1335,247 @@ async function handleGlobalEscape(e){
   }
 }
 
+  if (quoteDrawer?.isOpen?.()) {
+    e.preventDefault();
+    quoteDrawer.close();
+    return;
+  }
+
+  const appShell = $('appShell');
+  const authGate = $('authGate');
+  const appVisible = !!(appShell && !appShell.classList.contains('hidden'));
+  const gateHidden = !authGate || authGate.classList.contains('hidden');
+
+  if (!appVisible || !gateHidden) return;
+
+  e.preventDefault();
+  log('[Auth] ESC premuto → logout forzato');
+  try {
+    await doLogout();
+  } catch (error) {
+    err('[Auth] Logout forzato fallito', error);
+    try {
+      await afterLogout();
+    } catch (fallbackErr) {
+      err('[Auth] afterLogout fallback fallito', fallbackErr);
+    }
+  }
+}
+
+document.addEventListener('keydown', handleGlobalEscape);
+
+function createQuoteDrawer(){
+  let initialized = false;
+  let host;
+  let placeholder;
+  let fab;
+  let drawer;
+  let drawerContent;
+  let backdrop;
+  let closeBtn;
+  let isOpen = false;
+
+  function ensureInit(){
+    if (initialized) return true;
+
+    const panel = $('quotePanel');
+    if (!panel) return false;
+
+    host = panel.parentElement;
+    if (!host) return false;
+
+    placeholder = document.createElement('div');
+    placeholder.id = 'quotePanelHost';
+    host.insertBefore(placeholder, panel.nextSibling);
+
+    fab = document.getElementById('btnDrawerQuote');
+    if (!fab){
+      fab = document.createElement('button');
+      fab.id = 'btnDrawerQuote';
+      fab.type = 'button';
+      fab.textContent = 'Preventivo (0)';
+      fab.className = [
+        'rounded-full bg-blue-600 text-white px-4 py-2 text-sm font-medium',
+        'shadow-lg transition hover:bg-blue-500',
+        'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
+      ].join(' ');
+      const float = document.getElementById('floatingActions');
+      (float || document.body).appendChild(fab);
+    }
+
+    drawer = document.getElementById('drawerQuote');
+    if (!drawer){
+      drawer = document.createElement('div');
+      drawer.id = 'drawerQuote';
+      Object.assign(drawer.style, {
+        position: 'fixed',
+        top: '0',
+        right: '0',
+        height: '100dvh',
+        width: '100vw',
+        maxWidth: '100vw',
+        background: '#fff',
+        boxShadow: '0 18px 40px rgba(15,23,42,.25)',
+        transform: 'translateX(100%)',
+        transition: 'transform .2s ease',
+        zIndex: '9998',
+        display: 'flex',
+        flexDirection: 'column'
+      });
+
+      const header = document.createElement('div');
+      header.className = 'flex items-center justify-between px-4 py-3 border-b border-slate-200';
+
+      const title = document.createElement('h3');
+      title.textContent = 'Preventivo';
+      title.className = 'text-base font-semibold';
+
+      closeBtn = document.createElement('button');
+      closeBtn.id = 'btnCloseDrawer';
+      closeBtn.type = 'button';
+      closeBtn.className = 'rounded-lg border border-slate-200 px-3 py-1 text-sm hover:bg-slate-50';
+      closeBtn.setAttribute('aria-label', 'Chiudi');
+      closeBtn.textContent = '✕';
+
+      header.append(title, closeBtn);
+
+      drawerContent = document.createElement('div');
+      drawerContent.id = 'drawerContent';
+      Object.assign(drawerContent.style, {
+        flex: '1',
+        overflow: 'auto',
+        padding: '12px 16px'
+      });
+
+      drawer.append(header, drawerContent);
+      document.body.appendChild(drawer);
+    } else {
+      drawerContent = drawer.querySelector('#drawerContent') || drawer;
+      closeBtn = drawer.querySelector('#btnCloseDrawer');
+    }
+
+    backdrop = document.getElementById('drawerBackdrop');
+    if (!backdrop){
+      backdrop = document.createElement('div');
+      backdrop.id = 'drawerBackdrop';
+      Object.assign(backdrop.style, {
+        position: 'fixed',
+        inset: '0',
+        background: 'rgba(15,23,42,.35)',
+        zIndex: '9997',
+        display: 'none'
+      });
+      document.body.appendChild(backdrop);
+    }
+
+    fab.addEventListener('click', toggleDrawer);
+    closeBtn?.addEventListener('click', closeDrawer);
+    backdrop.addEventListener('click', closeDrawer);
+    window.addEventListener('resize', handleResize);
+    document.addEventListener('appReady', handleAppReady);
+    document.addEventListener('appHidden', handleAppHidden);
+
+    initialized = true;
+    updateCount();
+    syncVisibility();
+
+    return true;
+  }
+
+  function handleResize(){
+    syncVisibility();
+    if (isOpen) updateDrawerWidth();
+  }
+
+  function handleAppReady(){
+    ensureInit();
+    syncVisibility();
+  }
+
+  function handleAppHidden(){
+    closeDrawer();
+    if (fab) fab.style.display = 'none';
+  }
+
+  function isAppActive(){
+    const app = $('appShell');
+    return !!(app && !app.classList.contains('hidden'));
+  }
+
+  function syncVisibility(){
+    if (!fab) return;
+    fab.style.display = isAppActive() ? 'inline-flex' : 'none';
+  }
+
+  function updateDrawerWidth(){
+    if (!drawer) return;
+    const viewport = Math.max(window.innerWidth || 0, 320);
+    if (viewport <= 768){
+      drawer.style.width = '100vw';
+      return;
+    }
+    const table = document.getElementById('quoteTable');
+    const tableWidth = (table?.scrollWidth || 0) + 48;
+    const maxWidth = Math.max(360, viewport - 48);
+    const width = Math.min(Math.max(420, tableWidth), maxWidth);
+    drawer.style.width = `${width}px`;
+  }
+
+  function movePanelToDrawer(){
+    const panel = $('quotePanel');
+    if (panel && drawerContent && !drawerContent.contains(panel)){
+      drawerContent.appendChild(panel);
+      panel.style.width = '100%';
+    }
+  }
+
+  function movePanelBack(){
+    const panel = $('quotePanel');
+    if (panel && host && placeholder && host.contains(placeholder)){
+      host.insertBefore(panel, placeholder);
+      panel.style.width = '';
+    }
+  }
+
+  function openDrawer(){
+    if (!ensureInit()) return;
+    movePanelToDrawer();
+    updateDrawerWidth();
+    drawer.style.transform = 'translateX(0%)';
+    backdrop.style.display = 'block';
+    document.body.classList.add('modal-open');
+    isOpen = true;
+  }
+
+  function closeDrawer(){
+    if (!initialized) return;
+    movePanelBack();
+    drawer.style.transform = 'translateX(100%)';
+    backdrop.style.display = 'none';
+    document.body.classList.remove('modal-open');
+    isOpen = false;
+    resizeQuotePanel();
+  }
+
+  function toggleDrawer(){
+    if (isOpen) closeDrawer();
+    else openDrawer();
+  }
+
+  function updateCount(){
+    if (!fab) return;
+    const count = state.selected.size;
+    fab.textContent = `Preventivo (${count})`;
+    fab.setAttribute('aria-label', `Apri preventivo (${count}) articoli`);
+  }
+
+  ensureInit();
+
+  return {
+    updateCount,
+    syncVisibility,
+    close: closeDrawer,
+    isOpen: () => isOpen
 document.addEventListener('keydown', handleGlobalEscape);
 
 function createQuoteDrawer(){
