@@ -192,32 +192,46 @@
     @media (max-width: 767.98px) and (orientation: portrait) {
       .header-inner {
         display: grid;
-        grid-template-columns: 1fr auto;
-        align-items: center;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas:
+          "logo copy"
+          "controls controls";
         gap: 0.75rem;
+        align-items: start;
       }
 
       .header-brand {
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        gap: 0.5rem;
-        justify-self: center;
+        display: contents;
+      }
+
+      .header-logo {
+        grid-area: logo;
+        justify-self: start;
+        justify-content: flex-start;
+        align-items: flex-start;
       }
 
       #siteLogo {
         width: 120px;
-        margin: 0 auto;
+        margin: 0;
+      }
+
+      .header-copy {
+        grid-area: copy;
+        text-align: right;
+        justify-self: end;
       }
 
       .header-controls {
+        grid-area: controls;
         flex-direction: column;
-        align-items: flex-end;
-        justify-self: end;
+        align-items: center;
+        justify-content: center;
+        justify-self: center;
+        align-self: end;
         margin-left: 0;
         gap: 0.35rem;
-        text-align: right;
-        align-self: center;
+        text-align: center;
       }
     }
 
@@ -387,10 +401,10 @@
     <!-- Brand -->
     <div class="header-brand">
       <a href="https://www.tecnobox.net" target="_blank" rel="noopener"
-         class="shrink-0 flex items-center justify-center md:justify-start" aria-label="Vai al sito Tecnobox">
+         class="header-logo shrink-0 flex items-center justify-center md:justify-start" aria-label="Vai al sito Tecnobox">
         <img src="./logo.svg" alt="Tecnobox" id="siteLogo" class="block" />
       </a>
-      <div class="leading-tight">
+      <div class="header-copy leading-tight">
         <h2 class="text-lg font-semibold">Listino Digitale</h2>
         <p class="text-xs text-slate-500">Accesso riservato agli agenti</p>
       </div>
