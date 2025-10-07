@@ -1,10 +1,12 @@
+import { fetchProductsData } from './product-data.js';
+
 // ===============================
 // Listino Digitale – Tecnobox (vLG-8+PDF/Print)
 // - Auth: email/password (login gate)
 // - Ricerca live, vista listino/card
 // - Preventivi a destra (export XLSX/PDF/Print)
 // - Log estesi per debugging
-// =============================== 
+// ===============================
 
 /* === CONFIG (METTI I TUOI VALORI) === */
 const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';           // <-- tuo URL-->
@@ -349,28 +351,7 @@ async function fetchProducts(){
   console.log('[Data] fetchProducts…');
   const info = $('resultInfo');
   try{
-    const { data, error } = await supabase
-      .from('products')
-      .select(`
-        id,
-        codice,
-        descrizione,
-        categoria,
-        sottocategoria,
-        prezzo,
-        unita,
-        disponibile,
-        novita,
-        pack,
-        pallet,
-        tags,
-        updated_at,
-        product_media(id,kind,path,sort)
-      `)
-      .order('descrizione', { ascending: true });
-
-    if (error) throw error;
-
+    const { data } = await fetchProductsData(supabase);
     const items = [];
     for (const p of (data || [])) {
       // immagine principale (se presente)
@@ -390,7 +371,7 @@ async function fetchProducts(){
       items.push({
         codice: p.codice,
         descrizione: p.descrizione,
-       dimensione: p.dimensione,
+        dimensione: p.dimensione,
         categoria: p.categoria,
         sottocategoria: p.sottocategoria,
         prezzo: p.prezzo,
@@ -402,7 +383,6 @@ async function fetchProducts(){
         pallet: p.pallet,
         tags: p.tags || [],
         updated_at: p.updated_at,
-        conaiPerCollo: 0,
         img: imgUrl,
       });
     }
@@ -744,7 +724,7 @@ function addToQuote(p){
     codice: p.codice,
     descrizione: p.descrizione,
     prezzo: p.prezzo || 0,
-    conai: p.conaiPerCollo || 0,
+    conai: p.conai || 0,
     qty: 1,
     sconto: 0
   };
