@@ -408,6 +408,7 @@ async function fetchProducts(){
         codice: p.codice,
         descrizione: p.descrizione,
         dimensione: p.dimensione ?? '',
+        dimensione: p.dimensione,
         categoria: p.categoria,
         sottocategoria: p.sottocategoria,
         prezzo: p.prezzo,
