@@ -160,24 +160,30 @@ function getQuoteDateParts(){
 
 function getAgentInitials(){
   const name = state.agent?.name || '';
-  const parts = name
+  const normalizedName = name
     .normalize('NFD').replace(/\p{Diacritic}/gu, '')
-    .toUpperCase()
+    .toUpperCase();
+
+  const parts = normalizedName
+    .replace(/[^A-Z0-9\s]/g, ' ')
     .split(/\s+/)
     .filter(Boolean);
 
-  const fallback = extractInitials(state.agent?.code || 'AG', 4);
+  const fallback = extractInitials(state.agent?.code || 'AG', 2);
   if (!parts.length) return fallback;
 
-  const firstPart = extractInitials(parts[0], 2);
-  let lastPart = parts.length > 1 ? extractInitials(parts[parts.length - 1], 2) : '';
+  const firstLetter = parts[0]?.charAt(0) || fallback.charAt(0) || 'X';
+  let lastLetter = parts.length > 1 ? parts[parts.length - 1]?.charAt(0) : '';
 
-  if (!lastPart) {
-    lastPart = extractInitials(state.agent?.code || '', 2);
+  if (!lastLetter) {
+    const codeNormalized = String(state.agent?.code || '')
+      .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+    lastLetter = codeNormalized.charAt(1) || codeNormalized.charAt(0) || fallback.charAt(1) || fallback.charAt(0) || 'X';
   }
 
-  const initials = (firstPart + lastPart).padEnd(4, 'X').slice(0, 4);
-  return initials || fallback;
+  return `${firstLetter}${lastLetter || 'X'}`.padEnd(2, 'X');
 }
 
 function getQuoteCode(){
@@ -1352,6 +1358,8 @@ function lineCalc(it){
 
 function renderQuotePanel(){
   const body = $('quoteBody'), tot = $('quoteTotal'), cnt = $('quoteItemsCount');
+  const vatEl = $('quoteVat');
+  const grossEl = $('quoteGross');
   if (!body || !tot) return;
   updateQuoteCodeLabel();
   body.innerHTML = '';
@@ -1387,7 +1395,12 @@ function renderQuotePanel(){
     body.appendChild(tr);
   }
 
+  const vat = Math.round(total * 0.22 * 100) / 100;
+  const gross = Math.round((total + vat) * 100) / 100;
+
   tot.textContent = fmtEUR(total);
+  if (vatEl) vatEl.textContent = fmtEUR(vat);
+  if (grossEl) grossEl.textContent = fmtEUR(gross);
   if (cnt) cnt.textContent = state.selected.size;
 
   // --- Helpers LIVE per aggiornare una riga e il totale senza re-render ---
@@ -1403,8 +1416,14 @@ function renderQuotePanel(){
     for (const v of state.selected.values()){
       t += lineCalc(v).totale;
     }
+    const vat = Math.round(t * 0.22 * 100) / 100;
+    const gross = Math.round((t + vat) * 100) / 100;
     const totEl = document.getElementById('quoteTotal');
     if (totEl) totEl.textContent = fmtEUR(t);
+    const vatElLive = document.getElementById('quoteVat');
+    if (vatElLive) vatElLive.textContent = fmtEUR(vat);
+    const grossElLive = document.getElementById('quoteGross');
+    if (grossElLive) grossElLive.textContent = fmtEUR(gross);
   }
 
   // Input numerici (quantità/sconto) gestiti con helper comune
@@ -1562,7 +1581,11 @@ function exportXlsx(){
     ]);
   }
   rows.push([]);
+  const vat = Math.round(total * 0.22 * 100) / 100;
+  const gross = Math.round((total + vat) * 100) / 100;
   rows.push(['','','','','','','Totale imponibile', Number(total||0)]);
+  rows.push(['','','','','','','Totale IVA 22%', Number(vat||0)]);
+  rows.push(['','','','','','','Totale importo', Number(gross||0)]);
 
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
   const quoteCode = getQuoteCode();
@@ -1721,7 +1744,11 @@ async function exportPdf(){
     return (padding.left ?? 0) + (padding.right ?? 0);
   })();
 
-  const defaultMinWidths = [70, 160, 70, 75, 45, 60, 75, 80];
+  const baseWidths = [48, 150, 52, 58, 32, 42, 58, 65];
+  const baseTotal = baseWidths.reduce((sum, width) => sum + width, 0);
+  const baseWithoutDescription = baseTotal - baseWidths[1];
+  const maxDescription = Math.max(baseWidths[1], Math.min(260, tableWidth - baseWithoutDescription));
+  const maxWidths = [72, maxDescription, 70, 78, 42, 55, 75, 85];
   const measuredWidths = new Array(head[0].length).fill(0);
   const rowsForMeasure = [head[0], ...body];
   rowsForMeasure.forEach((row, rowIndex) => {
@@ -1737,21 +1764,39 @@ async function exportPdf(){
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(baseStyles.fontSize);
 
-  const minWidths = measuredWidths.map((width, index) => Math.max(width || 0, defaultMinWidths[index]));
-  const descIndex = 1;
-  const otherColumnsTotal = minWidths.reduce((sum, width, index) => index === descIndex ? sum : sum + width, 0);
-  const availableForDescription = Math.max(defaultMinWidths[descIndex], tableWidth - otherColumnsTotal);
-  minWidths[descIndex] = Math.max(minWidths[descIndex], availableForDescription);
+  const columnWidths = measuredWidths.map((width, index) => {
+    const min = baseWidths[index];
+    const max = Math.max(min, maxWidths[index]);
+    const measured = Math.max(width || 0, min);
+    return Math.min(max, measured);
+  });
+
+  let totalColumnWidth = columnWidths.reduce((sum, width) => sum + width, 0);
+  if (totalColumnWidth > tableWidth) {
+    const shrinkOrder = [1, 0, 2, 3, 6, 7, 5, 4];
+    let overflow = totalColumnWidth - tableWidth;
+    for (const index of shrinkOrder) {
+      if (overflow <= 0) break;
+      const min = baseWidths[index];
+      if (columnWidths[index] <= min) continue;
+      const reducible = columnWidths[index] - min;
+      if (reducible <= 0) continue;
+      const delta = Math.min(reducible, overflow);
+      columnWidths[index] -= delta;
+      overflow -= delta;
+    }
+    totalColumnWidth = columnWidths.reduce((sum, width) => sum + width, 0);
+  }
 
   const columnStyles = {
-    0: { halign: 'left', cellWidth: 'auto', minCellWidth: minWidths[0], overflow: 'visible' },
-    1: { halign: 'left', cellWidth: 'auto', minCellWidth: minWidths[1], maxCellWidth: Math.max(minWidths[1], availableForDescription), overflow: 'linebreak' },
-    2: { halign: 'right', cellWidth: 'auto', minCellWidth: minWidths[2], overflow: 'visible' },
-    3: { halign: 'right', cellWidth: 'auto', minCellWidth: minWidths[3], overflow: 'visible' },
-    4: { halign: 'center', cellWidth: 'auto', minCellWidth: minWidths[4], overflow: 'visible' },
-    5: { halign: 'center', cellWidth: 'auto', minCellWidth: minWidths[5], overflow: 'visible' },
-    6: { halign: 'right', cellWidth: 'auto', minCellWidth: minWidths[6], overflow: 'visible' },
-    7: { halign: 'right', cellWidth: 'auto', minCellWidth: minWidths[7], overflow: 'visible' },
+    0: { halign: 'left', cellWidth: columnWidths[0], minCellWidth: columnWidths[0], maxCellWidth: columnWidths[0], overflow: 'visible' },
+    1: { halign: 'left', cellWidth: columnWidths[1], minCellWidth: columnWidths[1], maxCellWidth: columnWidths[1], overflow: 'linebreak' },
+    2: { halign: 'right', cellWidth: columnWidths[2], minCellWidth: columnWidths[2], maxCellWidth: columnWidths[2], overflow: 'visible' },
+    3: { halign: 'right', cellWidth: columnWidths[3], minCellWidth: columnWidths[3], maxCellWidth: columnWidths[3], overflow: 'visible' },
+    4: { halign: 'center', cellWidth: columnWidths[4], minCellWidth: columnWidths[4], maxCellWidth: columnWidths[4], overflow: 'visible' },
+    5: { halign: 'center', cellWidth: columnWidths[5], minCellWidth: columnWidths[5], maxCellWidth: columnWidths[5], overflow: 'visible' },
+    6: { halign: 'right', cellWidth: columnWidths[6], minCellWidth: columnWidths[6], maxCellWidth: columnWidths[6], overflow: 'visible' },
+    7: { halign: 'right', cellWidth: columnWidths[7], minCellWidth: columnWidths[7], maxCellWidth: columnWidths[7], overflow: 'visible' },
   };
 
   if (doc.autoTable){
@@ -1763,7 +1808,7 @@ async function exportPdf(){
       styles: baseStyles,
       headStyles: { ...baseStyles, fontStyle: 'bold', fontSize: 9.5, fillColor: [241,245,249] },
       columnStyles,
-      tableWidth: 'auto',
+      tableWidth,
       theme: 'grid',
       didParseCell: (data) => {
         const { cell, section } = data;
@@ -1836,7 +1881,7 @@ async function exportPdf(){
     const endY = doc.lastAutoTable.finalY || y;
     doc.setFont('helvetica','bold');
     doc.setFontSize(11);
-    const vat = Math.round(total * 22) / 100;
+    const vat = Math.round(total * 0.22 * 100) / 100;
     const gross = Math.round((total + vat) * 100) / 100;
     let totalsY = endY + 20;
     const requiredBlockHeight = (16 * 3) + 32; // tre righe totali + respiro + footer
@@ -1909,6 +1954,8 @@ function printQuote(){
         <td class="tr">${fmtEUR(totale)}</td>
       </tr>`;
   }
+  const vat = Math.round(total * 0.22 * 100) / 100;
+  const gross = Math.round((total + vat) * 100) / 100;
 
   const win = window.open('', '_blank');
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
@@ -1936,6 +1983,7 @@ function printQuote(){
     td { border:1px solid #e2e8f0; padding:6px 8px; }
     .tr { text-align:right; }
     tfoot td { font-weight:600; }
+    .totals td.amount { color:#dc2626; }
     .actions { display:none; }
   </style>
 </head>
@@ -1958,10 +2006,18 @@ function printQuote(){
     <tbody>
       ${rowsHtml}
     </tbody>
-    <tfoot>
+    <tfoot class="totals">
       <tr>
         <td colspan="7" class="tr">Totale imponibile</td>
-        <td class="tr">${fmtEUR(total)}</td>
+        <td class="tr amount">${fmtEUR(total)}</td>
+      </tr>
+      <tr>
+        <td colspan="7" class="tr">Totale IVA 22%</td>
+        <td class="tr amount">${fmtEUR(vat)}</td>
+      </tr>
+      <tr>
+        <td colspan="7" class="tr">Totale importo</td>
+        <td class="tr amount">${fmtEUR(gross)}</td>
       </tr>
     </tfoot>
   </table>
