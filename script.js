@@ -450,11 +450,21 @@ async function boot(){
       }
       if (paymentEl) {
         paymentEl.value = getQuotePayment();
+        paymentEl.addEventListener('focus', () => {
+          if (paymentEl.value.trim() === DEFAULT_QUOTE_PAYMENT) {
+            paymentEl.value = '';
+          }
+        });
         paymentEl.addEventListener('input', () => {
+          state.quoteMeta.payment = paymentEl.value.trim();
+        });
+        paymentEl.addEventListener('blur', () => {
           const raw = paymentEl.value.trim();
-          state.quoteMeta.payment = raw || DEFAULT_QUOTE_PAYMENT;
           if (!raw) {
             paymentEl.value = DEFAULT_QUOTE_PAYMENT;
+            state.quoteMeta.payment = DEFAULT_QUOTE_PAYMENT;
+          } else {
+            state.quoteMeta.payment = raw;
           }
         });
       }

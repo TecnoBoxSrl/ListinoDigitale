@@ -663,14 +663,19 @@
       <!-- meta -->
       <div class="mb-3 grid grid-cols-1 gap-2">
         <div class="flex items-center gap-2">
-          <label for="quoteName" class="text-sm text-slate-600 whitespace-nowrap">Nominativo</label>
-          <input id="quoteName" type="text"
-                 class="flex-1 rounded-lg border px-2 py-1 text-sm"
-                 placeholder="Es. Rossi Srl">
+          <label for="quoteDate" class="text-sm text-slate-600 whitespace-nowrap">Data</label>
+          <input id="quoteDate" type="date" class="rounded-lg border px-2 py-1 text-sm flex-1">
         </div>
         <div class="flex items-center gap-2">
-          <label for="quoteDate" class="text-sm text-slate-600 whitespace-nowrap">Data</label>
-          <input id="quoteDate" type="date" class="rounded-lg border px-2 py-1 text-sm">
+          <label for="quoteName" class="text-sm text-slate-600 whitespace-nowrap">Nominativo</label>
+          <input id="quoteName" type="text"
+                 class="flex-1 rounded-lg border px-2 py-1 text-sm">
+        </div>
+        <div class="flex items-center gap-2">
+          <label for="quotePayment" class="text-sm text-slate-600 whitespace-nowrap">Pagamento</label>
+          <input id="quotePayment" type="text"
+                 class="flex-1 rounded-lg border px-2 py-1 text-sm"
+                 value="Secondo accordi o da definire">
         </div>
         <div class="flex items-center gap-2">
           <label for="quotePayment" class="text-sm text-slate-600 whitespace-nowrap">Pagamento</label>
@@ -730,7 +735,7 @@
         </button>
       </div>
 
-      <p id="quoteMsg" class="text-[11px] text-slate-500 mt-2"></p>
+      <p id="quoteMsg" class="text-[11px] text-red-600 mt-2"></p>
     </div>
   </div>
 </aside>
