@@ -1842,6 +1842,8 @@ async function exportPdf(){
     totalContentWidth = columnWidths.reduce((sum, width) => sum + width, 0);
   }
 
+  const naturalTableWidth = Math.min(tableWidth, totalContentWidth + (columnCount * paddingX));
+
   const columnStyles = {
     0: { halign: 'left', cellWidth: columnWidths[0], minCellWidth: columnWidths[0], maxCellWidth: columnWidths[0], overflow: 'visible' },
     1: { halign: 'left', cellWidth: columnWidths[1], minCellWidth: columnWidths[1], maxCellWidth: columnWidths[1], overflow: 'linebreak' },
@@ -1862,7 +1864,7 @@ async function exportPdf(){
       styles: baseStyles,
       headStyles: { ...baseStyles, fontStyle: 'bold', fontSize: 9.5, fillColor: [241,245,249] },
       columnStyles,
-      tableWidth,
+      tableWidth: naturalTableWidth,
       theme: 'grid',
       didParseCell: (data) => {
         const { cell, section } = data;
@@ -1962,11 +1964,15 @@ async function exportPdf(){
       });
       totalsY = headerY + 8;
     }
-    doc.text(`Totale imponibile: ${fmtEUR(imponibileTot)}`, marginX + tableWidth, totalsY, { align: 'right' });
+    const totalsX = marginX + naturalTableWidth;
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Totale imponibile: ${fmtEUR(imponibileTot)}`, totalsX, totalsY, { align: 'right' });
     totalsY += 16;
-    doc.text(`Totale IVA 22%: ${fmtEUR(vat)}`, marginX + tableWidth, totalsY, { align: 'right' });
+    doc.text(`Totale IVA 22%: ${fmtEUR(vat)}`, totalsX, totalsY, { align: 'right' });
     totalsY += 16;
-    doc.text(`Totale importo: ${fmtEUR(gross)}`, marginX + tableWidth, totalsY, { align: 'right' });
+    doc.setTextColor(220, 38, 38);
+    doc.text(`Totale importo: ${fmtEUR(gross)}`, totalsX, totalsY, { align: 'right' });
+    doc.setTextColor(15, 23, 42);
 
     const footerLines = [
       'Per informazioni tecniche o commerciali:',
@@ -1976,7 +1982,7 @@ async function exportPdf(){
     doc.setFontSize(10);
     const footerBaseY = Math.max(totalsY + 28, doc.internal.pageSize.getHeight() - marginY - ((footerLines.length - 1) * 12));
     footerLines.forEach((line, idx) => {
-      doc.text(line, marginX + tableWidth, footerBaseY + (idx * 12), { align: 'right' });
+      doc.text(line, totalsX, footerBaseY + (idx * 12), { align: 'right' });
     });
   } else {
     doc.text('Errore: jsPDF-Autotable non presente.', marginX, y + 20);
