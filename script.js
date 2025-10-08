@@ -21,6 +21,7 @@ let authListenerBound = false;
 let logoutInFlight = false;
 let pdfLogoCache;
 const DEFAULT_QUOTE_PAYMENT = 'Secondo accordi o da definire';
+const DEFAULT_QUOTE_EMPTY_MESSAGE = 'Inserisci almeno 1 articolo';
 
 function ensureSupabaseClient(){
   if (supabase) return supabase;
@@ -628,7 +629,10 @@ function bindUI(){
     });
     // messaggio (opzionale)
     const msg = document.getElementById('quoteMsg');
-    if (msg) msg.textContent = 'Preventivo svuotato.';
+    if (msg) {
+      msg.textContent = DEFAULT_QUOTE_EMPTY_MESSAGE;
+      msg.dataset.autoMessage = 'empty';
+    }
   });
 
   initCategoryFilters();
@@ -1356,10 +1360,24 @@ function lineCalc(it){
   return { prezzoScont, totale };
 }
 
+function roundCurrency(value){
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return Math.round(num * 100) / 100;
+}
+
+function computeVatBreakdown(baseAmount, rate = 0.22){
+  const imponibile = Number(baseAmount) || 0;
+  const vat = roundCurrency(imponibile * rate);
+  const gross = roundCurrency(imponibile + vat);
+  return { vat, gross };
+}
+
 function renderQuotePanel(){
   const body = $('quoteBody'), tot = $('quoteTotal'), cnt = $('quoteItemsCount');
   const vatEl = $('quoteVat');
   const grossEl = $('quoteGross');
+  const msg = $('quoteMsg');
   if (!body || !tot) return;
   updateQuoteCodeLabel();
   body.innerHTML = '';
@@ -1395,13 +1413,25 @@ function renderQuotePanel(){
     body.appendChild(tr);
   }
 
-  const vat = Math.round(total * 0.22 * 100) / 100;
-  const gross = Math.round((total + vat) * 100) / 100;
+  const imponibile = roundCurrency(total);
+  const { vat, gross } = computeVatBreakdown(imponibile);
+  const selectedCount = state.selected.size;
 
-  tot.textContent = fmtEUR(total);
+  tot.textContent = fmtEUR(imponibile);
   if (vatEl) vatEl.textContent = fmtEUR(vat);
   if (grossEl) grossEl.textContent = fmtEUR(gross);
   if (cnt) cnt.textContent = state.selected.size;
+
+  if (msg) {
+    const isAutoEmptyMessage = msg.dataset.autoMessage === 'empty';
+    if (selectedCount === 0) {
+      msg.textContent = DEFAULT_QUOTE_EMPTY_MESSAGE;
+      msg.dataset.autoMessage = 'empty';
+    } else if (isAutoEmptyMessage) {
+      msg.textContent = '';
+      delete msg.dataset.autoMessage;
+    }
+  }
 
   // --- Helpers LIVE per aggiornare una riga e il totale senza re-render ---
   function updateRowCalcLive(rowEl, it){
@@ -1416,14 +1446,19 @@ function renderQuotePanel(){
     for (const v of state.selected.values()){
       t += lineCalc(v).totale;
     }
-    const vat = Math.round(t * 0.22 * 100) / 100;
-    const gross = Math.round((t + vat) * 100) / 100;
+    const imponibileLive = roundCurrency(t);
+    const { vat, gross } = computeVatBreakdown(imponibileLive);
     const totEl = document.getElementById('quoteTotal');
-    if (totEl) totEl.textContent = fmtEUR(t);
+    if (totEl) totEl.textContent = fmtEUR(imponibileLive);
     const vatElLive = document.getElementById('quoteVat');
     if (vatElLive) vatElLive.textContent = fmtEUR(vat);
     const grossElLive = document.getElementById('quoteGross');
     if (grossElLive) grossElLive.textContent = fmtEUR(gross);
+    const msgEl = document.getElementById('quoteMsg');
+    if (msgEl && msgEl.dataset.autoMessage === 'empty' && state.selected.size > 0) {
+      msgEl.textContent = '';
+      delete msgEl.dataset.autoMessage;
+    }
   }
 
   // Input numerici (quantità/sconto) gestiti con helper comune
@@ -1532,24 +1567,31 @@ function validateQuoteMeta() {
   const nameEl = document.getElementById('quoteName');
   const dateEl = document.getElementById('quoteDate');
 
+  const setMessage = (text, { autoEmpty = false } = {}) => {
+    if (!msg) return;
+    msg.textContent = text;
+    if (autoEmpty) msg.dataset.autoMessage = 'empty';
+    else delete msg.dataset.autoMessage;
+  };
+
   if (!state.quoteMeta.name) {
-    if (msg) msg.textContent = 'Inserisci il nominativo prima di procedere.';
+    setMessage('Inserisci il nominativo prima di procedere.');
     nameEl?.focus();
     return false;
   }
   if (!state.quoteMeta.date) {
-    if (msg) msg.textContent = 'Inserisci la data del preventivo.';
+    setMessage('Inserisci la data del preventivo.');
     dateEl?.focus();
     return false;
   }
   if (state.selected.size === 0) {
-    if (msg) msg.textContent = 'Seleziona almeno un articolo.';
+    setMessage('Seleziona almeno un articolo.');
     return false;
   }
   state.quoteMeta.payment = getQuotePayment();
   const paymentEl = document.getElementById('quotePayment');
   if (paymentEl) paymentEl.value = state.quoteMeta.payment;
-  if (msg) msg.textContent = '';
+  setMessage('');
   return true;
 }
 
@@ -1581,9 +1623,9 @@ function exportXlsx(){
     ]);
   }
   rows.push([]);
-  const vat = Math.round(total * 0.22 * 100) / 100;
-  const gross = Math.round((total + vat) * 100) / 100;
-  rows.push(['','','','','','','Totale imponibile', Number(total||0)]);
+  const imponibile = roundCurrency(total);
+  const { vat, gross } = computeVatBreakdown(imponibile);
+  rows.push(['','','','','','','Totale imponibile', Number(imponibile||0)]);
   rows.push(['','','','','','','Totale IVA 22%', Number(vat||0)]);
   rows.push(['','','','','','','Totale importo', Number(gross||0)]);
 
@@ -1744,12 +1786,24 @@ async function exportPdf(){
     return (padding.left ?? 0) + (padding.right ?? 0);
   })();
 
-  const baseWidths = [48, 150, 52, 58, 32, 42, 58, 65];
-  const baseTotal = baseWidths.reduce((sum, width) => sum + width, 0);
-  const baseWithoutDescription = baseTotal - baseWidths[1];
-  const maxDescription = Math.max(baseWidths[1], Math.min(260, tableWidth - baseWithoutDescription));
-  const maxWidths = [72, maxDescription, 70, 78, 42, 55, 75, 85];
-  const measuredWidths = new Array(head[0].length).fill(0);
+  const columnCount = head[0].length;
+  const maxContentWidth = Math.max(0, tableWidth - (columnCount * paddingX));
+
+  const minWidths = [38, 96, 44, 46, 28, 34, 46, 52];
+  const minTotal = minWidths.reduce((sum, width) => sum + width, 0);
+  const minWithoutDescription = minTotal - minWidths[1];
+  const maxDescription = Math.max(minWidths[1], Math.min(260, maxContentWidth - minWithoutDescription));
+  const maxWidths = [
+    minWidths[0] + 26,
+    maxDescription,
+    minWidths[2] + 24,
+    minWidths[3] + 24,
+    minWidths[4] + 12,
+    minWidths[5] + 16,
+    minWidths[6] + 28,
+    minWidths[7] + 32,
+  ];
+  const measuredWidths = new Array(columnCount).fill(0);
   const rowsForMeasure = [head[0], ...body];
   rowsForMeasure.forEach((row, rowIndex) => {
     const isHeader = rowIndex === 0;
@@ -1757,7 +1811,7 @@ async function exportPdf(){
     doc.setFontSize(isHeader ? 9.5 : baseStyles.fontSize);
     row.forEach((cellText, columnIndex) => {
       const raw = Array.isArray(cellText) ? cellText.join(' ') : String(cellText ?? '');
-      const width = doc.getTextWidth(raw) + paddingX;
+      const width = doc.getTextWidth(raw);
       measuredWidths[columnIndex] = Math.max(measuredWidths[columnIndex], width);
     });
   });
@@ -1765,19 +1819,19 @@ async function exportPdf(){
   doc.setFontSize(baseStyles.fontSize);
 
   const columnWidths = measuredWidths.map((width, index) => {
-    const min = baseWidths[index];
+    const min = minWidths[index];
     const max = Math.max(min, maxWidths[index]);
     const measured = Math.max(width || 0, min);
     return Math.min(max, measured);
   });
 
-  let totalColumnWidth = columnWidths.reduce((sum, width) => sum + width, 0);
-  if (totalColumnWidth > tableWidth) {
+  let totalContentWidth = columnWidths.reduce((sum, width) => sum + width, 0);
+  if (totalContentWidth > maxContentWidth) {
     const shrinkOrder = [1, 0, 2, 3, 6, 7, 5, 4];
-    let overflow = totalColumnWidth - tableWidth;
+    let overflow = totalContentWidth - maxContentWidth;
     for (const index of shrinkOrder) {
       if (overflow <= 0) break;
-      const min = baseWidths[index];
+      const min = minWidths[index];
       if (columnWidths[index] <= min) continue;
       const reducible = columnWidths[index] - min;
       if (reducible <= 0) continue;
@@ -1785,7 +1839,7 @@ async function exportPdf(){
       columnWidths[index] -= delta;
       overflow -= delta;
     }
-    totalColumnWidth = columnWidths.reduce((sum, width) => sum + width, 0);
+    totalContentWidth = columnWidths.reduce((sum, width) => sum + width, 0);
   }
 
   const columnStyles = {
@@ -1881,8 +1935,8 @@ async function exportPdf(){
     const endY = doc.lastAutoTable.finalY || y;
     doc.setFont('helvetica','bold');
     doc.setFontSize(11);
-    const vat = Math.round(total * 0.22 * 100) / 100;
-    const gross = Math.round((total + vat) * 100) / 100;
+    const imponibileTot = roundCurrency(total);
+    const { vat, gross } = computeVatBreakdown(imponibileTot);
     let totalsY = endY + 20;
     const requiredBlockHeight = (16 * 3) + 32; // tre righe totali + respiro + footer
     if ((pageHeight - marginY - totalsY) < requiredBlockHeight) {
@@ -1908,7 +1962,7 @@ async function exportPdf(){
       });
       totalsY = headerY + 8;
     }
-    doc.text(`Totale imponibile: ${fmtEUR(total)}`, marginX + tableWidth, totalsY, { align: 'right' });
+    doc.text(`Totale imponibile: ${fmtEUR(imponibileTot)}`, marginX + tableWidth, totalsY, { align: 'right' });
     totalsY += 16;
     doc.text(`Totale IVA 22%: ${fmtEUR(vat)}`, marginX + tableWidth, totalsY, { align: 'right' });
     totalsY += 16;
@@ -1954,8 +2008,8 @@ function printQuote(){
         <td class="tr">${fmtEUR(totale)}</td>
       </tr>`;
   }
-  const vat = Math.round(total * 0.22 * 100) / 100;
-  const gross = Math.round((total + vat) * 100) / 100;
+  const imponibile = roundCurrency(total);
+  const { vat, gross } = computeVatBreakdown(imponibile);
 
   const win = window.open('', '_blank');
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
@@ -2009,11 +2063,11 @@ function printQuote(){
     <tfoot class="totals">
       <tr>
         <td colspan="7" class="tr">Totale imponibile</td>
-        <td class="tr amount">${fmtEUR(total)}</td>
+        <td class="tr">${fmtEUR(imponibile)}</td>
       </tr>
       <tr>
         <td colspan="7" class="tr">Totale IVA 22%</td>
-        <td class="tr amount">${fmtEUR(vat)}</td>
+        <td class="tr">${fmtEUR(vat)}</td>
       </tr>
       <tr>
         <td colspan="7" class="tr">Totale importo</td>
