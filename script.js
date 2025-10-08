@@ -1789,40 +1789,30 @@ async function exportPdf(){
   const columnCount = head[0].length;
   const maxContentWidth = Math.max(0, tableWidth - (columnCount * paddingX));
 
-  const minWidths = [40, 104, 48, 46, 32, 42, 56, 62];
-  const minTotal = minWidths.reduce((sum, width) => sum + width, 0);
-  const minWithoutDescription = minTotal - minWidths[1];
-  const maxDescription = Math.max(minWidths[1], Math.min(260, maxContentWidth - minWithoutDescription));
-  const maxWidths = [
-    minWidths[0] + 28,
-    maxDescription,
-    minWidths[2] + 28,
-    minWidths[3] + 24,
-    minWidths[4] + 18,
-    minWidths[5] + 28,
-    minWidths[6] + 32,
-    minWidths[7] + 36,
-  ];
-  const measuredWidths = new Array(columnCount).fill(0);
-  const rowsForMeasure = [head[0], ...body];
-  rowsForMeasure.forEach((row, rowIndex) => {
-    const isHeader = rowIndex === 0;
-    doc.setFont('helvetica', isHeader ? 'bold' : 'normal');
-    doc.setFontSize(isHeader ? 9.5 : baseStyles.fontSize);
-    row.forEach((cellText, columnIndex) => {
-      const raw = Array.isArray(cellText) ? cellText.join(' ') : String(cellText ?? '');
-      const width = doc.getTextWidth(raw);
-      measuredWidths[columnIndex] = Math.max(measuredWidths[columnIndex], width);
-    });
+  const baseMinWidths = [40, 104, 48, 46, 32, 42, 56, 62];
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  const headerWidths = head[0].map((text) => {
+    const raw = Array.isArray(text) ? text.join(' ') : String(text ?? '');
+    return doc.getTextWidth(raw);
   });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(baseStyles.fontSize);
-
-  const columnWidths = measuredWidths.map((width, index) => {
-    const min = minWidths[index];
-    const max = Math.max(min, maxWidths[index]);
-    const measured = Math.max(width || 0, min);
-    return Math.min(max, measured);
+  const bodyWidths = new Array(columnCount).fill(0);
+  body.forEach((row) => {
+    row.forEach((cellText, columnIndex) => {
+      const raw = Array.isArray(cellText) ? cellText.join(' ') : String(cellText ?? '');
+      const width = doc.getTextWidth(raw);
+      bodyWidths[columnIndex] = Math.max(bodyWidths[columnIndex], width);
+    });
+  });
+  const minRequired = baseMinWidths.map((base, index) => {
+    const headerWidth = headerWidths[index] || 0;
+    return Math.max(base, Math.ceil(headerWidth + 4));
+  });
+  const columnWidths = bodyWidths.map((width, index) => {
+    const measured = Math.ceil(Math.max(width || 0, minRequired[index]));
+    return Math.max(minRequired[index], measured + 4);
   });
 
   let totalContentWidth = columnWidths.reduce((sum, width) => sum + width, 0);
@@ -1831,7 +1821,7 @@ async function exportPdf(){
     let overflow = totalContentWidth - maxContentWidth;
     for (const index of shrinkOrder) {
       if (overflow <= 0) break;
-      const min = minWidths[index];
+      const min = minRequired[index];
       if (columnWidths[index] <= min) continue;
       const reducible = columnWidths[index] - min;
       if (reducible <= 0) continue;
@@ -1840,29 +1830,11 @@ async function exportPdf(){
       overflow -= delta;
     }
     totalContentWidth = columnWidths.reduce((sum, width) => sum + width, 0);
-  } else if (totalContentWidth < maxContentWidth) {
-    let leftover = maxContentWidth - totalContentWidth;
-    if (leftover > 0) {
-      const maxExtraForDescription = Math.max(0, maxWidths[1] - columnWidths[1]);
-      const increase = Math.min(leftover, maxExtraForDescription);
-      if (increase > 0) {
-        columnWidths[1] += increase;
-        totalContentWidth += increase;
-        leftover -= increase;
-      }
-      if (leftover > 0) {
-        const flexibleOrder = [0, 2, 3, 6, 7, 5, 4];
-        for (const index of flexibleOrder) {
-          if (leftover <= 0) break;
-          const room = Math.max(0, maxWidths[index] - columnWidths[index]);
-          if (room <= 0) continue;
-          const delta = Math.min(room, leftover);
-          columnWidths[index] += delta;
-          totalContentWidth += delta;
-          leftover -= delta;
-        }
-      }
-    }
+  }
+  if (totalContentWidth < maxContentWidth && columnCount > 1) {
+    const leftover = maxContentWidth - totalContentWidth;
+    columnWidths[1] += leftover;
+    totalContentWidth += leftover;
   }
 
   const naturalTableWidth = Math.min(tableWidth, totalContentWidth + (columnCount * paddingX));
@@ -1885,7 +1857,7 @@ async function exportPdf(){
       startY: y,
       margin: { left: marginX, right: marginX },
       styles: baseStyles,
-      headStyles: { ...baseStyles, fontStyle: 'bold', fontSize: 9.5, fillColor: [241,245,249], overflow: 'linebreak' },
+      headStyles: { ...baseStyles, fontStyle: 'bold', fontSize: 9.5, fillColor: [241,245,249], overflow: 'visible' },
       columnStyles,
       tableWidth: naturalTableWidth,
       theme: 'grid',
@@ -1907,7 +1879,7 @@ async function exportPdf(){
         const originalSize = doc.getFontSize();
         let fontSize = styles.fontSize || baseStyles.fontSize;
         if (section === 'head') {
-          styles.overflow = 'linebreak';
+          styles.overflow = 'visible';
           doc.setFontSize(originalSize);
           return;
         }
