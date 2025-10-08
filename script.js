@@ -19,6 +19,9 @@ let supabaseRetryCount = 0;
 const MAX_SUPABASE_RETRIES = 10;
 let authListenerBound = false;
 let logoutInFlight = false;
+let pdfLogoCache;
+const DEFAULT_QUOTE_PAYMENT = 'Secondo accordi o da definire';
+const DEFAULT_QUOTE_EMPTY_MESSAGE = 'Inserisci almeno 1 articolo';
 
 function ensureSupabaseClient(){
   if (supabase) return supabase;
@@ -123,6 +126,129 @@ const err = (...a) => console.error('[Listino]', ...a);
 const normalize = (s) => (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
 const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 
+function sanitizeClientInitials(name){
+  const normalized = String(name || '')
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  if (!normalized) return 'XX';
+  if (normalized.length === 1) return normalized + 'X';
+  return normalized.slice(0, 2);
+}
+
+function extractInitials(value, length){
+  const normalized = String(value || '')
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  if (!normalized) return 'X'.repeat(length);
+  if (normalized.length < length) return normalized.padEnd(length, 'X');
+  return normalized.slice(0, length);
+}
+
+function getQuoteDateParts(){
+  const raw = state.quoteMeta?.date || '';
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    return { year: match[1], month: match[2], day: match[3] };
+  }
+  const now = new Date();
+  const year = String(now.getFullYear());
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return { year, month, day };
+}
+
+function getAgentInitials(){
+  const name = state.agent?.name || '';
+  const normalizedName = name
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .toUpperCase();
+
+  const parts = normalizedName
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const fallback = extractInitials(state.agent?.code || 'AG', 2);
+  if (!parts.length) return fallback;
+
+  const firstLetter = parts[0]?.charAt(0) || fallback.charAt(0) || 'X';
+  let lastLetter = parts.length > 1 ? parts[parts.length - 1]?.charAt(0) : '';
+
+  if (!lastLetter) {
+    const codeNormalized = String(state.agent?.code || '')
+      .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+    lastLetter = codeNormalized.charAt(1) || codeNormalized.charAt(0) || fallback.charAt(1) || fallback.charAt(0) || 'X';
+  }
+
+  return `${firstLetter}${lastLetter || 'X'}`.padEnd(2, 'X');
+}
+
+function getQuoteCode(){
+  const { year, month, day } = getQuoteDateParts();
+  const clientCode = sanitizeClientInitials(state.quoteMeta?.name);
+  const agentInitials = getAgentInitials();
+  return `${year}${month}${day}${clientCode}${agentInitials}`;
+}
+
+function getQuoteMetaEntries(){
+  const { year, month, day } = getQuoteDateParts();
+  const normalizedDate = `${year}-${month}-${day}`;
+  const entries = [
+    { label: 'Data', value: normalizedDate },
+    { label: 'Nominativo', value: (state.quoteMeta?.name || '').trim() || '—' },
+    { label: 'Pagamento', value: getQuotePayment() },
+  ];
+
+  const seen = new Set();
+  const result = [];
+  for (const entry of entries) {
+    const key = entry.label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(entry);
+  }
+  return result;
+}
+
+function updateQuoteCodeLabel(){
+  const el = document.getElementById('quoteCodeLabel');
+  if (!el) return;
+  const isGuest = state.role === 'guest';
+  const code = isGuest ? '' : getQuoteCode();
+  el.textContent = code || '—';
+  el.title = code ? `Codice preventivo ${code}` : 'Codice preventivo non disponibile';
+}
+
+function getQuotePayment(){
+  const value = (state.quoteMeta?.payment || '').trim();
+  return value || DEFAULT_QUOTE_PAYMENT;
+}
+
+const CATEGORY_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const DEFAULT_AVAILABLE_CATEGORY_LETTERS = new Set([...CATEGORY_LETTERS, '#']);
+let lastAvailableCategoryLetters = new Set(DEFAULT_AVAILABLE_CATEGORY_LETTERS);
+
+function isDesktopLayout(){
+  if (window.matchMedia) {
+    return window.matchMedia('(min-width: 1024px)').matches;
+  }
+  return window.innerWidth >= 1024;
+}
+
+function deriveCategoryLetter(cat){
+  const normalized = normalize(cat || '');
+  if (!normalized) return '#';
+  const first = normalized.charAt(0);
+  if (first >= 'a' && first <= 'z') {
+    return first.toUpperCase();
+  }
+  return '#';
+}
+
 
 
 // Scrolla fino alla barra "Cerca prodotti…" tenendo conto dell'header sticky
@@ -135,6 +261,20 @@ function scrollToProductsHeader(){
 
   const y = target.getBoundingClientRect().top + window.pageYOffset - (headerH + 8);
   window.scrollTo({ top: y, behavior: 'smooth' });
+}
+
+function scrollToCategoryResults(){
+  const container = document.getElementById('listinoContainer');
+  if (!container) return;
+
+  const target = container.querySelector('h2, table') || container;
+
+  requestAnimationFrame(() => {
+    const header = document.querySelector('header');
+    const headerH = header ? header.getBoundingClientRect().height : 0;
+    const top = target.getBoundingClientRect().top + window.pageYOffset - (headerH + 12);
+    window.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' });
+  });
 }
 
 function clearSupabaseAuthStorage(){
@@ -215,9 +355,135 @@ const state = {
   quoteMeta: {
     name: '',                                       // Nominativo
     date: new Date().toISOString().slice(0, 10),    // yyyy-mm-dd
+    payment: DEFAULT_QUOTE_PAYMENT,
   },
-selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
+  selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
+  categorySearch: '',
+  categoryLetter: '',
+  agent: {
+    name: '',
+    code: '',
+  },
 };
+
+let categoryLayoutBound = false;
+let categoryFiltersBound = false;
+let categoryLetterButtons = [];
+
+function relocateCategoryPanel(){
+  const panel = document.getElementById('catsSticky');
+  const desktopAnchor = document.getElementById('categoryPanelDesktopAnchor');
+  const mobileAnchor = document.getElementById('categoryPanelMobileAnchor');
+  if (!panel || !desktopAnchor || !mobileAnchor) return;
+
+  const isDesktop = isDesktopLayout();
+  const target = isDesktop ? desktopAnchor : mobileAnchor;
+  if (target && panel.parentElement !== target) {
+    target.appendChild(panel);
+  }
+}
+
+function applyCategoryOrientation(){
+  const list = document.getElementById('categoryList');
+  if (!list) return;
+
+  const orientation = isDesktopLayout() ? 'vertical' : 'horizontal';
+
+  list.classList.remove('orientation-horizontal', 'orientation-vertical');
+  list.classList.add(`orientation-${orientation}`);
+}
+
+function initCategoryLayout(){
+  if (categoryLayoutBound) return;
+  categoryLayoutBound = true;
+
+  const handleLayoutChange = () => {
+    relocateCategoryPanel();
+    applyCategoryOrientation();
+    buildCategories();
+  };
+
+  handleLayoutChange();
+  window.addEventListener('resize', handleLayoutChange);
+  window.addEventListener('orientationchange', handleLayoutChange);
+}
+
+function getCategoryLetterButtonBaseClass(){
+  return 'category-letter-button';
+}
+
+function updateCategoryLetterButtons(availableLetters){
+  if (availableLetters) {
+    lastAvailableCategoryLetters = new Set(availableLetters);
+  }
+
+  if (!categoryLetterButtons.length) return;
+
+  const available = availableLetters
+    ? new Set(availableLetters)
+    : new Set(lastAvailableCategoryLetters);
+
+  categoryLetterButtons.forEach(btn => {
+    const value = btn.dataset?.value || '';
+    const isActive = value === state.categoryLetter;
+    const isAvailable = value === '' || available.has(value);
+
+    btn.disabled = value !== '' && !isAvailable;
+    btn.className = getCategoryLetterButtonBaseClass();
+    btn.classList.toggle('is-active', isActive && isAvailable);
+    btn.classList.toggle('is-disabled', value !== '' && !isAvailable);
+    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
+function initCategoryFilters(){
+  if (categoryFiltersBound) return;
+
+  const searchInput = document.getElementById('categorySearchInput');
+  const letterBar = document.getElementById('categoryLetterBar');
+
+  if (searchInput) {
+    searchInput.value = state.categorySearch;
+    searchInput.addEventListener('input', (e) => {
+      state.categorySearch = e.target.value;
+      buildCategories();
+    });
+  }
+
+  if (letterBar) {
+    letterBar.innerHTML = '';
+    categoryLetterButtons = [];
+
+    const options = [
+      { label: 'Tutte', value: '' },
+      ...CATEGORY_LETTERS.map(letter => ({ label: letter, value: letter })),
+      { label: '#', value: '#' },
+    ];
+
+    options.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = opt.label;
+      btn.className = getCategoryLetterButtonBaseClass();
+      btn.dataset.value = opt.value;
+      btn.setAttribute('aria-pressed', opt.value === state.categoryLetter ? 'true' : 'false');
+      btn.addEventListener('click', () => {
+        state.categoryLetter = opt.value;
+        updateCategoryLetterButtons();
+        buildCategories();
+        if (isDesktopLayout()) {
+          scrollToProductsHeader();
+        }
+      });
+      letterBar.appendChild(btn);
+      categoryLetterButtons.push(btn);
+    });
+
+    updateCategoryLetterButtons();
+  }
+
+  categoryFiltersBound = true;
+}
 
 /* ============ BOOT ROBUSTO ============ */
 async function boot(){
@@ -232,13 +498,40 @@ async function boot(){
     if (!quoteMetaBound) {
       const nameEl = document.getElementById('quoteName');
       const dateEl = document.getElementById('quoteDate');
+      const paymentEl = document.getElementById('quotePayment');
       if (nameEl) {
         nameEl.value = state.quoteMeta.name;
-        nameEl.addEventListener('input', () => { state.quoteMeta.name = nameEl.value.trim(); });
+        nameEl.addEventListener('input', () => {
+          state.quoteMeta.name = nameEl.value.trim();
+          updateQuoteCodeLabel();
+        });
       }
       if (dateEl) {
         dateEl.value = state.quoteMeta.date;
-        dateEl.addEventListener('change', () => { state.quoteMeta.date = dateEl.value || new Date().toISOString().slice(0,10); });
+        dateEl.addEventListener('change', () => {
+          state.quoteMeta.date = dateEl.value || new Date().toISOString().slice(0,10);
+          updateQuoteCodeLabel();
+        });
+      }
+      if (paymentEl) {
+        paymentEl.value = getQuotePayment();
+        paymentEl.addEventListener('focus', () => {
+          if (paymentEl.value.trim() === DEFAULT_QUOTE_PAYMENT) {
+            paymentEl.value = '';
+          }
+        });
+        paymentEl.addEventListener('input', () => {
+          state.quoteMeta.payment = paymentEl.value.trim();
+        });
+        paymentEl.addEventListener('blur', () => {
+          const raw = paymentEl.value.trim();
+          if (!raw) {
+            paymentEl.value = DEFAULT_QUOTE_PAYMENT;
+            state.quoteMeta.payment = DEFAULT_QUOTE_PAYMENT;
+          } else {
+            state.quoteMeta.payment = raw;
+          }
+        });
       }
       quoteMetaBound = true;
     }
@@ -316,25 +609,34 @@ function bindUI(){
 
   // Preventivi (azioni pannello)
   $('btnExportXlsx')?.addEventListener('click', exportXlsx);
-  $('btnExportPdf')?.addEventListener('click', exportPdf);
+  $('btnExportPdf')?.addEventListener('click', () => { void exportPdf(); });
   $('btnPrintQuote')?.addEventListener('click', printQuote);
   $('btnClearQuote')?.addEventListener('click', ()=>{
     state.selected.clear();
-// svuota anche il nominativo (lasciamo invariata la data)
-  state.quoteMeta.name = '';
-  const nameEl = document.getElementById('quoteName');
-  if (nameEl) nameEl.value = '';
+    // svuota anche il nominativo (lasciamo invariata la data)
+    state.quoteMeta.name = '';
+    state.quoteMeta.payment = DEFAULT_QUOTE_PAYMENT;
+    const nameEl = document.getElementById('quoteName');
+    if (nameEl) nameEl.value = '';
+    const paymentEl = document.getElementById('quotePayment');
+    if (paymentEl) paymentEl.value = DEFAULT_QUOTE_PAYMENT;
     renderQuotePanel();
     document.querySelectorAll('.selItem').forEach(i=>{ i.checked=false; });
-// 🔴 deseleziona anche i checkbox di categoria
-  document.querySelectorAll('.selAllCat').forEach(cb=>{
-    cb.checked = false;
-    cb.indeterminate = false;
+    // 🔴 deseleziona anche i checkbox di categoria
+    document.querySelectorAll('.selAllCat').forEach(cb=>{
+      cb.checked = false;
+      cb.indeterminate = false;
+    });
+    // messaggio (opzionale)
+    const msg = document.getElementById('quoteMsg');
+    if (msg) {
+      msg.textContent = DEFAULT_QUOTE_EMPTY_MESSAGE;
+      msg.dataset.autoMessage = 'empty';
+    }
   });
-// messaggio (opzionale)
-  const msg = document.getElementById('quoteMsg');
-  if (msg) msg.textContent = 'Preventivo svuotato.';
-  });
+
+  initCategoryFilters();
+  initCategoryLayout();
 }
 
 function toggleModal(id, show=true){
@@ -448,9 +750,14 @@ async function doLogout(options = {}){
 }
 
 async function afterLogin(userId){
+  let readyDispatched = false;
+
   try{
     const client = ensureSupabaseClient();
     if (!client) throw new Error('Supabase non inizializzato');
+
+    // Mostra subito l'app in modo che la vista prodotti sia raggiungibile
+    showAuthGate(false);
 
     // Provo a leggere ruolo + display_name dal profilo
     let role = 'agent';
@@ -477,9 +784,32 @@ async function afterLogin(userId){
     }
 
     state.role = role;
-
-    // Mostra app
-    showAuthGate(false);
+    const metadata = user?.user_metadata || {};
+    let agentCode = metadata.agent_code
+                   || metadata.sigla_agente
+                   || metadata.sigla
+                   || metadata.code
+                   || metadata.agentCode
+                   || '';
+    if (!agentCode && prof?.agent_code) agentCode = prof.agent_code;
+    const sanitizedAgentCode = String(agentCode || '')
+      .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+      .replace(/[^a-z0-9]/gi, '')
+      .toUpperCase()
+      .slice(0, 6);
+    let fallbackAgentCode = sanitizedAgentCode;
+    if (!fallbackAgentCode && displayName) {
+      const initials = displayName
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(part => part[0])
+        .join('')
+        .toUpperCase();
+      fallbackAgentCode = initials.slice(0, 4);
+    }
+    state.agent.name = displayName || '';
+    state.agent.code = fallbackAgentCode || 'AG';
+    updateQuoteCodeLabel();
 
     // Mostra il nome nell'header (desktop e, se vuoi, mobile)
     const nameEl = document.getElementById('userName');
@@ -493,11 +823,21 @@ async function afterLogin(userId){
 
     // sblocca FAB
     document.dispatchEvent(new Event('appReady'));
+    readyDispatched = true;
 
   } catch(e){
     console.error('[afterLogin] err:', e);
+    // Assicurati che l'app resti visibile anche in caso di errore post-login
+    showAuthGate(false);
     const info = $('resultInfo');
     if (info) info.textContent = 'Errore caricamento listino';
+  } finally {
+    if (!readyDispatched) {
+      const app = $('appShell');
+      if (app && !app.classList.contains('hidden')) {
+        document.dispatchEvent(new Event('appReady'));
+      }
+    }
   }
 }
 
@@ -509,9 +849,29 @@ async function afterLogout(){
   state.role='guest';
   state.items=[];
   state.selected.clear();
+  state.selectedCategory = 'Tutte';
+  state.categorySearch = '';
+  state.categoryLetter = '';
+  state.agent.name = '';
+  state.agent.code = '';
+  state.quoteMeta.name = '';
+  state.quoteMeta.payment = DEFAULT_QUOTE_PAYMENT;
+  state.quoteMeta.date = new Date().toISOString().slice(0, 10);
+  const quoteNameEl = document.getElementById('quoteName');
+  if (quoteNameEl) quoteNameEl.value = '';
+  const quoteDateEl = document.getElementById('quoteDate');
+  if (quoteDateEl) quoteDateEl.value = state.quoteMeta.date;
+  const quotePaymentEl = document.getElementById('quotePayment');
+  if (quotePaymentEl) quotePaymentEl.value = DEFAULT_QUOTE_PAYMENT;
+  updateQuoteCodeLabel();
   renderQuotePanel();
   $('productGrid') && ( $('productGrid').innerHTML='' );
   $('listinoContainer') && ( $('listinoContainer').innerHTML='' );
+
+  const catSearchInput = document.getElementById('categorySearchInput');
+  if (catSearchInput) catSearchInput.value = '';
+  updateCategoryLetterButtons();
+  buildCategories();
 
 // nascondi nome utente
   const nameEl = document.getElementById('userName');
@@ -529,101 +889,223 @@ async function fetchProducts(){
     const client = ensureSupabaseClient();
     if (!client) throw new Error('Supabase non inizializzato');
 
-    const fullSelect = `
-        id,
-        codice,
-        descrizione,
-        dimensione,
-        categoria,
-        sottocategoria,
-        prezzo,
-        conai,
-        unita,
-        disponibile,
-        novita,
-        pack,
-        pallet,
-        tags,
-        updated_at,
-        product_media(id,kind,path,sort)
-      `;
+    let items = [];
+    let usedFallback = false;
 
-    let { data, error } = await client
-      .from('products')
-      .select(fullSelect)
-      .order('descrizione', { ascending: true });
-
-    if (error) {
-      const msg = String(error.message || '').toLowerCase();
-      const missingExtra = msg.includes('dimensione') || msg.includes('conai');
-      if (missingExtra) {
-        console.warn('[Data] prodotti senza colonne dimensione/conai, retry fallback');
-        ({ data, error } = await client
-          .from('products')
-          .select(`
-            id,
-            codice,
-            descrizione,
-            categoria,
-            sottocategoria,
-            prezzo,
-            unita,
-            disponibile,
-            novita,
-            pack,
-            pallet,
-            tags,
-            updated_at,
-            product_media(id,kind,path,sort)
-          `)
-          .order('descrizione', { ascending: true }));
-      }
-      if (error) throw error;
+    try {
+      items = await fetchProductsFromCatalog(client);
+    } catch (primaryErr) {
+      console.warn('[Data] prodotti primary fetch fallito, provo fallback price list', primaryErr);
     }
 
-    const items = [];
-    for (const p of (data || [])) {
-      // immagine principale (se presente)
-      const mediaImgs = (p.product_media || [])
-        .filter(m => m.kind === 'image')
-        .sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
-
-      let imgUrl = '';
-      if (mediaImgs[0]) {
-        const { data: signed, error: sErr } = await client
-          .storage.from(STORAGE_BUCKET)
-          .createSignedUrl(mediaImgs[0].path, 600);
-        if (sErr) console.warn('[Storage] signedURL warn:', sErr.message);
-        imgUrl = signed?.signedUrl || '';
+    if (!items.length) {
+      try {
+        items = await fetchProductsFromLatestPriceList(client);
+        usedFallback = items.length > 0;
+      } catch (fallbackErr) {
+        console.error('[Data] fallback price list fallito', fallbackErr);
       }
-
-      items.push({
-        codice: p.codice,
-        descrizione: p.descrizione,
-        dimensione: p.dimensione ?? '',
-        categoria: p.categoria,
-        sottocategoria: p.sottocategoria,
-        prezzo: p.prezzo,
-        conai: p.conai ?? null,
-        unita: p.unita,
-        disponibile: p.disponibile,
-        novita: p.novita,
-        pack: p.pack,
-        pallet: p.pallet,
-        tags: p.tags || [],
-        updated_at: p.updated_at,
-        img: imgUrl,
-      });
     }
 
     state.items = items;
     buildCategories();
-    info && (info.textContent = `${items.length} articoli`);
-    console.log('[Data] prodotti:', items.length);
+
+    if (info) {
+      if (items.length) {
+        info.textContent = usedFallback
+          ? `${items.length} articoli (ultimo listino pubblicato)`
+          : `${items.length} articoli`;
+      } else {
+        info.textContent = 'Nessun articolo disponibile';
+      }
+    }
+
+    console.log('[Data] prodotti caricati:', items.length, usedFallback ? '(fallback price list)' : '');
   } catch(e){
     console.error('[Data] fetchProducts error', e);
-    info && (info.textContent = 'Errore caricamento listino');
+    if (info) info.textContent = 'Errore caricamento listino';
   }
+}
+
+async function fetchProductsFromCatalog(client) {
+  const items = [];
+  const fullSelect = `
+      id,
+      codice,
+      descrizione,
+      dimensione,
+      categoria,
+      sottocategoria,
+      prezzo,
+      conai,
+      unita,
+      disponibile,
+      novita,
+      pack,
+      pallet,
+      tags,
+      updated_at,
+      product_media(id,kind,path,sort)
+    `;
+
+  let { data, error } = await client
+    .from('products')
+    .select(fullSelect)
+    .order('descrizione', { ascending: true });
+
+  if (error) {
+    const msg = String(error.message || '').toLowerCase();
+    const missingExtra = msg.includes('dimensione') || msg.includes('conai');
+    if (missingExtra) {
+      console.warn('[Data] prodotti senza colonne dimensione/conai, retry fallback');
+      ({ data, error } = await client
+        .from('products')
+        .select(`
+          id,
+          codice,
+          descrizione,
+          categoria,
+          sottocategoria,
+          prezzo,
+          unita,
+          disponibile,
+          novita,
+          pack,
+          pallet,
+          tags,
+          updated_at,
+          product_media(id,kind,path,sort)
+        `)
+        .order('descrizione', { ascending: true }));
+    }
+    if (error) throw error;
+  }
+
+  for (const p of (data || [])) {
+    const mediaImgs = (p.product_media || [])
+      .filter(m => m.kind === 'image')
+      .sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
+
+    let imgUrl = '';
+    if (mediaImgs[0]) {
+      const { data: signed, error: sErr } = await client
+        .storage.from(STORAGE_BUCKET)
+        .createSignedUrl(mediaImgs[0].path, 600);
+      if (sErr) console.warn('[Storage] signedURL warn:', sErr.message);
+      imgUrl = signed?.signedUrl || '';
+    }
+
+    items.push({
+      codice: p.codice,
+      descrizione: p.descrizione,
+      dimensione: p.dimensione ?? '',
+      categoria: p.categoria,
+      sottocategoria: p.sottocategoria,
+      prezzo: p.prezzo,
+      conai: p.conai ?? null,
+      unita: p.unita,
+      disponibile: p.disponibile,
+      novita: p.novita,
+      pack: p.pack,
+      pallet: p.pallet,
+      tags: p.tags || [],
+      updated_at: p.updated_at,
+      img: imgUrl,
+    });
+  }
+
+  return items;
+}
+
+async function fetchProductsFromLatestPriceList(client) {
+  const items = [];
+
+  const { data: listData, error: listError } = await client
+    .from('price_lists')
+    .select('id')
+    .order('published_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (listError) throw listError;
+
+  const listId = listData?.id;
+  if (!listId) {
+    console.warn('[Data] nessun price list pubblicato');
+    return items;
+  }
+
+  const richSelect = `
+      codice,
+      descrizione,
+      dimensione,
+      categoria,
+      sottocategoria,
+      prezzo,
+      conai,
+      unita,
+      disponibile,
+      novita,
+      pack,
+      pallet,
+      tags,
+      updated_at
+    `;
+
+  let { data: rows, error } = await client
+    .from('price_list_items')
+    .select(richSelect)
+    .eq('price_list_id', listId)
+    .order('descrizione', { ascending: true });
+
+  if (error) {
+    const msg = String(error.message || '').toLowerCase();
+    const missingExtra = msg.includes('dimensione') || msg.includes('conai');
+    if (missingExtra) {
+      console.warn('[Data] price_list_items senza dimensione/conai, retry base select');
+      ({ data: rows, error } = await client
+        .from('price_list_items')
+        .select(`
+          codice,
+          descrizione,
+          categoria,
+          sottocategoria,
+          prezzo,
+          unita,
+          disponibile,
+          novita,
+          pack,
+          pallet,
+          tags,
+          updated_at
+        `)
+        .eq('price_list_id', listId)
+        .order('descrizione', { ascending: true }));
+    }
+    if (error) throw error;
+  }
+
+  for (const row of (rows || [])) {
+    items.push({
+      codice: row.codice,
+      descrizione: row.descrizione,
+      dimensione: row.dimensione ?? '',
+      categoria: row.categoria,
+      sottocategoria: row.sottocategoria,
+      prezzo: row.prezzo,
+      conai: row.conai ?? null,
+      unita: row.unita,
+      disponibile: row.disponibile,
+      novita: row.novita,
+      pack: row.pack,
+      pallet: row.pallet,
+      tags: row.tags || [],
+      updated_at: row.updated_at,
+      img: '',
+    });
+  }
+
+  return items;
 }
 
 /* ============ CATEGORIE ============ */
@@ -633,7 +1115,43 @@ function buildCategories(){
 
   // dedup + sort alfabetico (IT) + fallback "Altro"
   const set = new Set((state.items || []).map(p => (p.categoria || 'Altro').trim()));
-  const cats = Array.from(set).sort((a,b)=> a.localeCompare(b,'it'));
+  const allCats = Array.from(set).sort((a,b)=> a.localeCompare(b,'it'));
+  const isDesktop = isDesktopLayout();
+  const normalizedSearch = normalize(state.categorySearch || '');
+  const hasSearch = !!normalizedSearch;
+
+  const handleCategorySelection = (category) => {
+    state.selectedCategory = category;
+    renderView();        // aggiorna listino
+    buildCategories();   // aggiorna evidenziazione
+    if (isDesktopLayout()) {
+      scrollToProductsHeader();
+    } else {
+      scrollToCategoryResults();
+    }
+  };
+
+  let filteredForAvailability = [...allCats];
+
+  if (!isDesktop && hasSearch) {
+    filteredForAvailability = filteredForAvailability.filter(cat => normalize(cat).includes(normalizedSearch));
+  }
+
+  const availableLetters = filteredForAvailability.length
+    ? new Set(filteredForAvailability.map(deriveCategoryLetter))
+    : new Set();
+
+  if (!isDesktop && state.categoryLetter && !availableLetters.has(state.categoryLetter)) {
+    state.categoryLetter = '';
+  }
+
+  updateCategoryLetterButtons(availableLetters);
+
+  let cats = [...filteredForAvailability];
+
+  if (!isDesktop && state.categoryLetter) {
+    cats = cats.filter(cat => deriveCategoryLetter(cat) === state.categoryLetter);
+  }
 
   // container
   box.innerHTML = '';
@@ -643,50 +1161,52 @@ function buildCategories(){
   allBtn.type = 'button';
   allBtn.textContent = 'TUTTE';
   allBtn.className = [
-    'block w-full text-left',
+    'inline-flex items-center justify-center w-full text-left',
     'rounded-xl border px-3 py-2 text-sm',
     'transition',
     (state.selectedCategory === 'Tutte')
       ? 'bg-slate-200 border-slate-300 text-slate-900'
       : 'bg-white hover:bg-slate-50'
   ].join(' ');
-  allBtn.addEventListener('click', ()=>{
-    state.selectedCategory = 'Tutte';
-    renderView();        // aggiorna listino
-    buildCategories();   // aggiorna evidenziazione
-scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodotti"
+  allBtn.addEventListener('click', () => {
+    handleCategorySelection('Tutte');
   });
   box.appendChild(allBtn);
 
   // separatore per andare a capo
   const br = document.createElement('div');
-  br.className = 'w-full h-0 my-2';
+  br.className = 'category-break w-full h-0 my-2';
   box.appendChild(br);
 
+  if (!cats.length) {
+    const empty = document.createElement('div');
+    empty.className = 'text-xs text-slate-500 italic';
+    empty.textContent = 'Nessuna categoria trovata.';
+    box.appendChild(empty);
+    applyCategoryOrientation();
+    return;
+  }
+
   // --- Altre categorie: chip su righe successive, no duplicati ---
-  cats.forEach(cat=>{
+  cats.forEach(cat => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = cat;
     btn.className = [
-      'inline-flex items-left justify-center',
+      'inline-flex items-center justify-center w-full text-left',
       'rounded-xl border px-3 py-1.5 text-sm',
       'transition',
       (state.selectedCategory === cat)
         ? 'bg-slate-200 border-slate-300 text-slate-900'
         : 'bg-white hover:bg-slate-50'
     ].join(' ');
-    btn.addEventListener('click', ()=>{
-      state.selectedCategory = cat;
-      renderView();
-      buildCategories();
-scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodotti"
+    btn.addEventListener('click', () => {
+      handleCategorySelection(cat);
     });
     box.appendChild(btn);
   });
 
-  // stile del contenitore (se non l’hai già messo in HTML)
-  box.classList.add('flex','flex-wrap','gap-2','items-start');
+  applyCategoryOrientation();
 }
 
 /* ============ RENDER SWITCH ============ */
@@ -974,9 +1494,26 @@ function lineCalc(it){
   return { prezzoScont, totale };
 }
 
+function roundCurrency(value){
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return Math.round(num * 100) / 100;
+}
+
+function computeVatBreakdown(baseAmount, rate = 0.22){
+  const imponibile = Number(baseAmount) || 0;
+  const vat = roundCurrency(imponibile * rate);
+  const gross = roundCurrency(imponibile + vat);
+  return { vat, gross };
+}
+
 function renderQuotePanel(){
   const body = $('quoteBody'), tot = $('quoteTotal'), cnt = $('quoteItemsCount');
+  const vatEl = $('quoteVat');
+  const grossEl = $('quoteGross');
+  const msg = $('quoteMsg');
   if (!body || !tot) return;
+  updateQuoteCodeLabel();
   body.innerHTML = '';
 
   let total = 0;
@@ -1010,8 +1547,25 @@ function renderQuotePanel(){
     body.appendChild(tr);
   }
 
-  tot.textContent = fmtEUR(total);
+  const imponibile = roundCurrency(total);
+  const { vat, gross } = computeVatBreakdown(imponibile);
+  const selectedCount = state.selected.size;
+
+  tot.textContent = fmtEUR(imponibile);
+  if (vatEl) vatEl.textContent = fmtEUR(vat);
+  if (grossEl) grossEl.textContent = fmtEUR(gross);
   if (cnt) cnt.textContent = state.selected.size;
+
+  if (msg) {
+    const isAutoEmptyMessage = msg.dataset.autoMessage === 'empty';
+    if (selectedCount === 0) {
+      msg.textContent = DEFAULT_QUOTE_EMPTY_MESSAGE;
+      msg.dataset.autoMessage = 'empty';
+    } else if (isAutoEmptyMessage) {
+      msg.textContent = '';
+      delete msg.dataset.autoMessage;
+    }
+  }
 
   // --- Helpers LIVE per aggiornare una riga e il totale senza re-render ---
   function updateRowCalcLive(rowEl, it){
@@ -1026,8 +1580,19 @@ function renderQuotePanel(){
     for (const v of state.selected.values()){
       t += lineCalc(v).totale;
     }
+    const imponibileLive = roundCurrency(t);
+    const { vat, gross } = computeVatBreakdown(imponibileLive);
     const totEl = document.getElementById('quoteTotal');
-    if (totEl) totEl.textContent = fmtEUR(t);
+    if (totEl) totEl.textContent = fmtEUR(imponibileLive);
+    const vatElLive = document.getElementById('quoteVat');
+    if (vatElLive) vatElLive.textContent = fmtEUR(vat);
+    const grossElLive = document.getElementById('quoteGross');
+    if (grossElLive) grossElLive.textContent = fmtEUR(gross);
+    const msgEl = document.getElementById('quoteMsg');
+    if (msgEl && msgEl.dataset.autoMessage === 'empty' && state.selected.size > 0) {
+      msgEl.textContent = '';
+      delete msgEl.dataset.autoMessage;
+    }
   }
 
   // Input numerici (quantità/sconto) gestiti con helper comune
@@ -1136,21 +1701,31 @@ function validateQuoteMeta() {
   const nameEl = document.getElementById('quoteName');
   const dateEl = document.getElementById('quoteDate');
 
+  const setMessage = (text, { autoEmpty = false } = {}) => {
+    if (!msg) return;
+    msg.textContent = text;
+    if (autoEmpty) msg.dataset.autoMessage = 'empty';
+    else delete msg.dataset.autoMessage;
+  };
+
   if (!state.quoteMeta.name) {
-    if (msg) msg.textContent = 'Inserisci il nominativo prima di procedere.';
+    setMessage('Inserisci il nominativo prima di procedere.');
     nameEl?.focus();
     return false;
   }
   if (!state.quoteMeta.date) {
-    if (msg) msg.textContent = 'Inserisci la data del preventivo.';
+    setMessage('Inserisci la data del preventivo.');
     dateEl?.focus();
     return false;
   }
   if (state.selected.size === 0) {
-    if (msg) msg.textContent = 'Seleziona almeno un articolo.';
+    setMessage('Seleziona almeno un articolo.');
     return false;
   }
-  if (msg) msg.textContent = '';
+  state.quoteMeta.payment = getQuotePayment();
+  const paymentEl = document.getElementById('quotePayment');
+  if (paymentEl) paymentEl.value = state.quoteMeta.payment;
+  setMessage('');
   return true;
 }
 
@@ -1161,12 +1736,14 @@ function exportXlsx(){
 
   // header meta
   rows.push(['Preventivo']);
-  rows.push(['Nominativo', state.quoteMeta.name]);
-  rows.push(['Data', state.quoteMeta.date]);
+  const metaEntries = getQuoteMetaEntries();
+  metaEntries.forEach(entry => {
+    rows.push([entry.label, entry.value]);
+  });
   rows.push([]); // riga vuota
 
   // tabella
-  rows.push(['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']);
+  rows.push(['Codice','Descrizione','Prezzo','CONAI','Q.tà','Sconto %','Prezzo scont.','Totale riga']);
 
   let total=0;
   for (const it of state.selected.values()){
@@ -1180,10 +1757,16 @@ function exportXlsx(){
     ]);
   }
   rows.push([]);
-  rows.push(['','','','','','','Totale imponibile', Number(total||0)]);
+  const imponibile = roundCurrency(total);
+  const { vat, gross } = computeVatBreakdown(imponibile);
+  rows.push(['','','','','','','Totale imponibile', Number(imponibile||0)]);
+  rows.push(['','','','','','','Totale IVA 22%', Number(vat||0)]);
+  rows.push(['','','','','','','Totale importo', Number(gross||0)]);
 
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
-  const filename = `preventivo_${safeName}_${state.quoteMeta.date}.xlsx`;
+  const quoteCode = getQuoteCode();
+  const safeCode = quoteCode.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  const filename = `preventivo_${safeCode || safeName}_${state.quoteMeta.date}.xlsx`;
 
   if (window.XLSX){
     const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -1206,40 +1789,113 @@ function exportXlsx(){
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `preventivo_${safeName}_${state.quoteMeta.date}.csv`;
+    const quoteCode = getQuoteCode();
+    const safeCode = quoteCode.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    a.download = `preventivo_${safeCode || safeName}_${state.quoteMeta.date}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
 }
 
-function exportPdf(){
+async function loadPdfLogo(){
+  if (pdfLogoCache !== undefined) return pdfLogoCache;
+  try {
+    const response = await fetch('./logo.svg');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const svgText = await response.text();
+    const viewBoxMatch = svgText.match(/viewBox\s*=\s*"([^"]+)"/i);
+    let boxWidth = 0;
+    let boxHeight = 0;
+    if (viewBoxMatch){
+      const parts = viewBoxMatch[1].trim().split(/[\s,]+/).map(Number).filter(n=>!Number.isNaN(n));
+      if (parts.length === 4){
+        boxWidth = parts[2];
+        boxHeight = parts[3];
+      }
+    }
+    if (!boxWidth || !boxHeight){
+      boxWidth = 160;
+      boxHeight = 40;
+    }
+    const svgBytes = new TextEncoder().encode(svgText);
+    let binary = '';
+    svgBytes.forEach(b => { binary += String.fromCharCode(b); });
+    const dataUrl = 'data:image/svg+xml;base64,' + window.btoa(binary);
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+    const scale = 4;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round((boxWidth || image.width || 1) * scale));
+    canvas.height = Math.max(1, Math.round((boxHeight || image.height || 1) * scale));
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const pngDataUrl = canvas.toDataURL('image/png');
+    pdfLogoCache = { dataUrl: pngDataUrl, width: boxWidth, height: boxHeight };
+  } catch (error) {
+    console.error('[PDF] Impossibile caricare il logo:', error);
+    pdfLogoCache = null;
+  }
+  return pdfLogoCache;
+}
+
+async function exportPdf(){
   if (!validateQuoteMeta()) return;
   if (!window.jspdf) { alert('Libreria PDF non caricata.'); return; }
   const { jsPDF } = window.jspdf;
 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-  const marginX = 40, marginY = 40;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 40;
+  const marginY = 36;
+  const tableWidth = pageWidth - (marginX * 2);
   let y = marginY;
 
-  // Titolo
-  doc.setFont('helvetica','bold'); doc.setFontSize(16);
-  doc.text('Preventivo', marginX, y); y += 20;
+  const logo = await loadPdfLogo();
+  if (logo?.dataUrl){
+    const maxLogoWidth = Math.min(140, tableWidth);
+    const ratio = logo.width && logo.height ? (logo.width / logo.height) : 0;
+    const drawHeight = ratio ? (maxLogoWidth / ratio) : 28;
+    doc.addImage(logo.dataUrl, 'PNG', marginX, y, maxLogoWidth, drawHeight);
+    y += drawHeight + 32;
+  }
 
-  // Meta
-  doc.setFont('helvetica','normal'); doc.setFontSize(11);
-  doc.text(`Nominativo: ${state.quoteMeta.name}`, marginX, y); y += 16;
-  doc.text(`Data: ${state.quoteMeta.date}`, marginX, y); y += 12;
+  const quoteCode = getQuoteCode();
+  const metaEntries = getQuoteMetaEntries();
 
-  // Tabella
-  const head = [['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']];
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(16);
+  const headingText = quoteCode ? `Preventivo ${quoteCode}` : 'Preventivo';
+  doc.text(headingText, marginX, y);
+  y += 14;
+
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(11);
+  metaEntries.forEach((entry, index) => {
+    const value = String(entry.value || '—');
+    doc.text(`${entry.label}: ${value}`, marginX, y);
+    y += (index === metaEntries.length - 1) ? 20 : 12;
+  });
+  if (!metaEntries.length) {
+    y += 20;
+  }
+
+  const head = [['Codice','Descrizione','Prezzo','CONAI','Q.tà','Sconto %','Prezzo scont.','Totale riga']];
   const body = [];
-  let total=0;
+  const rawDescriptions = [];
+  let total = 0;
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
+    rawDescriptions.push(it.descrizione || '');
     body.push([
       it.codice,
-      it.descrizione,
+      it.descrizione || '',
       fmtEUR(it.prezzo),
       fmtEUR(it.conai||0),
       String(it.qty),
@@ -1248,31 +1904,227 @@ function exportPdf(){
       fmtEUR(totale),
     ]);
   }
-  // usa autoTable (già inclusa in index)
-  if (doc.autoTable) {
+
+  const baseStyles = {
+    fontSize: 8.5,
+    textColor: 30,
+    lineColor: [226,232,240],
+    cellPadding: { top: 4, right: 5, bottom: 4, left: 5 },
+    valign: 'middle',
+    overflow: 'visible',
+  };
+
+  const paddingX = (() => {
+    const padding = baseStyles.cellPadding;
+    if (typeof padding === 'number') return padding * 2;
+    return (padding.left ?? 0) + (padding.right ?? 0);
+  })();
+
+  const columnCount = head[0].length;
+  const maxContentWidth = Math.max(0, tableWidth - (columnCount * paddingX));
+
+  const baseMinWidths = [40, 104, 48, 46, 32, 42, 56, 62];
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  const headerWidths = head[0].map((text) => {
+    const raw = Array.isArray(text) ? text.join(' ') : String(text ?? '');
+    return doc.getTextWidth(raw);
+  });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(baseStyles.fontSize);
+  const bodyWidths = new Array(columnCount).fill(0);
+  body.forEach((row) => {
+    row.forEach((cellText, columnIndex) => {
+      const raw = Array.isArray(cellText) ? cellText.join(' ') : String(cellText ?? '');
+      const width = doc.getTextWidth(raw);
+      bodyWidths[columnIndex] = Math.max(bodyWidths[columnIndex], width);
+    });
+  });
+  const minRequired = baseMinWidths.map((base, index) => {
+    const headerWidth = headerWidths[index] || 0;
+    return Math.max(base, Math.ceil(headerWidth + 4));
+  });
+  const columnWidths = bodyWidths.map((width, index) => {
+    const measured = Math.ceil(Math.max(width || 0, minRequired[index]));
+    return Math.max(minRequired[index], measured + 4);
+  });
+
+  let totalContentWidth = columnWidths.reduce((sum, width) => sum + width, 0);
+  if (totalContentWidth > maxContentWidth) {
+    const shrinkOrder = [1, 0, 2, 3, 6, 7, 5, 4];
+    let overflow = totalContentWidth - maxContentWidth;
+    for (const index of shrinkOrder) {
+      if (overflow <= 0) break;
+      const min = minRequired[index];
+      if (columnWidths[index] <= min) continue;
+      const reducible = columnWidths[index] - min;
+      if (reducible <= 0) continue;
+      const delta = Math.min(reducible, overflow);
+      columnWidths[index] -= delta;
+      overflow -= delta;
+    }
+    totalContentWidth = columnWidths.reduce((sum, width) => sum + width, 0);
+  }
+  if (totalContentWidth < maxContentWidth && columnCount > 1) {
+    const leftover = maxContentWidth - totalContentWidth;
+    columnWidths[1] += leftover;
+    totalContentWidth += leftover;
+  }
+
+  const naturalTableWidth = Math.min(tableWidth, totalContentWidth + (columnCount * paddingX));
+
+  const columnStyles = {
+    0: { halign: 'left', cellWidth: columnWidths[0], minCellWidth: columnWidths[0], maxCellWidth: columnWidths[0], overflow: 'visible' },
+    1: { halign: 'left', cellWidth: columnWidths[1], minCellWidth: columnWidths[1], maxCellWidth: columnWidths[1], overflow: 'linebreak' },
+    2: { halign: 'right', cellWidth: columnWidths[2], minCellWidth: columnWidths[2], maxCellWidth: columnWidths[2], overflow: 'visible' },
+    3: { halign: 'right', cellWidth: columnWidths[3], minCellWidth: columnWidths[3], maxCellWidth: columnWidths[3], overflow: 'visible' },
+    4: { halign: 'center', cellWidth: columnWidths[4], minCellWidth: columnWidths[4], maxCellWidth: columnWidths[4], overflow: 'visible' },
+    5: { halign: 'center', cellWidth: columnWidths[5], minCellWidth: columnWidths[5], maxCellWidth: columnWidths[5], overflow: 'visible' },
+    6: { halign: 'right', cellWidth: columnWidths[6], minCellWidth: columnWidths[6], maxCellWidth: columnWidths[6], overflow: 'visible' },
+    7: { halign: 'right', cellWidth: columnWidths[7], minCellWidth: columnWidths[7], maxCellWidth: columnWidths[7], overflow: 'visible' },
+  };
+
+  if (doc.autoTable){
     doc.autoTable({
       head,
       body,
-      startY: y + 10,
-      styles: { fontSize: 9, halign: 'right' },
-      headStyles: { fillColor: [241,245,249], textColor: 20, halign: 'right' },
-      columnStyles: {
-        0: { halign: 'left' },
-        1: { halign: 'left', cellWidth: 180 },
-      },
+      startY: y,
       margin: { left: marginX, right: marginX },
+      styles: baseStyles,
+      headStyles: { ...baseStyles, fontStyle: 'bold', fontSize: 9.5, fillColor: [241,245,249], overflow: 'visible' },
+      columnStyles,
+      tableWidth: naturalTableWidth,
       theme: 'grid',
+      didParseCell: (data) => {
+        const { cell, section } = data;
+        if (!cell || (section !== 'head' && section !== 'body')) return;
+        const styles = cell.styles || {};
+        const rawText = Array.isArray(cell.text) ? cell.text.join(' ') : String(cell.text ?? '');
+        if (!rawText) return;
+        let paddingX = 0;
+        const padding = styles.cellPadding;
+        if (typeof padding === 'number'){
+          paddingX = padding * 2;
+        } else if (padding){
+          paddingX = (padding.left ?? 0) + (padding.right ?? 0);
+        }
+        const available = cell.width - paddingX;
+        if (available <= 0) return;
+        const originalSize = doc.getFontSize();
+        let fontSize = styles.fontSize || baseStyles.fontSize;
+        if (section === 'head') {
+          styles.overflow = 'visible';
+          doc.setFontSize(originalSize);
+          return;
+        }
+        if (data.column.index === 1){
+          styles.overflow = 'linebreak';
+          if (section === 'body'){
+            const fullDescription = rawDescriptions[data.row.index] ?? rawText;
+            let lines = [];
+            if (available > 0){
+              doc.setFontSize(fontSize);
+              lines = doc.splitTextToSize(fullDescription, available);
+              while (lines.length > 2 && fontSize > 4){
+                fontSize -= 0.25;
+                doc.setFontSize(fontSize);
+                lines = doc.splitTextToSize(fullDescription, available);
+              }
+              if (lines.length > 2){
+                const trimmed = lines.slice(0, 2);
+                const last = trimmed[trimmed.length - 1] || '';
+                trimmed[trimmed.length - 1] = last.endsWith('…') ? last : `${last.replace(/\s+$/,'')}…`;
+                lines = trimmed;
+              }
+            }
+            if (fontSize < 4) fontSize = 4;
+            if (lines.length){
+              cell.text = lines;
+            }
+            cell.styles.fontSize = fontSize;
+          }
+          doc.setFontSize(originalSize);
+          return;
+        }
+        let measured = Infinity;
+        while (fontSize > 6){
+          doc.setFontSize(fontSize);
+          measured = doc.getTextWidth(rawText);
+          if (measured <= available) break;
+          fontSize -= 0.5;
+        }
+        if (fontSize < 6) fontSize = 6;
+        doc.setFontSize(fontSize);
+        const finalWidth = doc.getTextWidth(rawText);
+        if (finalWidth > available && finalWidth > 0){
+          const ratioFit = available / finalWidth;
+          const adjusted = Math.max(6, Math.floor(fontSize * ratioFit));
+          if (adjusted < fontSize){
+            fontSize = adjusted;
+            doc.setFontSize(fontSize);
+          }
+        }
+        doc.setFontSize(originalSize);
+        cell.styles.fontSize = fontSize;
+      },
     });
-    const endY = doc.lastAutoTable.finalY || (y+10);
-    doc.setFont('helvetica','bold'); doc.setFontSize(12);
-    doc.text(`Totale imponibile: ${fmtEUR(total)}`, 555, endY + 24, { align: 'right' });
+    const endY = doc.lastAutoTable.finalY || y;
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(11);
+    const imponibileTot = roundCurrency(total);
+    const { vat, gross } = computeVatBreakdown(imponibileTot);
+    let totalsY = endY + 20;
+    const requiredBlockHeight = (16 * 3) + 32; // tre righe totali + respiro + footer
+    if ((pageHeight - marginY - totalsY) < requiredBlockHeight) {
+      doc.addPage();
+      let headerY = marginY;
+      if (logo?.dataUrl){
+        const maxLogoWidth = Math.min(140, tableWidth);
+        const ratio = logo.width && logo.height ? (logo.width / logo.height) : 0;
+        const drawHeight = ratio ? (maxLogoWidth / ratio) : 28;
+        doc.addImage(logo.dataUrl, 'PNG', marginX, headerY, maxLogoWidth, drawHeight);
+        headerY += drawHeight + 32;
+      }
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(16);
+      doc.text(headingText, marginX, headerY);
+      headerY += 14;
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(11);
+      metaEntries.forEach((entry) => {
+        const value = String(entry.value || '—');
+        doc.text(`${entry.label}: ${value}`, marginX, headerY);
+        headerY += 12;
+      });
+      totalsY = headerY + 8;
+    }
+    const totalsX = marginX + naturalTableWidth;
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Totale imponibile: ${fmtEUR(imponibileTot)}`, totalsX, totalsY, { align: 'right' });
+    totalsY += 16;
+    doc.text(`Totale IVA 22%: ${fmtEUR(vat)}`, totalsX, totalsY, { align: 'right' });
+    totalsY += 16;
+    doc.setTextColor(220, 38, 38);
+    doc.text(`Totale importo: ${fmtEUR(gross)}`, totalsX, totalsY, { align: 'right' });
+    doc.setTextColor(15, 23, 42);
+
+    const footerLines = [
+      'Per informazioni tecniche o commerciali',
+      `agente di riferimento ${state.agent.name || state.agent.code || '—'}`,
+    ];
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(10);
+    const footerBaseY = Math.max(totalsY + 28, doc.internal.pageSize.getHeight() - marginY - ((footerLines.length - 1) * 12));
+    footerLines.forEach((line, idx) => {
+      doc.text(line, totalsX, footerBaseY + (idx * 12), { align: 'right' });
+    });
   } else {
-    // Fallback senza autotable (basic)
-    doc.text('Errore: jsPDF-Autotable non presente.', marginX, y+20);
+    doc.text('Errore: jsPDF-Autotable non presente.', marginX, y + 20);
   }
 
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
-  doc.save(`preventivo_${safeName}_${state.quoteMeta.date}.pdf`);
+  const safeCode = quoteCode.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  doc.save(`preventivo_${safeCode || safeName}_${state.quoteMeta.date}.pdf`);
 }
 
 function printQuote(){
@@ -1296,9 +2148,18 @@ function printQuote(){
         <td class="tr">${fmtEUR(totale)}</td>
       </tr>`;
   }
+  const imponibile = roundCurrency(total);
+  const { vat, gross } = computeVatBreakdown(imponibile);
 
   const win = window.open('', '_blank');
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
+  const quoteCode = getQuoteCode();
+  const metaEntries = getQuoteMetaEntries();
+  const metaHtml = metaEntries.length
+    ? metaEntries
+        .map(entry => `${escapeHtml(entry.label)}: <strong>${escapeHtml(String(entry.value || '—'))}</strong>`)
+        .join('<br>')
+    : '<span>—</span>';
 
   win.document.write(`
 <!doctype html>
@@ -1309,18 +2170,20 @@ function printQuote(){
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#0f172a; margin:24px; }
     h1 { font-size:20px; margin:0 0 8px 0; }
+    h1 span.code { display:inline-block; margin-left:8px; padding:2px 6px; background:#e2e8f0; border-radius:6px; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; }
     .meta { font-size:12px; color:#334155; margin-bottom:16px; }
     table { width:100%; border-collapse:collapse; font-size:12px; }
     thead th { background:#f1f5f9; text-align:left; border:1px solid #e2e8f0; padding:6px 8px; }
     td { border:1px solid #e2e8f0; padding:6px 8px; }
     .tr { text-align:right; }
     tfoot td { font-weight:600; }
+    .totals td.amount { color:#dc2626; }
     .actions { display:none; }
   </style>
 </head>
 <body>
-  <h1>Preventivo</h1>
-  <div class="meta">Nominativo: <strong>${escapeHtml(state.quoteMeta.name)}</strong><br>Data: <strong>${state.quoteMeta.date}</strong></div>
+  <h1>Preventivo${quoteCode ? `<span class="code">${escapeHtml(quoteCode)}</span>` : ''}</h1>
+  <div class="meta">${metaHtml}</div>
   <table>
     <thead>
       <tr>
@@ -1337,10 +2200,18 @@ function printQuote(){
     <tbody>
       ${rowsHtml}
     </tbody>
-    <tfoot>
+    <tfoot class="totals">
       <tr>
         <td colspan="7" class="tr">Totale imponibile</td>
-        <td class="tr">${fmtEUR(total)}</td>
+        <td class="tr">${fmtEUR(imponibile)}</td>
+      </tr>
+      <tr>
+        <td colspan="7" class="tr">Totale IVA 22%</td>
+        <td class="tr">${fmtEUR(vat)}</td>
+      </tr>
+      <tr>
+        <td colspan="7" class="tr">Totale importo</td>
+        <td class="tr amount">${fmtEUR(gross)}</td>
       </tr>
     </tfoot>
   </table>
@@ -1579,6 +2450,7 @@ function createQuoteDrawer(){
     drawer.style.transform = 'translateX(0%)';
     backdrop.style.display = 'block';
     document.body.classList.add('modal-open');
+    if (window.BackToTopController?.disable) window.BackToTopController.disable();
     isOpen = true;
   }
 
@@ -1588,6 +2460,7 @@ function createQuoteDrawer(){
     drawer.style.transform = 'translateX(100%)';
     backdrop.style.display = 'none';
     document.body.classList.remove('modal-open');
+    if (window.BackToTopController?.enable) window.BackToTopController.enable();
     isOpen = false;
     resizeQuotePanel();
   }
@@ -1618,20 +2491,40 @@ function createQuoteDrawer(){
   const btn = document.getElementById('btnBackToTop');
   if (!btn) return;
 
-  // Mostra/nasconde in base allo scroll (soglia personalizzabile)
   const THRESHOLD = 300; // px
+  let disabled = false;
+
+  function applyVisibility(){
+    if (disabled){
+      btn.classList.add('hidden');
+      return;
+    }
+    if (window.scrollY > THRESHOLD) btn.classList.remove('hidden');
+    else btn.classList.add('hidden');
+  }
+
   window.addEventListener('scroll', ()=>{
+    if (disabled) return;
     if (window.scrollY > THRESHOLD) btn.classList.remove('hidden');
     else btn.classList.add('hidden');
   });
 
-  // Click → scroll su
   btn.addEventListener('click', ()=>{
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
-  // Stato iniziale corretto (se entri con pagina già scrollata)
-  if (window.scrollY > THRESHOLD) btn.classList.remove('hidden');
+  applyVisibility();
+
+  window.BackToTopController = {
+    disable(){
+      disabled = true;
+      btn.classList.add('hidden');
+    },
+    enable(){
+      disabled = false;
+      applyVisibility();
+    }
+  };
 })();
 
 
