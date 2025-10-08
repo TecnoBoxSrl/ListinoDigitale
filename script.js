@@ -2316,6 +2316,7 @@ function createQuoteDrawer(){
     drawer.style.transform = 'translateX(0%)';
     backdrop.style.display = 'block';
     document.body.classList.add('modal-open');
+    if (window.BackToTopController?.disable) window.BackToTopController.disable();
     isOpen = true;
   }
 
@@ -2325,6 +2326,7 @@ function createQuoteDrawer(){
     drawer.style.transform = 'translateX(100%)';
     backdrop.style.display = 'none';
     document.body.classList.remove('modal-open');
+    if (window.BackToTopController?.enable) window.BackToTopController.enable();
     isOpen = false;
     resizeQuotePanel();
   }
@@ -2355,20 +2357,40 @@ function createQuoteDrawer(){
   const btn = document.getElementById('btnBackToTop');
   if (!btn) return;
 
-  // Mostra/nasconde in base allo scroll (soglia personalizzabile)
   const THRESHOLD = 300; // px
+  let disabled = false;
+
+  function applyVisibility(){
+    if (disabled){
+      btn.classList.add('hidden');
+      return;
+    }
+    if (window.scrollY > THRESHOLD) btn.classList.remove('hidden');
+    else btn.classList.add('hidden');
+  }
+
   window.addEventListener('scroll', ()=>{
+    if (disabled) return;
     if (window.scrollY > THRESHOLD) btn.classList.remove('hidden');
     else btn.classList.add('hidden');
   });
 
-  // Click → scroll su
   btn.addEventListener('click', ()=>{
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
-  // Stato iniziale corretto (se entri con pagina già scrollata)
-  if (window.scrollY > THRESHOLD) btn.classList.remove('hidden');
+  applyVisibility();
+
+  window.BackToTopController = {
+    disable(){
+      disabled = true;
+      btn.classList.add('hidden');
+    },
+    enable(){
+      disabled = false;
+      applyVisibility();
+    }
+  };
 })();
 
 
