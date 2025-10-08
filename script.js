@@ -158,6 +158,20 @@ function scrollToProductsHeader(){
   window.scrollTo({ top: y, behavior: 'smooth' });
 }
 
+function scrollToCategoryResults(){
+  const container = document.getElementById('listinoContainer');
+  if (!container) return;
+
+  const target = container.querySelector('h2, table') || container;
+
+  requestAnimationFrame(() => {
+    const header = document.querySelector('header');
+    const headerH = header ? header.getBoundingClientRect().height : 0;
+    const top = target.getBoundingClientRect().top + window.pageYOffset - (headerH + 12);
+    window.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' });
+  });
+}
+
 function clearSupabaseAuthStorage(){
   try {
     const match = SUPABASE_URL?.match(/^https:\/\/([^.]+)\.supabase\.co/i);
@@ -347,7 +361,9 @@ function initCategoryFilters(){
         state.categoryLetter = opt.value;
         updateCategoryLetterButtons();
         buildCategories();
-        scrollToProductsHeader();
+        if (isDesktopLayout()) {
+          scrollToProductsHeader();
+        }
       });
       letterBar.appendChild(btn);
       categoryLetterButtons.push(btn);
@@ -789,6 +805,17 @@ function buildCategories(){
   const normalizedSearch = normalize(state.categorySearch || '');
   const hasSearch = !!normalizedSearch;
 
+  const handleCategorySelection = (category) => {
+    state.selectedCategory = category;
+    renderView();        // aggiorna listino
+    buildCategories();   // aggiorna evidenziazione
+    if (isDesktopLayout()) {
+      scrollToProductsHeader();
+    } else {
+      scrollToCategoryResults();
+    }
+  };
+
   let filteredForAvailability = [...allCats];
 
   if (!isDesktop && hasSearch) {
@@ -827,10 +854,7 @@ function buildCategories(){
       : 'bg-white hover:bg-slate-50'
   ].join(' ');
   allBtn.addEventListener('click', () => {
-    state.selectedCategory = 'Tutte';
-    renderView();        // aggiorna listino
-    buildCategories();   // aggiorna evidenziazione
-    scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodotti"
+    handleCategorySelection('Tutte');
   });
   box.appendChild(allBtn);
 
@@ -862,10 +886,7 @@ function buildCategories(){
         : 'bg-white hover:bg-slate-50'
     ].join(' ');
     btn.addEventListener('click', () => {
-      state.selectedCategory = cat;
-      renderView();
-      buildCategories();
-      scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodotti"
+      handleCategorySelection(cat);
     });
     box.appendChild(btn);
   });
