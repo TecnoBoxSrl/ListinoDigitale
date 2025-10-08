@@ -889,101 +889,223 @@ async function fetchProducts(){
     const client = ensureSupabaseClient();
     if (!client) throw new Error('Supabase non inizializzato');
 
-    const fullSelect = `
-        id,
-        codice,
-        descrizione,
-        dimensione,
-        categoria,
-        sottocategoria,
-        prezzo,
-        conai,
-        unita,
-        disponibile,
-        novita,
-        pack,
-        pallet,
-        tags,
-        updated_at,
-        product_media(id,kind,path,sort)
-      `;
+    let items = [];
+    let usedFallback = false;
 
-    let { data, error } = await client
-      .from('products')
-      .select(fullSelect)
-      .order('descrizione', { ascending: true });
-
-    if (error) {
-      const msg = String(error.message || '').toLowerCase();
-      const missingExtra = msg.includes('dimensione') || msg.includes('conai');
-      if (missingExtra) {
-        console.warn('[Data] prodotti senza colonne dimensione/conai, retry fallback');
-        ({ data, error } = await client
-          .from('products')
-          .select(`
-            id,
-            codice,
-            descrizione,
-            categoria,
-            sottocategoria,
-            prezzo,
-            unita,
-            disponibile,
-            novita,
-            pack,
-            pallet,
-            tags,
-            updated_at,
-            product_media(id,kind,path,sort)
-          `)
-          .order('descrizione', { ascending: true }));
-      }
-      if (error) throw error;
+    try {
+      items = await fetchProductsFromCatalog(client);
+    } catch (primaryErr) {
+      console.warn('[Data] prodotti primary fetch fallito, provo fallback price list', primaryErr);
     }
 
-    const items = [];
-    for (const p of (data || [])) {
-      // immagine principale (se presente)
-      const mediaImgs = (p.product_media || [])
-        .filter(m => m.kind === 'image')
-        .sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
-
-      let imgUrl = '';
-      if (mediaImgs[0]) {
-        const { data: signed, error: sErr } = await client
-          .storage.from(STORAGE_BUCKET)
-          .createSignedUrl(mediaImgs[0].path, 600);
-        if (sErr) console.warn('[Storage] signedURL warn:', sErr.message);
-        imgUrl = signed?.signedUrl || '';
+    if (!items.length) {
+      try {
+        items = await fetchProductsFromLatestPriceList(client);
+        usedFallback = items.length > 0;
+      } catch (fallbackErr) {
+        console.error('[Data] fallback price list fallito', fallbackErr);
       }
-
-      items.push({
-        codice: p.codice,
-        descrizione: p.descrizione,
-        dimensione: p.dimensione ?? '',
-        categoria: p.categoria,
-        sottocategoria: p.sottocategoria,
-        prezzo: p.prezzo,
-        conai: p.conai ?? null,
-        unita: p.unita,
-        disponibile: p.disponibile,
-        novita: p.novita,
-        pack: p.pack,
-        pallet: p.pallet,
-        tags: p.tags || [],
-        updated_at: p.updated_at,
-        img: imgUrl,
-      });
     }
 
     state.items = items;
     buildCategories();
-    info && (info.textContent = `${items.length} articoli`);
-    console.log('[Data] prodotti:', items.length);
+
+    if (info) {
+      if (items.length) {
+        info.textContent = usedFallback
+          ? `${items.length} articoli (ultimo listino pubblicato)`
+          : `${items.length} articoli`;
+      } else {
+        info.textContent = 'Nessun articolo disponibile';
+      }
+    }
+
+    console.log('[Data] prodotti caricati:', items.length, usedFallback ? '(fallback price list)' : '');
   } catch(e){
     console.error('[Data] fetchProducts error', e);
-    info && (info.textContent = 'Errore caricamento listino');
+    if (info) info.textContent = 'Errore caricamento listino';
   }
+}
+
+async function fetchProductsFromCatalog(client) {
+  const items = [];
+  const fullSelect = `
+      id,
+      codice,
+      descrizione,
+      dimensione,
+      categoria,
+      sottocategoria,
+      prezzo,
+      conai,
+      unita,
+      disponibile,
+      novita,
+      pack,
+      pallet,
+      tags,
+      updated_at,
+      product_media(id,kind,path,sort)
+    `;
+
+  let { data, error } = await client
+    .from('products')
+    .select(fullSelect)
+    .order('descrizione', { ascending: true });
+
+  if (error) {
+    const msg = String(error.message || '').toLowerCase();
+    const missingExtra = msg.includes('dimensione') || msg.includes('conai');
+    if (missingExtra) {
+      console.warn('[Data] prodotti senza colonne dimensione/conai, retry fallback');
+      ({ data, error } = await client
+        .from('products')
+        .select(`
+          id,
+          codice,
+          descrizione,
+          categoria,
+          sottocategoria,
+          prezzo,
+          unita,
+          disponibile,
+          novita,
+          pack,
+          pallet,
+          tags,
+          updated_at,
+          product_media(id,kind,path,sort)
+        `)
+        .order('descrizione', { ascending: true }));
+    }
+    if (error) throw error;
+  }
+
+  for (const p of (data || [])) {
+    const mediaImgs = (p.product_media || [])
+      .filter(m => m.kind === 'image')
+      .sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
+
+    let imgUrl = '';
+    if (mediaImgs[0]) {
+      const { data: signed, error: sErr } = await client
+        .storage.from(STORAGE_BUCKET)
+        .createSignedUrl(mediaImgs[0].path, 600);
+      if (sErr) console.warn('[Storage] signedURL warn:', sErr.message);
+      imgUrl = signed?.signedUrl || '';
+    }
+
+    items.push({
+      codice: p.codice,
+      descrizione: p.descrizione,
+      dimensione: p.dimensione ?? '',
+      categoria: p.categoria,
+      sottocategoria: p.sottocategoria,
+      prezzo: p.prezzo,
+      conai: p.conai ?? null,
+      unita: p.unita,
+      disponibile: p.disponibile,
+      novita: p.novita,
+      pack: p.pack,
+      pallet: p.pallet,
+      tags: p.tags || [],
+      updated_at: p.updated_at,
+      img: imgUrl,
+    });
+  }
+
+  return items;
+}
+
+async function fetchProductsFromLatestPriceList(client) {
+  const items = [];
+
+  const { data: listData, error: listError } = await client
+    .from('price_lists')
+    .select('id')
+    .order('published_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (listError) throw listError;
+
+  const listId = listData?.id;
+  if (!listId) {
+    console.warn('[Data] nessun price list pubblicato');
+    return items;
+  }
+
+  const richSelect = `
+      codice,
+      descrizione,
+      dimensione,
+      categoria,
+      sottocategoria,
+      prezzo,
+      conai,
+      unita,
+      disponibile,
+      novita,
+      pack,
+      pallet,
+      tags,
+      updated_at
+    `;
+
+  let { data: rows, error } = await client
+    .from('price_list_items')
+    .select(richSelect)
+    .eq('price_list_id', listId)
+    .order('descrizione', { ascending: true });
+
+  if (error) {
+    const msg = String(error.message || '').toLowerCase();
+    const missingExtra = msg.includes('dimensione') || msg.includes('conai');
+    if (missingExtra) {
+      console.warn('[Data] price_list_items senza dimensione/conai, retry base select');
+      ({ data: rows, error } = await client
+        .from('price_list_items')
+        .select(`
+          codice,
+          descrizione,
+          categoria,
+          sottocategoria,
+          prezzo,
+          unita,
+          disponibile,
+          novita,
+          pack,
+          pallet,
+          tags,
+          updated_at
+        `)
+        .eq('price_list_id', listId)
+        .order('descrizione', { ascending: true }));
+    }
+    if (error) throw error;
+  }
+
+  for (const row of (rows || [])) {
+    items.push({
+      codice: row.codice,
+      descrizione: row.descrizione,
+      dimensione: row.dimensione ?? '',
+      categoria: row.categoria,
+      sottocategoria: row.sottocategoria,
+      prezzo: row.prezzo,
+      conai: row.conai ?? null,
+      unita: row.unita,
+      disponibile: row.disponibile,
+      novita: row.novita,
+      pack: row.pack,
+      pallet: row.pallet,
+      tags: row.tags || [],
+      updated_at: row.updated_at,
+      img: '',
+    });
+  }
+
+  return items;
 }
 
 /* ============ CATEGORIE ============ */
