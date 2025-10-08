@@ -1609,7 +1609,7 @@ function exportXlsx(){
   rows.push([]); // riga vuota
 
   // tabella
-  rows.push(['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']);
+  rows.push(['Codice','Descrizione','Prezzo','CONAI','Q.tà','Sconto %','Prezzo scont.','Totale riga']);
 
   let total=0;
   for (const it of state.selected.values()){
@@ -1751,7 +1751,7 @@ async function exportPdf(){
     y += 20;
   }
 
-  const head = [['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']];
+  const head = [['Codice','Descrizione','Prezzo','CONAI','Q.tà','Sconto %','Prezzo scont.','Totale riga']];
   const body = [];
   const rawDescriptions = [];
   let total = 0;
@@ -1789,19 +1789,19 @@ async function exportPdf(){
   const columnCount = head[0].length;
   const maxContentWidth = Math.max(0, tableWidth - (columnCount * paddingX));
 
-  const minWidths = [38, 96, 44, 46, 28, 34, 46, 52];
+  const minWidths = [40, 104, 48, 46, 32, 42, 56, 62];
   const minTotal = minWidths.reduce((sum, width) => sum + width, 0);
   const minWithoutDescription = minTotal - minWidths[1];
   const maxDescription = Math.max(minWidths[1], Math.min(260, maxContentWidth - minWithoutDescription));
   const maxWidths = [
-    minWidths[0] + 26,
+    minWidths[0] + 28,
     maxDescription,
-    minWidths[2] + 24,
+    minWidths[2] + 28,
     minWidths[3] + 24,
-    minWidths[4] + 12,
-    minWidths[5] + 16,
-    minWidths[6] + 28,
-    minWidths[7] + 32,
+    minWidths[4] + 18,
+    minWidths[5] + 28,
+    minWidths[6] + 32,
+    minWidths[7] + 36,
   ];
   const measuredWidths = new Array(columnCount).fill(0);
   const rowsForMeasure = [head[0], ...body];
@@ -1840,6 +1840,29 @@ async function exportPdf(){
       overflow -= delta;
     }
     totalContentWidth = columnWidths.reduce((sum, width) => sum + width, 0);
+  } else if (totalContentWidth < maxContentWidth) {
+    let leftover = maxContentWidth - totalContentWidth;
+    if (leftover > 0) {
+      const maxExtraForDescription = Math.max(0, maxWidths[1] - columnWidths[1]);
+      const increase = Math.min(leftover, maxExtraForDescription);
+      if (increase > 0) {
+        columnWidths[1] += increase;
+        totalContentWidth += increase;
+        leftover -= increase;
+      }
+      if (leftover > 0) {
+        const flexibleOrder = [0, 2, 3, 6, 7, 5, 4];
+        for (const index of flexibleOrder) {
+          if (leftover <= 0) break;
+          const room = Math.max(0, maxWidths[index] - columnWidths[index]);
+          if (room <= 0) continue;
+          const delta = Math.min(room, leftover);
+          columnWidths[index] += delta;
+          totalContentWidth += delta;
+          leftover -= delta;
+        }
+      }
+    }
   }
 
   const naturalTableWidth = Math.min(tableWidth, totalContentWidth + (columnCount * paddingX));
@@ -1862,7 +1885,7 @@ async function exportPdf(){
       startY: y,
       margin: { left: marginX, right: marginX },
       styles: baseStyles,
-      headStyles: { ...baseStyles, fontStyle: 'bold', fontSize: 9.5, fillColor: [241,245,249] },
+      headStyles: { ...baseStyles, fontStyle: 'bold', fontSize: 9.5, fillColor: [241,245,249], overflow: 'linebreak' },
       columnStyles,
       tableWidth: naturalTableWidth,
       theme: 'grid',
@@ -1883,6 +1906,11 @@ async function exportPdf(){
         if (available <= 0) return;
         const originalSize = doc.getFontSize();
         let fontSize = styles.fontSize || baseStyles.fontSize;
+        if (section === 'head') {
+          styles.overflow = 'linebreak';
+          doc.setFontSize(originalSize);
+          return;
+        }
         if (data.column.index === 1){
           styles.overflow = 'linebreak';
           if (section === 'body'){
@@ -1975,8 +2003,8 @@ async function exportPdf(){
     doc.setTextColor(15, 23, 42);
 
     const footerLines = [
-      'Per informazioni tecniche o commerciali:',
-      `Agente di riferimento: ${state.agent.name || state.agent.code || '—'}`,
+      'Per informazioni tecniche o commerciali',
+      `agente di riferimento ${state.agent.name || state.agent.code || '—'}`,
     ];
     doc.setFont('helvetica','normal');
     doc.setFontSize(10);
