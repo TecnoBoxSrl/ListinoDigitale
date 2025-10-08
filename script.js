@@ -891,6 +891,7 @@ async function fetchProducts(){
 
     let items = [];
     let usedFallback = false;
+    let fallbackMeta = null;
 
     try {
       items = await fetchProductsFromCatalog(client);
@@ -900,7 +901,9 @@ async function fetchProducts(){
 
     if (!items.length) {
       try {
-        items = await fetchProductsFromLatestPriceList(client);
+        const fallbackRes = await fetchProductsFromLatestPriceList(client);
+        items = fallbackRes.items;
+        fallbackMeta = fallbackRes.meta;
         usedFallback = items.length > 0;
       } catch (fallbackErr) {
         console.error('[Data] fallback price list fallito', fallbackErr);
@@ -912,73 +915,25 @@ async function fetchProducts(){
 
     if (info) {
       if (items.length) {
-        info.textContent = usedFallback
-          ? `${items.length} articoli (ultimo listino pubblicato)`
-          : `${items.length} articoli`;
+        if (usedFallback) {
+          const label = fallbackMeta?.version_label || 'ultimo listino pubblicato';
+          const suffix = label ? ` (${label})` : '';
+          info.textContent = `${items.length} articoli${suffix}`;
+        } else {
+          info.textContent = `${items.length} articoli`;
+        }
       } else {
         info.textContent = 'Nessun articolo disponibile';
       }
     }
 
-    console.log('[Data] prodotti caricati:', items.length, usedFallback ? '(fallback price list)' : '');
+    const fallbackLog = usedFallback
+      ? ` (fallback price list${fallbackMeta?.version_label ? ` ${fallbackMeta.version_label}` : ''})`
+      : '';
+    console.log('[Data] prodotti caricati:', items.length, fallbackLog);
   } catch(e){
     console.error('[Data] fetchProducts error', e);
     if (info) info.textContent = 'Errore caricamento listino';
-  }
-}
-
-async function fetchProductsFromCatalog(client) {
-  const items = [];
-  const fullSelect = `
-      id,
-      codice,
-      descrizione,
-      dimensione,
-      categoria,
-      sottocategoria,
-      prezzo,
-      conai,
-      unita,
-      disponibile,
-      novita,
-      pack,
-      pallet,
-      tags,
-      updated_at,
-      product_media(id,kind,path,sort)
-    `;
-
-  let { data, error } = await client
-    .from('products')
-    .select(fullSelect)
-    .order('descrizione', { ascending: true });
-
-  if (error) {
-    const msg = String(error.message || '').toLowerCase();
-    const missingExtra = msg.includes('dimensione') || msg.includes('conai');
-    if (missingExtra) {
-      console.warn('[Data] prodotti senza colonne dimensione/conai, retry fallback');
-      ({ data, error } = await client
-        .from('products')
-        .select(`
-          id,
-          codice,
-          descrizione,
-          categoria,
-          sottocategoria,
-          prezzo,
-          unita,
-          disponibile,
-          novita,
-          pack,
-          pallet,
-          tags,
-          updated_at,
-          product_media(id,kind,path,sort)
-        `)
-        .order('descrizione', { ascending: true }));
-    }
-    if (error) throw error;
   }
 
   for (const p of (data || [])) {
@@ -1106,6 +1061,206 @@ async function fetchProductsFromLatestPriceList(client) {
   }
 
   return items;
+}
+
+async function fetchProductsFromCatalog(client) {
+  const items = [];
+  const fullSelect = `
+      id,
+      codice,
+      descrizione,
+      dimensione,
+      categoria,
+      sottocategoria,
+      prezzo,
+      conai,
+      unita,
+      disponibile,
+      novita,
+      pack,
+      pallet,
+      tags,
+      updated_at,
+      product_media(id,kind,path,sort)
+    `;
+
+  let { data, error } = await client
+    .from('products')
+    .select(fullSelect)
+    .order('descrizione', { ascending: true });
+
+  if (error) {
+    const msg = String(error.message || '').toLowerCase();
+    const missingExtra = msg.includes('dimensione') || msg.includes('conai');
+    if (missingExtra) {
+      console.warn('[Data] prodotti senza colonne dimensione/conai, retry fallback');
+      ({ data, error } = await client
+        .from('products')
+        .select(`
+          id,
+          codice,
+          descrizione,
+          categoria,
+          sottocategoria,
+          prezzo,
+          unita,
+          disponibile,
+          novita,
+          pack,
+          pallet,
+          tags,
+          updated_at,
+          product_media(id,kind,path,sort)
+        `)
+        .order('descrizione', { ascending: true }));
+    }
+    if (error) throw error;
+  }
+
+  for (const p of (data || [])) {
+    const mediaImgs = (p.product_media || [])
+      .filter(m => m.kind === 'image')
+      .sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
+
+    let imgUrl = '';
+    if (mediaImgs[0]) {
+      const { data: signed, error: sErr } = await client
+        .storage.from(STORAGE_BUCKET)
+        .createSignedUrl(mediaImgs[0].path, 600);
+      if (sErr) console.warn('[Storage] signedURL warn:', sErr.message);
+      imgUrl = signed?.signedUrl || '';
+    }
+
+    items.push({
+      codice: p.codice,
+      descrizione: p.descrizione,
+      dimensione: p.dimensione ?? '',
+      categoria: p.categoria,
+      sottocategoria: p.sottocategoria,
+      prezzo: p.prezzo,
+      conai: p.conai ?? null,
+      unita: p.unita,
+      disponibile: p.disponibile,
+      novita: p.novita,
+      pack: p.pack,
+      pallet: p.pallet,
+      tags: p.tags || [],
+      updated_at: p.updated_at,
+      img: imgUrl,
+    });
+  }
+
+  return items;
+}
+
+async function fetchProductsFromLatestPriceList(client) {
+  const maxListsToCheck = 5;
+  const { data: lists, error: listError } = await client
+    .from('price_lists')
+    .select('id, version_label, published_at')
+    .order('published_at', { ascending: false, nullsLast: true })
+    .limit(maxListsToCheck);
+
+  if (listError) throw listError;
+
+  for (const list of lists || []) {
+    try {
+      const rows = await fetchPriceListItemsById(client, list.id);
+      if (rows.length) {
+        return {
+          items: rows.map(normalizePriceListRow),
+          meta: list,
+        };
+      }
+    } catch (errFetch) {
+      console.warn('[Data] price list items fetch fallito per', list.id, errFetch);
+    }
+  }
+
+  console.warn('[Data] nessun listino pubblicato con articoli disponibili');
+  return { items: [], meta: null };
+}
+
+async function fetchPriceListItemsById(client, listId) {
+  if (!listId) return [];
+
+  const richSelect = `
+      codice,
+      descrizione,
+      dimensione,
+      categoria,
+      sottocategoria,
+      prezzo,
+      conai,
+      unita,
+      disponibile,
+      novita,
+      pack,
+      pallet,
+      tags,
+      updated_at
+    `;
+
+  let { data: rows, error } = await client
+    .from('price_list_items')
+    .select(richSelect)
+    .eq('price_list_id', listId)
+    .order('descrizione', { ascending: true });
+
+  if (error) {
+    const msg = String(error.message || '').toLowerCase();
+    const missingExtra = msg.includes('dimensione') || msg.includes('conai');
+    if (missingExtra) {
+      console.warn('[Data] price_list_items senza dimensione/conai, retry base select');
+      ({ data: rows, error } = await client
+        .from('price_list_items')
+        .select(`
+          codice,
+          descrizione,
+          categoria,
+          sottocategoria,
+          prezzo,
+          unita,
+          disponibile,
+          novita,
+          pack,
+          pallet,
+          tags,
+          updated_at
+        `)
+        .eq('price_list_id', listId)
+        .order('descrizione', { ascending: true }));
+    }
+    if (error) throw error;
+  }
+
+  return rows || [];
+}
+
+function normalizePriceListRow(row) {
+  const prezzo = (row?.prezzo === null || row?.prezzo === '' || row?.prezzo === undefined)
+    ? null
+    : Number(row.prezzo);
+  const conai = (row?.conai === null || row?.conai === '' || row?.conai === undefined)
+    ? null
+    : Number(row.conai);
+  return {
+    codice: row?.codice,
+    descrizione: row?.descrizione,
+    dimensione: row?.dimensione ?? '',
+    categoria: row?.categoria,
+    sottocategoria: row?.sottocategoria,
+    prezzo,
+    conai,
+    unita: row?.unita,
+    disponibile: row?.disponibile,
+    novita: row?.novita,
+    pack: row?.pack,
+    pallet: row?.pallet,
+    tags: row?.tags || [],
+    updated_at: row?.updated_at,
+    img: '',
+  };
 }
 
 /* ============ CATEGORIE ============ */
