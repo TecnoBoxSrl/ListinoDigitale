@@ -19,6 +19,7 @@ let supabaseRetryCount = 0;
 const MAX_SUPABASE_RETRIES = 10;
 let authListenerBound = false;
 let logoutInFlight = false;
+let pdfLogoCache;
 
 function ensureSupabaseClient(){
   if (supabase) return supabase;
@@ -123,6 +124,27 @@ const err = (...a) => console.error('[Listino]', ...a);
 const normalize = (s) => (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
 const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 
+const CATEGORY_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const DEFAULT_AVAILABLE_CATEGORY_LETTERS = new Set([...CATEGORY_LETTERS, '#']);
+let lastAvailableCategoryLetters = new Set(DEFAULT_AVAILABLE_CATEGORY_LETTERS);
+
+function isDesktopLayout(){
+  if (window.matchMedia) {
+    return window.matchMedia('(min-width: 1024px)').matches;
+  }
+  return window.innerWidth >= 1024;
+}
+
+function deriveCategoryLetter(cat){
+  const normalized = normalize(cat || '');
+  if (!normalized) return '#';
+  const first = normalized.charAt(0);
+  if (first >= 'a' && first <= 'z') {
+    return first.toUpperCase();
+  }
+  return '#';
+}
+
 
 
 // Scrolla fino alla barra "Cerca prodotti…" tenendo conto dell'header sticky
@@ -135,6 +157,20 @@ function scrollToProductsHeader(){
 
   const y = target.getBoundingClientRect().top + window.pageYOffset - (headerH + 8);
   window.scrollTo({ top: y, behavior: 'smooth' });
+}
+
+function scrollToCategoryResults(){
+  const container = document.getElementById('listinoContainer');
+  if (!container) return;
+
+  const target = container.querySelector('h2, table') || container;
+
+  requestAnimationFrame(() => {
+    const header = document.querySelector('header');
+    const headerH = header ? header.getBoundingClientRect().height : 0;
+    const top = target.getBoundingClientRect().top + window.pageYOffset - (headerH + 12);
+    window.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' });
+  });
 }
 
 function clearSupabaseAuthStorage(){
@@ -216,8 +252,129 @@ const state = {
     name: '',                                       // Nominativo
     date: new Date().toISOString().slice(0, 10),    // yyyy-mm-dd
   },
-selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
+  selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
+  categorySearch: '',
+  categoryLetter: '',
 };
+
+let categoryLayoutBound = false;
+let categoryFiltersBound = false;
+let categoryLetterButtons = [];
+
+function relocateCategoryPanel(){
+  const panel = document.getElementById('catsSticky');
+  const desktopAnchor = document.getElementById('categoryPanelDesktopAnchor');
+  const mobileAnchor = document.getElementById('categoryPanelMobileAnchor');
+  if (!panel || !desktopAnchor || !mobileAnchor) return;
+
+  const isDesktop = isDesktopLayout();
+  const target = isDesktop ? desktopAnchor : mobileAnchor;
+  if (target && panel.parentElement !== target) {
+    target.appendChild(panel);
+  }
+}
+
+function applyCategoryOrientation(){
+  const list = document.getElementById('categoryList');
+  if (!list) return;
+
+  const orientation = isDesktopLayout() ? 'vertical' : 'horizontal';
+
+  list.classList.remove('orientation-horizontal', 'orientation-vertical');
+  list.classList.add(`orientation-${orientation}`);
+}
+
+function initCategoryLayout(){
+  if (categoryLayoutBound) return;
+  categoryLayoutBound = true;
+
+  const handleLayoutChange = () => {
+    relocateCategoryPanel();
+    applyCategoryOrientation();
+    buildCategories();
+  };
+
+  handleLayoutChange();
+  window.addEventListener('resize', handleLayoutChange);
+  window.addEventListener('orientationchange', handleLayoutChange);
+}
+
+function getCategoryLetterButtonBaseClass(){
+  return 'category-letter-button';
+}
+
+function updateCategoryLetterButtons(availableLetters){
+  if (availableLetters) {
+    lastAvailableCategoryLetters = new Set(availableLetters);
+  }
+
+  if (!categoryLetterButtons.length) return;
+
+  const available = availableLetters
+    ? new Set(availableLetters)
+    : new Set(lastAvailableCategoryLetters);
+
+  categoryLetterButtons.forEach(btn => {
+    const value = btn.dataset?.value || '';
+    const isActive = value === state.categoryLetter;
+    const isAvailable = value === '' || available.has(value);
+
+    btn.disabled = value !== '' && !isAvailable;
+    btn.className = getCategoryLetterButtonBaseClass();
+    btn.classList.toggle('is-active', isActive && isAvailable);
+    btn.classList.toggle('is-disabled', value !== '' && !isAvailable);
+    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
+function initCategoryFilters(){
+  if (categoryFiltersBound) return;
+
+  const searchInput = document.getElementById('categorySearchInput');
+  const letterBar = document.getElementById('categoryLetterBar');
+
+  if (searchInput) {
+    searchInput.value = state.categorySearch;
+    searchInput.addEventListener('input', (e) => {
+      state.categorySearch = e.target.value;
+      buildCategories();
+    });
+  }
+
+  if (letterBar) {
+    letterBar.innerHTML = '';
+    categoryLetterButtons = [];
+
+    const options = [
+      { label: 'Tutte', value: '' },
+      ...CATEGORY_LETTERS.map(letter => ({ label: letter, value: letter })),
+      { label: '#', value: '#' },
+    ];
+
+    options.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = opt.label;
+      btn.className = getCategoryLetterButtonBaseClass();
+      btn.dataset.value = opt.value;
+      btn.setAttribute('aria-pressed', opt.value === state.categoryLetter ? 'true' : 'false');
+      btn.addEventListener('click', () => {
+        state.categoryLetter = opt.value;
+        updateCategoryLetterButtons();
+        buildCategories();
+        if (isDesktopLayout()) {
+          scrollToProductsHeader();
+        }
+      });
+      letterBar.appendChild(btn);
+      categoryLetterButtons.push(btn);
+    });
+
+    updateCategoryLetterButtons();
+  }
+
+  categoryFiltersBound = true;
+}
 
 /* ============ BOOT ROBUSTO ============ */
 async function boot(){
@@ -316,7 +473,7 @@ function bindUI(){
 
   // Preventivi (azioni pannello)
   $('btnExportXlsx')?.addEventListener('click', exportXlsx);
-  $('btnExportPdf')?.addEventListener('click', exportPdf);
+  $('btnExportPdf')?.addEventListener('click', () => { void exportPdf(); });
   $('btnPrintQuote')?.addEventListener('click', printQuote);
   $('btnClearQuote')?.addEventListener('click', ()=>{
     state.selected.clear();
@@ -335,6 +492,9 @@ function bindUI(){
   const msg = document.getElementById('quoteMsg');
   if (msg) msg.textContent = 'Preventivo svuotato.';
   });
+
+  initCategoryFilters();
+  initCategoryLayout();
 }
 
 function toggleModal(id, show=true){
@@ -509,9 +669,17 @@ async function afterLogout(){
   state.role='guest';
   state.items=[];
   state.selected.clear();
+  state.selectedCategory = 'Tutte';
+  state.categorySearch = '';
+  state.categoryLetter = '';
   renderQuotePanel();
   $('productGrid') && ( $('productGrid').innerHTML='' );
   $('listinoContainer') && ( $('listinoContainer').innerHTML='' );
+
+  const catSearchInput = document.getElementById('categorySearchInput');
+  if (catSearchInput) catSearchInput.value = '';
+  updateCategoryLetterButtons();
+  buildCategories();
 
 // nascondi nome utente
   const nameEl = document.getElementById('userName');
@@ -633,7 +801,43 @@ function buildCategories(){
 
   // dedup + sort alfabetico (IT) + fallback "Altro"
   const set = new Set((state.items || []).map(p => (p.categoria || 'Altro').trim()));
-  const cats = Array.from(set).sort((a,b)=> a.localeCompare(b,'it'));
+  const allCats = Array.from(set).sort((a,b)=> a.localeCompare(b,'it'));
+  const isDesktop = isDesktopLayout();
+  const normalizedSearch = normalize(state.categorySearch || '');
+  const hasSearch = !!normalizedSearch;
+
+  const handleCategorySelection = (category) => {
+    state.selectedCategory = category;
+    renderView();        // aggiorna listino
+    buildCategories();   // aggiorna evidenziazione
+    if (isDesktopLayout()) {
+      scrollToProductsHeader();
+    } else {
+      scrollToCategoryResults();
+    }
+  };
+
+  let filteredForAvailability = [...allCats];
+
+  if (!isDesktop && hasSearch) {
+    filteredForAvailability = filteredForAvailability.filter(cat => normalize(cat).includes(normalizedSearch));
+  }
+
+  const availableLetters = filteredForAvailability.length
+    ? new Set(filteredForAvailability.map(deriveCategoryLetter))
+    : new Set();
+
+  if (!isDesktop && state.categoryLetter && !availableLetters.has(state.categoryLetter)) {
+    state.categoryLetter = '';
+  }
+
+  updateCategoryLetterButtons(availableLetters);
+
+  let cats = [...filteredForAvailability];
+
+  if (!isDesktop && state.categoryLetter) {
+    cats = cats.filter(cat => deriveCategoryLetter(cat) === state.categoryLetter);
+  }
 
   // container
   box.innerHTML = '';
@@ -643,50 +847,52 @@ function buildCategories(){
   allBtn.type = 'button';
   allBtn.textContent = 'TUTTE';
   allBtn.className = [
-    'block w-full text-left',
+    'inline-flex items-center justify-center w-full text-left',
     'rounded-xl border px-3 py-2 text-sm',
     'transition',
     (state.selectedCategory === 'Tutte')
       ? 'bg-slate-200 border-slate-300 text-slate-900'
       : 'bg-white hover:bg-slate-50'
   ].join(' ');
-  allBtn.addEventListener('click', ()=>{
-    state.selectedCategory = 'Tutte';
-    renderView();        // aggiorna listino
-    buildCategories();   // aggiorna evidenziazione
-scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodotti"
+  allBtn.addEventListener('click', () => {
+    handleCategorySelection('Tutte');
   });
   box.appendChild(allBtn);
 
   // separatore per andare a capo
   const br = document.createElement('div');
-  br.className = 'w-full h-0 my-2';
+  br.className = 'category-break w-full h-0 my-2';
   box.appendChild(br);
 
+  if (!cats.length) {
+    const empty = document.createElement('div');
+    empty.className = 'text-xs text-slate-500 italic';
+    empty.textContent = 'Nessuna categoria trovata.';
+    box.appendChild(empty);
+    applyCategoryOrientation();
+    return;
+  }
+
   // --- Altre categorie: chip su righe successive, no duplicati ---
-  cats.forEach(cat=>{
+  cats.forEach(cat => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = cat;
     btn.className = [
-      'inline-flex items-left justify-center',
+      'inline-flex items-center justify-center w-full text-left',
       'rounded-xl border px-3 py-1.5 text-sm',
       'transition',
       (state.selectedCategory === cat)
         ? 'bg-slate-200 border-slate-300 text-slate-900'
         : 'bg-white hover:bg-slate-50'
     ].join(' ');
-    btn.addEventListener('click', ()=>{
-      state.selectedCategory = cat;
-      renderView();
-      buildCategories();
-scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodotti"
+    btn.addEventListener('click', () => {
+      handleCategorySelection(cat);
     });
     box.appendChild(btn);
   });
 
-  // stile del contenitore (se non l’hai già messo in HTML)
-  box.classList.add('flex','flex-wrap','gap-2','items-start');
+  applyCategoryOrientation();
 }
 
 /* ============ RENDER SWITCH ============ */
@@ -1212,34 +1418,94 @@ function exportXlsx(){
   }
 }
 
-function exportPdf(){
+async function loadPdfLogo(){
+  if (pdfLogoCache !== undefined) return pdfLogoCache;
+  try {
+    const response = await fetch('./logo.svg');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const svgText = await response.text();
+    const viewBoxMatch = svgText.match(/viewBox\s*=\s*"([^"]+)"/i);
+    let boxWidth = 0;
+    let boxHeight = 0;
+    if (viewBoxMatch){
+      const parts = viewBoxMatch[1].trim().split(/[\s,]+/).map(Number).filter(n=>!Number.isNaN(n));
+      if (parts.length === 4){
+        boxWidth = parts[2];
+        boxHeight = parts[3];
+      }
+    }
+    if (!boxWidth || !boxHeight){
+      boxWidth = 160;
+      boxHeight = 40;
+    }
+    const svgBytes = new TextEncoder().encode(svgText);
+    let binary = '';
+    svgBytes.forEach(b => { binary += String.fromCharCode(b); });
+    const dataUrl = 'data:image/svg+xml;base64,' + window.btoa(binary);
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+    const scale = 4;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round((boxWidth || image.width || 1) * scale));
+    canvas.height = Math.max(1, Math.round((boxHeight || image.height || 1) * scale));
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const pngDataUrl = canvas.toDataURL('image/png');
+    pdfLogoCache = { dataUrl: pngDataUrl, width: boxWidth, height: boxHeight };
+  } catch (error) {
+    console.error('[PDF] Impossibile caricare il logo:', error);
+    pdfLogoCache = null;
+  }
+  return pdfLogoCache;
+}
+
+async function exportPdf(){
   if (!validateQuoteMeta()) return;
   if (!window.jspdf) { alert('Libreria PDF non caricata.'); return; }
   const { jsPDF } = window.jspdf;
 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-  const marginX = 40, marginY = 40;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 40;
+  const marginY = 36;
+  const tableWidth = pageWidth - (marginX * 2);
   let y = marginY;
 
-  // Titolo
-  doc.setFont('helvetica','bold'); doc.setFontSize(16);
-  doc.text('Preventivo', marginX, y); y += 20;
+  const logo = await loadPdfLogo();
+  if (logo?.dataUrl){
+    const maxLogoWidth = Math.min(140, tableWidth);
+    const ratio = logo.width && logo.height ? (logo.width / logo.height) : 0;
+    const drawHeight = ratio ? (maxLogoWidth / ratio) : 28;
+    doc.addImage(logo.dataUrl, 'PNG', marginX, y, maxLogoWidth, drawHeight);
+    y += drawHeight + 18;
+  }
 
-  // Meta
-  doc.setFont('helvetica','normal'); doc.setFontSize(11);
-  doc.text(`Nominativo: ${state.quoteMeta.name}`, marginX, y); y += 16;
-  doc.text(`Data: ${state.quoteMeta.date}`, marginX, y); y += 12;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(16);
+  doc.text('Preventivo', marginX, y);
+  y += 22;
 
-  // Tabella
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(11);
+  doc.text(`Nominativo: ${state.quoteMeta.name}`, marginX, y);
+  y += 16;
+  doc.text(`Data: ${state.quoteMeta.date}`, marginX, y);
+  y += 14;
+
   const head = [['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']];
   const body = [];
-  let total=0;
+  let total = 0;
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
     body.push([
       it.codice,
-      it.descrizione,
+      it.descrizione || '',
       fmtEUR(it.prezzo),
       fmtEUR(it.conai||0),
       String(it.qty),
@@ -1248,27 +1514,82 @@ function exportPdf(){
       fmtEUR(totale),
     ]);
   }
-  // usa autoTable (già inclusa in index)
-  if (doc.autoTable) {
+
+  const baseStyles = {
+    fontSize: 9,
+    textColor: 30,
+    lineColor: [226,232,240],
+    cellPadding: { top: 4, right: 6, bottom: 4, left: 6 },
+    valign: 'middle',
+    overflow: 'visible',
+  };
+  const columnStyles = {
+    0: { halign: 'left', cellWidth: 55 },
+    1: { halign: 'left', cellWidth: 150 },
+    2: { halign: 'right', cellWidth: 55 },
+    3: { halign: 'right', cellWidth: 60 },
+    4: { halign: 'center', cellWidth: 35 },
+    5: { halign: 'center', cellWidth: 45 },
+    6: { halign: 'right', cellWidth: 60 },
+    7: { halign: 'right', cellWidth: 55 },
+  };
+
+  if (doc.autoTable){
     doc.autoTable({
       head,
       body,
-      startY: y + 10,
-      styles: { fontSize: 9, halign: 'right' },
-      headStyles: { fillColor: [241,245,249], textColor: 20, halign: 'right' },
-      columnStyles: {
-        0: { halign: 'left' },
-        1: { halign: 'left', cellWidth: 180 },
-      },
+      startY: y,
       margin: { left: marginX, right: marginX },
+      styles: baseStyles,
+      headStyles: { ...baseStyles, fontStyle: 'bold', fillColor: [241,245,249] },
+      columnStyles,
+      tableWidth,
       theme: 'grid',
+      didParseCell: (data) => {
+        const { cell, section } = data;
+        if (!cell || (section !== 'head' && section !== 'body')) return;
+        const styles = cell.styles || {};
+        const rawText = Array.isArray(cell.text) ? cell.text.join(' ') : String(cell.text ?? '');
+        if (!rawText) return;
+        let paddingX = 0;
+        const padding = styles.cellPadding;
+        if (typeof padding === 'number'){
+          paddingX = padding * 2;
+        } else if (padding){
+          paddingX = (padding.left ?? 0) + (padding.right ?? 0);
+        }
+        const available = cell.width - paddingX;
+        if (available <= 0) return;
+        let fontSize = styles.fontSize || baseStyles.fontSize;
+        const originalSize = doc.getFontSize();
+        let measured = Infinity;
+        while (fontSize > 6){
+          doc.setFontSize(fontSize);
+          measured = doc.getTextWidth(rawText);
+          if (measured <= available) break;
+          fontSize -= 0.5;
+        }
+        if (fontSize < 6) fontSize = 6;
+        doc.setFontSize(fontSize);
+        const finalWidth = doc.getTextWidth(rawText);
+        if (finalWidth > available && finalWidth > 0){
+          const ratioFit = available / finalWidth;
+          const adjusted = Math.max(6, Math.floor(fontSize * ratioFit));
+          if (adjusted < fontSize){
+            fontSize = adjusted;
+            doc.setFontSize(fontSize);
+          }
+        }
+        doc.setFontSize(originalSize);
+        cell.styles.fontSize = fontSize;
+      },
     });
-    const endY = doc.lastAutoTable.finalY || (y+10);
-    doc.setFont('helvetica','bold'); doc.setFontSize(12);
-    doc.text(`Totale imponibile: ${fmtEUR(total)}`, 555, endY + 24, { align: 'right' });
+    const endY = doc.lastAutoTable.finalY || y;
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(11);
+    doc.text(`Totale imponibile: ${fmtEUR(total)}`, marginX + tableWidth, endY + 20, { align: 'right' });
   } else {
-    // Fallback senza autotable (basic)
-    doc.text('Errore: jsPDF-Autotable non presente.', marginX, y+20);
+    doc.text('Errore: jsPDF-Autotable non presente.', marginX, y + 20);
   }
 
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
