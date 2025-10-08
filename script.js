@@ -19,6 +19,8 @@ let supabaseRetryCount = 0;
 const MAX_SUPABASE_RETRIES = 10;
 let authListenerBound = false;
 let logoutInFlight = false;
+let pdfLogoCache;
+const DEFAULT_QUOTE_PAYMENT = 'Secondo accordi o da definire';
 
 function ensureSupabaseClient(){
   if (supabase) return supabase;
@@ -123,6 +125,65 @@ const err = (...a) => console.error('[Listino]', ...a);
 const normalize = (s) => (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
 const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 
+function sanitizeClientInitials(name){
+  const normalized = String(name || '')
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  if (!normalized) return 'XX';
+  if (normalized.length === 1) return normalized + 'X';
+  return normalized.slice(0, 2);
+}
+
+function getQuoteYear(){
+  const raw = state.quoteMeta?.date || '';
+  const match = /^\d{4}/.exec(raw);
+  if (match) return match[0];
+  return String(new Date().getFullYear());
+}
+
+function getQuoteCode(){
+  const year = getQuoteYear();
+  const agentCode = (state.agent?.code || 'AG').toString().toUpperCase();
+  const clientCode = sanitizeClientInitials(state.quoteMeta?.name);
+  return `${year}${agentCode}${clientCode}`;
+}
+
+function updateQuoteCodeLabel(){
+  const el = document.getElementById('quoteCodeLabel');
+  if (!el) return;
+  const isGuest = state.role === 'guest';
+  const code = isGuest ? '' : getQuoteCode();
+  el.textContent = code || '—';
+  el.title = code ? `Codice preventivo ${code}` : 'Codice preventivo non disponibile';
+}
+
+function getQuotePayment(){
+  const value = (state.quoteMeta?.payment || '').trim();
+  return value || DEFAULT_QUOTE_PAYMENT;
+}
+
+const CATEGORY_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const DEFAULT_AVAILABLE_CATEGORY_LETTERS = new Set([...CATEGORY_LETTERS, '#']);
+let lastAvailableCategoryLetters = new Set(DEFAULT_AVAILABLE_CATEGORY_LETTERS);
+
+function isDesktopLayout(){
+  if (window.matchMedia) {
+    return window.matchMedia('(min-width: 1024px)').matches;
+  }
+  return window.innerWidth >= 1024;
+}
+
+function deriveCategoryLetter(cat){
+  const normalized = normalize(cat || '');
+  if (!normalized) return '#';
+  const first = normalized.charAt(0);
+  if (first >= 'a' && first <= 'z') {
+    return first.toUpperCase();
+  }
+  return '#';
+}
+
 
 
 // Scrolla fino alla barra "Cerca prodotti…" tenendo conto dell'header sticky
@@ -135,6 +196,20 @@ function scrollToProductsHeader(){
 
   const y = target.getBoundingClientRect().top + window.pageYOffset - (headerH + 8);
   window.scrollTo({ top: y, behavior: 'smooth' });
+}
+
+function scrollToCategoryResults(){
+  const container = document.getElementById('listinoContainer');
+  if (!container) return;
+
+  const target = container.querySelector('h2, table') || container;
+
+  requestAnimationFrame(() => {
+    const header = document.querySelector('header');
+    const headerH = header ? header.getBoundingClientRect().height : 0;
+    const top = target.getBoundingClientRect().top + window.pageYOffset - (headerH + 12);
+    window.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' });
+  });
 }
 
 function clearSupabaseAuthStorage(){
@@ -215,9 +290,135 @@ const state = {
   quoteMeta: {
     name: '',                                       // Nominativo
     date: new Date().toISOString().slice(0, 10),    // yyyy-mm-dd
+    payment: DEFAULT_QUOTE_PAYMENT,
   },
-selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
+  selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
+  categorySearch: '',
+  categoryLetter: '',
+  agent: {
+    name: '',
+    code: '',
+  },
 };
+
+let categoryLayoutBound = false;
+let categoryFiltersBound = false;
+let categoryLetterButtons = [];
+
+function relocateCategoryPanel(){
+  const panel = document.getElementById('catsSticky');
+  const desktopAnchor = document.getElementById('categoryPanelDesktopAnchor');
+  const mobileAnchor = document.getElementById('categoryPanelMobileAnchor');
+  if (!panel || !desktopAnchor || !mobileAnchor) return;
+
+  const isDesktop = isDesktopLayout();
+  const target = isDesktop ? desktopAnchor : mobileAnchor;
+  if (target && panel.parentElement !== target) {
+    target.appendChild(panel);
+  }
+}
+
+function applyCategoryOrientation(){
+  const list = document.getElementById('categoryList');
+  if (!list) return;
+
+  const orientation = isDesktopLayout() ? 'vertical' : 'horizontal';
+
+  list.classList.remove('orientation-horizontal', 'orientation-vertical');
+  list.classList.add(`orientation-${orientation}`);
+}
+
+function initCategoryLayout(){
+  if (categoryLayoutBound) return;
+  categoryLayoutBound = true;
+
+  const handleLayoutChange = () => {
+    relocateCategoryPanel();
+    applyCategoryOrientation();
+    buildCategories();
+  };
+
+  handleLayoutChange();
+  window.addEventListener('resize', handleLayoutChange);
+  window.addEventListener('orientationchange', handleLayoutChange);
+}
+
+function getCategoryLetterButtonBaseClass(){
+  return 'category-letter-button';
+}
+
+function updateCategoryLetterButtons(availableLetters){
+  if (availableLetters) {
+    lastAvailableCategoryLetters = new Set(availableLetters);
+  }
+
+  if (!categoryLetterButtons.length) return;
+
+  const available = availableLetters
+    ? new Set(availableLetters)
+    : new Set(lastAvailableCategoryLetters);
+
+  categoryLetterButtons.forEach(btn => {
+    const value = btn.dataset?.value || '';
+    const isActive = value === state.categoryLetter;
+    const isAvailable = value === '' || available.has(value);
+
+    btn.disabled = value !== '' && !isAvailable;
+    btn.className = getCategoryLetterButtonBaseClass();
+    btn.classList.toggle('is-active', isActive && isAvailable);
+    btn.classList.toggle('is-disabled', value !== '' && !isAvailable);
+    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
+function initCategoryFilters(){
+  if (categoryFiltersBound) return;
+
+  const searchInput = document.getElementById('categorySearchInput');
+  const letterBar = document.getElementById('categoryLetterBar');
+
+  if (searchInput) {
+    searchInput.value = state.categorySearch;
+    searchInput.addEventListener('input', (e) => {
+      state.categorySearch = e.target.value;
+      buildCategories();
+    });
+  }
+
+  if (letterBar) {
+    letterBar.innerHTML = '';
+    categoryLetterButtons = [];
+
+    const options = [
+      { label: 'Tutte', value: '' },
+      ...CATEGORY_LETTERS.map(letter => ({ label: letter, value: letter })),
+      { label: '#', value: '#' },
+    ];
+
+    options.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = opt.label;
+      btn.className = getCategoryLetterButtonBaseClass();
+      btn.dataset.value = opt.value;
+      btn.setAttribute('aria-pressed', opt.value === state.categoryLetter ? 'true' : 'false');
+      btn.addEventListener('click', () => {
+        state.categoryLetter = opt.value;
+        updateCategoryLetterButtons();
+        buildCategories();
+        if (isDesktopLayout()) {
+          scrollToProductsHeader();
+        }
+      });
+      letterBar.appendChild(btn);
+      categoryLetterButtons.push(btn);
+    });
+
+    updateCategoryLetterButtons();
+  }
+
+  categoryFiltersBound = true;
+}
 
 /* ============ BOOT ROBUSTO ============ */
 async function boot(){
@@ -232,13 +433,30 @@ async function boot(){
     if (!quoteMetaBound) {
       const nameEl = document.getElementById('quoteName');
       const dateEl = document.getElementById('quoteDate');
+      const paymentEl = document.getElementById('quotePayment');
       if (nameEl) {
         nameEl.value = state.quoteMeta.name;
-        nameEl.addEventListener('input', () => { state.quoteMeta.name = nameEl.value.trim(); });
+        nameEl.addEventListener('input', () => {
+          state.quoteMeta.name = nameEl.value.trim();
+          updateQuoteCodeLabel();
+        });
       }
       if (dateEl) {
         dateEl.value = state.quoteMeta.date;
-        dateEl.addEventListener('change', () => { state.quoteMeta.date = dateEl.value || new Date().toISOString().slice(0,10); });
+        dateEl.addEventListener('change', () => {
+          state.quoteMeta.date = dateEl.value || new Date().toISOString().slice(0,10);
+          updateQuoteCodeLabel();
+        });
+      }
+      if (paymentEl) {
+        paymentEl.value = getQuotePayment();
+        paymentEl.addEventListener('input', () => {
+          const raw = paymentEl.value.trim();
+          state.quoteMeta.payment = raw || DEFAULT_QUOTE_PAYMENT;
+          if (!raw) {
+            paymentEl.value = DEFAULT_QUOTE_PAYMENT;
+          }
+        });
       }
       quoteMetaBound = true;
     }
@@ -316,25 +534,31 @@ function bindUI(){
 
   // Preventivi (azioni pannello)
   $('btnExportXlsx')?.addEventListener('click', exportXlsx);
-  $('btnExportPdf')?.addEventListener('click', exportPdf);
+  $('btnExportPdf')?.addEventListener('click', () => { void exportPdf(); });
   $('btnPrintQuote')?.addEventListener('click', printQuote);
   $('btnClearQuote')?.addEventListener('click', ()=>{
     state.selected.clear();
-// svuota anche il nominativo (lasciamo invariata la data)
-  state.quoteMeta.name = '';
-  const nameEl = document.getElementById('quoteName');
-  if (nameEl) nameEl.value = '';
+    // svuota anche il nominativo (lasciamo invariata la data)
+    state.quoteMeta.name = '';
+    state.quoteMeta.payment = DEFAULT_QUOTE_PAYMENT;
+    const nameEl = document.getElementById('quoteName');
+    if (nameEl) nameEl.value = '';
+    const paymentEl = document.getElementById('quotePayment');
+    if (paymentEl) paymentEl.value = DEFAULT_QUOTE_PAYMENT;
     renderQuotePanel();
     document.querySelectorAll('.selItem').forEach(i=>{ i.checked=false; });
-// 🔴 deseleziona anche i checkbox di categoria
-  document.querySelectorAll('.selAllCat').forEach(cb=>{
-    cb.checked = false;
-    cb.indeterminate = false;
+    // 🔴 deseleziona anche i checkbox di categoria
+    document.querySelectorAll('.selAllCat').forEach(cb=>{
+      cb.checked = false;
+      cb.indeterminate = false;
+    });
+    // messaggio (opzionale)
+    const msg = document.getElementById('quoteMsg');
+    if (msg) msg.textContent = 'Preventivo svuotato.';
   });
-// messaggio (opzionale)
-  const msg = document.getElementById('quoteMsg');
-  if (msg) msg.textContent = 'Preventivo svuotato.';
-  });
+
+  initCategoryFilters();
+  initCategoryLayout();
 }
 
 function toggleModal(id, show=true){
@@ -477,6 +701,32 @@ async function afterLogin(userId){
     }
 
     state.role = role;
+    const metadata = user?.user_metadata || {};
+    let agentCode = metadata.agent_code
+                   || metadata.sigla_agente
+                   || metadata.sigla
+                   || metadata.code
+                   || metadata.agentCode
+                   || '';
+    if (!agentCode && prof?.agent_code) agentCode = prof.agent_code;
+    const sanitizedAgentCode = String(agentCode || '')
+      .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+      .replace(/[^a-z0-9]/gi, '')
+      .toUpperCase()
+      .slice(0, 6);
+    let fallbackAgentCode = sanitizedAgentCode;
+    if (!fallbackAgentCode && displayName) {
+      const initials = displayName
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(part => part[0])
+        .join('')
+        .toUpperCase();
+      fallbackAgentCode = initials.slice(0, 4);
+    }
+    state.agent.name = displayName || '';
+    state.agent.code = fallbackAgentCode || 'AG';
+    updateQuoteCodeLabel();
 
     // Mostra app
     showAuthGate(false);
@@ -509,9 +759,29 @@ async function afterLogout(){
   state.role='guest';
   state.items=[];
   state.selected.clear();
+  state.selectedCategory = 'Tutte';
+  state.categorySearch = '';
+  state.categoryLetter = '';
+  state.agent.name = '';
+  state.agent.code = '';
+  state.quoteMeta.name = '';
+  state.quoteMeta.payment = DEFAULT_QUOTE_PAYMENT;
+  state.quoteMeta.date = new Date().toISOString().slice(0, 10);
+  const quoteNameEl = document.getElementById('quoteName');
+  if (quoteNameEl) quoteNameEl.value = '';
+  const quoteDateEl = document.getElementById('quoteDate');
+  if (quoteDateEl) quoteDateEl.value = state.quoteMeta.date;
+  const quotePaymentEl = document.getElementById('quotePayment');
+  if (quotePaymentEl) quotePaymentEl.value = DEFAULT_QUOTE_PAYMENT;
+  updateQuoteCodeLabel();
   renderQuotePanel();
   $('productGrid') && ( $('productGrid').innerHTML='' );
   $('listinoContainer') && ( $('listinoContainer').innerHTML='' );
+
+  const catSearchInput = document.getElementById('categorySearchInput');
+  if (catSearchInput) catSearchInput.value = '';
+  updateCategoryLetterButtons();
+  buildCategories();
 
 // nascondi nome utente
   const nameEl = document.getElementById('userName');
@@ -633,7 +903,43 @@ function buildCategories(){
 
   // dedup + sort alfabetico (IT) + fallback "Altro"
   const set = new Set((state.items || []).map(p => (p.categoria || 'Altro').trim()));
-  const cats = Array.from(set).sort((a,b)=> a.localeCompare(b,'it'));
+  const allCats = Array.from(set).sort((a,b)=> a.localeCompare(b,'it'));
+  const isDesktop = isDesktopLayout();
+  const normalizedSearch = normalize(state.categorySearch || '');
+  const hasSearch = !!normalizedSearch;
+
+  const handleCategorySelection = (category) => {
+    state.selectedCategory = category;
+    renderView();        // aggiorna listino
+    buildCategories();   // aggiorna evidenziazione
+    if (isDesktopLayout()) {
+      scrollToProductsHeader();
+    } else {
+      scrollToCategoryResults();
+    }
+  };
+
+  let filteredForAvailability = [...allCats];
+
+  if (!isDesktop && hasSearch) {
+    filteredForAvailability = filteredForAvailability.filter(cat => normalize(cat).includes(normalizedSearch));
+  }
+
+  const availableLetters = filteredForAvailability.length
+    ? new Set(filteredForAvailability.map(deriveCategoryLetter))
+    : new Set();
+
+  if (!isDesktop && state.categoryLetter && !availableLetters.has(state.categoryLetter)) {
+    state.categoryLetter = '';
+  }
+
+  updateCategoryLetterButtons(availableLetters);
+
+  let cats = [...filteredForAvailability];
+
+  if (!isDesktop && state.categoryLetter) {
+    cats = cats.filter(cat => deriveCategoryLetter(cat) === state.categoryLetter);
+  }
 
   // container
   box.innerHTML = '';
@@ -643,50 +949,52 @@ function buildCategories(){
   allBtn.type = 'button';
   allBtn.textContent = 'TUTTE';
   allBtn.className = [
-    'block w-full text-left',
+    'inline-flex items-center justify-center w-full text-left',
     'rounded-xl border px-3 py-2 text-sm',
     'transition',
     (state.selectedCategory === 'Tutte')
       ? 'bg-slate-200 border-slate-300 text-slate-900'
       : 'bg-white hover:bg-slate-50'
   ].join(' ');
-  allBtn.addEventListener('click', ()=>{
-    state.selectedCategory = 'Tutte';
-    renderView();        // aggiorna listino
-    buildCategories();   // aggiorna evidenziazione
-scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodotti"
+  allBtn.addEventListener('click', () => {
+    handleCategorySelection('Tutte');
   });
   box.appendChild(allBtn);
 
   // separatore per andare a capo
   const br = document.createElement('div');
-  br.className = 'w-full h-0 my-2';
+  br.className = 'category-break w-full h-0 my-2';
   box.appendChild(br);
 
+  if (!cats.length) {
+    const empty = document.createElement('div');
+    empty.className = 'text-xs text-slate-500 italic';
+    empty.textContent = 'Nessuna categoria trovata.';
+    box.appendChild(empty);
+    applyCategoryOrientation();
+    return;
+  }
+
   // --- Altre categorie: chip su righe successive, no duplicati ---
-  cats.forEach(cat=>{
+  cats.forEach(cat => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = cat;
     btn.className = [
-      'inline-flex items-left justify-center',
+      'inline-flex items-center justify-center w-full text-left',
       'rounded-xl border px-3 py-1.5 text-sm',
       'transition',
       (state.selectedCategory === cat)
         ? 'bg-slate-200 border-slate-300 text-slate-900'
         : 'bg-white hover:bg-slate-50'
     ].join(' ');
-    btn.addEventListener('click', ()=>{
-      state.selectedCategory = cat;
-      renderView();
-      buildCategories();
-scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodotti"
+    btn.addEventListener('click', () => {
+      handleCategorySelection(cat);
     });
     box.appendChild(btn);
   });
 
-  // stile del contenitore (se non l’hai già messo in HTML)
-  box.classList.add('flex','flex-wrap','gap-2','items-start');
+  applyCategoryOrientation();
 }
 
 /* ============ RENDER SWITCH ============ */
@@ -977,6 +1285,7 @@ function lineCalc(it){
 function renderQuotePanel(){
   const body = $('quoteBody'), tot = $('quoteTotal'), cnt = $('quoteItemsCount');
   if (!body || !tot) return;
+  updateQuoteCodeLabel();
   body.innerHTML = '';
 
   let total = 0;
@@ -1150,6 +1459,9 @@ function validateQuoteMeta() {
     if (msg) msg.textContent = 'Seleziona almeno un articolo.';
     return false;
   }
+  state.quoteMeta.payment = getQuotePayment();
+  const paymentEl = document.getElementById('quotePayment');
+  if (paymentEl) paymentEl.value = state.quoteMeta.payment;
   if (msg) msg.textContent = '';
   return true;
 }
@@ -1163,6 +1475,7 @@ function exportXlsx(){
   rows.push(['Preventivo']);
   rows.push(['Nominativo', state.quoteMeta.name]);
   rows.push(['Data', state.quoteMeta.date]);
+  rows.push(['Pagamento', getQuotePayment()]);
   rows.push([]); // riga vuota
 
   // tabella
@@ -1183,7 +1496,9 @@ function exportXlsx(){
   rows.push(['','','','','','','Totale imponibile', Number(total||0)]);
 
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
-  const filename = `preventivo_${safeName}_${state.quoteMeta.date}.xlsx`;
+  const quoteCode = getQuoteCode();
+  const safeCode = quoteCode.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  const filename = `preventivo_${safeCode || safeName}_${state.quoteMeta.date}.xlsx`;
 
   if (window.XLSX){
     const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -1206,40 +1521,113 @@ function exportXlsx(){
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `preventivo_${safeName}_${state.quoteMeta.date}.csv`;
+    const quoteCode = getQuoteCode();
+    const safeCode = quoteCode.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    a.download = `preventivo_${safeCode || safeName}_${state.quoteMeta.date}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
 }
 
-function exportPdf(){
+async function loadPdfLogo(){
+  if (pdfLogoCache !== undefined) return pdfLogoCache;
+  try {
+    const response = await fetch('./logo.svg');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const svgText = await response.text();
+    const viewBoxMatch = svgText.match(/viewBox\s*=\s*"([^"]+)"/i);
+    let boxWidth = 0;
+    let boxHeight = 0;
+    if (viewBoxMatch){
+      const parts = viewBoxMatch[1].trim().split(/[\s,]+/).map(Number).filter(n=>!Number.isNaN(n));
+      if (parts.length === 4){
+        boxWidth = parts[2];
+        boxHeight = parts[3];
+      }
+    }
+    if (!boxWidth || !boxHeight){
+      boxWidth = 160;
+      boxHeight = 40;
+    }
+    const svgBytes = new TextEncoder().encode(svgText);
+    let binary = '';
+    svgBytes.forEach(b => { binary += String.fromCharCode(b); });
+    const dataUrl = 'data:image/svg+xml;base64,' + window.btoa(binary);
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+    const scale = 4;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round((boxWidth || image.width || 1) * scale));
+    canvas.height = Math.max(1, Math.round((boxHeight || image.height || 1) * scale));
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const pngDataUrl = canvas.toDataURL('image/png');
+    pdfLogoCache = { dataUrl: pngDataUrl, width: boxWidth, height: boxHeight };
+  } catch (error) {
+    console.error('[PDF] Impossibile caricare il logo:', error);
+    pdfLogoCache = null;
+  }
+  return pdfLogoCache;
+}
+
+async function exportPdf(){
   if (!validateQuoteMeta()) return;
   if (!window.jspdf) { alert('Libreria PDF non caricata.'); return; }
   const { jsPDF } = window.jspdf;
 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-  const marginX = 40, marginY = 40;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 40;
+  const marginY = 36;
+  const tableWidth = pageWidth - (marginX * 2);
   let y = marginY;
 
-  // Titolo
-  doc.setFont('helvetica','bold'); doc.setFontSize(16);
-  doc.text('Preventivo', marginX, y); y += 20;
+  const logo = await loadPdfLogo();
+  if (logo?.dataUrl){
+    const maxLogoWidth = Math.min(140, tableWidth);
+    const ratio = logo.width && logo.height ? (logo.width / logo.height) : 0;
+    const drawHeight = ratio ? (maxLogoWidth / ratio) : 28;
+    doc.addImage(logo.dataUrl, 'PNG', marginX, y, maxLogoWidth, drawHeight);
+    y += drawHeight + 32;
+  }
 
-  // Meta
-  doc.setFont('helvetica','normal'); doc.setFontSize(11);
-  doc.text(`Nominativo: ${state.quoteMeta.name}`, marginX, y); y += 16;
-  doc.text(`Data: ${state.quoteMeta.date}`, marginX, y); y += 12;
+  const quoteName = state.quoteMeta.name || '—';
+  const quoteDate = state.quoteMeta.date || new Date().toISOString().slice(0,10);
+  const quoteCode = getQuoteCode();
+  const quotePayment = getQuotePayment();
 
-  // Tabella
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(16);
+  const headingText = quoteCode ? `Preventivo ${quoteCode}` : 'Preventivo';
+  doc.text(headingText, marginX, y);
+  y += 14;
+
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(11);
+  doc.text(`Nominativo: ${quoteName}`, marginX, y);
+  y += 12;
+  doc.text(`Data: ${quoteDate}`, marginX, y);
+  y += 12;
+  doc.text(`Pagamento: ${quotePayment}`, marginX, y);
+  y += 20;
+
   const head = [['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']];
   const body = [];
-  let total=0;
+  const rawDescriptions = [];
+  let total = 0;
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
+    rawDescriptions.push(it.descrizione || '');
     body.push([
       it.codice,
-      it.descrizione,
+      it.descrizione || '',
       fmtEUR(it.prezzo),
       fmtEUR(it.conai||0),
       String(it.qty),
@@ -1248,31 +1636,187 @@ function exportPdf(){
       fmtEUR(totale),
     ]);
   }
-  // usa autoTable (già inclusa in index)
-  if (doc.autoTable) {
+
+  const baseStyles = {
+    fontSize: 8.5,
+    textColor: 30,
+    lineColor: [226,232,240],
+    cellPadding: { top: 4, right: 5, bottom: 4, left: 5 },
+    valign: 'middle',
+    overflow: 'visible',
+  };
+
+  const paddingX = (() => {
+    const padding = baseStyles.cellPadding;
+    if (typeof padding === 'number') return padding * 2;
+    return (padding.left ?? 0) + (padding.right ?? 0);
+  })();
+
+  const defaultMinWidths = [70, 160, 70, 75, 45, 60, 75, 80];
+  const measuredWidths = new Array(head[0].length).fill(0);
+  const rowsForMeasure = [head[0], ...body];
+  rowsForMeasure.forEach((row, rowIndex) => {
+    const isHeader = rowIndex === 0;
+    doc.setFont('helvetica', isHeader ? 'bold' : 'normal');
+    doc.setFontSize(isHeader ? 9.5 : baseStyles.fontSize);
+    row.forEach((cellText, columnIndex) => {
+      const raw = Array.isArray(cellText) ? cellText.join(' ') : String(cellText ?? '');
+      const width = doc.getTextWidth(raw) + paddingX;
+      measuredWidths[columnIndex] = Math.max(measuredWidths[columnIndex], width);
+    });
+  });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(baseStyles.fontSize);
+
+  const minWidths = measuredWidths.map((width, index) => Math.max(width || 0, defaultMinWidths[index]));
+  const descIndex = 1;
+  const otherColumnsTotal = minWidths.reduce((sum, width, index) => index === descIndex ? sum : sum + width, 0);
+  const availableForDescription = Math.max(defaultMinWidths[descIndex], tableWidth - otherColumnsTotal);
+  minWidths[descIndex] = Math.max(minWidths[descIndex], availableForDescription);
+
+  const columnStyles = {
+    0: { halign: 'left', cellWidth: 'auto', minCellWidth: minWidths[0], overflow: 'visible' },
+    1: { halign: 'left', cellWidth: 'auto', minCellWidth: minWidths[1], maxCellWidth: Math.max(minWidths[1], availableForDescription), overflow: 'linebreak' },
+    2: { halign: 'right', cellWidth: 'auto', minCellWidth: minWidths[2], overflow: 'visible' },
+    3: { halign: 'right', cellWidth: 'auto', minCellWidth: minWidths[3], overflow: 'visible' },
+    4: { halign: 'center', cellWidth: 'auto', minCellWidth: minWidths[4], overflow: 'visible' },
+    5: { halign: 'center', cellWidth: 'auto', minCellWidth: minWidths[5], overflow: 'visible' },
+    6: { halign: 'right', cellWidth: 'auto', minCellWidth: minWidths[6], overflow: 'visible' },
+    7: { halign: 'right', cellWidth: 'auto', minCellWidth: minWidths[7], overflow: 'visible' },
+  };
+
+  if (doc.autoTable){
     doc.autoTable({
       head,
       body,
-      startY: y + 10,
-      styles: { fontSize: 9, halign: 'right' },
-      headStyles: { fillColor: [241,245,249], textColor: 20, halign: 'right' },
-      columnStyles: {
-        0: { halign: 'left' },
-        1: { halign: 'left', cellWidth: 180 },
-      },
+      startY: y,
       margin: { left: marginX, right: marginX },
+      styles: baseStyles,
+      headStyles: { ...baseStyles, fontStyle: 'bold', fontSize: 9.5, fillColor: [241,245,249] },
+      columnStyles,
+      tableWidth: 'auto',
       theme: 'grid',
+      didParseCell: (data) => {
+        const { cell, section } = data;
+        if (!cell || (section !== 'head' && section !== 'body')) return;
+        const styles = cell.styles || {};
+        const rawText = Array.isArray(cell.text) ? cell.text.join(' ') : String(cell.text ?? '');
+        if (!rawText) return;
+        let paddingX = 0;
+        const padding = styles.cellPadding;
+        if (typeof padding === 'number'){
+          paddingX = padding * 2;
+        } else if (padding){
+          paddingX = (padding.left ?? 0) + (padding.right ?? 0);
+        }
+        const available = cell.width - paddingX;
+        if (available <= 0) return;
+        const originalSize = doc.getFontSize();
+        let fontSize = styles.fontSize || baseStyles.fontSize;
+        if (data.column.index === 1){
+          styles.overflow = 'linebreak';
+          if (section === 'body'){
+            const fullDescription = rawDescriptions[data.row.index] ?? rawText;
+            let lines = [];
+            if (available > 0){
+              doc.setFontSize(fontSize);
+              lines = doc.splitTextToSize(fullDescription, available);
+              while (lines.length > 2 && fontSize > 4){
+                fontSize -= 0.25;
+                doc.setFontSize(fontSize);
+                lines = doc.splitTextToSize(fullDescription, available);
+              }
+              if (lines.length > 2){
+                const trimmed = lines.slice(0, 2);
+                const last = trimmed[trimmed.length - 1] || '';
+                trimmed[trimmed.length - 1] = last.endsWith('…') ? last : `${last.replace(/\s+$/,'')}…`;
+                lines = trimmed;
+              }
+            }
+            if (fontSize < 4) fontSize = 4;
+            if (lines.length){
+              cell.text = lines;
+            }
+            cell.styles.fontSize = fontSize;
+          }
+          doc.setFontSize(originalSize);
+          return;
+        }
+        let measured = Infinity;
+        while (fontSize > 6){
+          doc.setFontSize(fontSize);
+          measured = doc.getTextWidth(rawText);
+          if (measured <= available) break;
+          fontSize -= 0.5;
+        }
+        if (fontSize < 6) fontSize = 6;
+        doc.setFontSize(fontSize);
+        const finalWidth = doc.getTextWidth(rawText);
+        if (finalWidth > available && finalWidth > 0){
+          const ratioFit = available / finalWidth;
+          const adjusted = Math.max(6, Math.floor(fontSize * ratioFit));
+          if (adjusted < fontSize){
+            fontSize = adjusted;
+            doc.setFontSize(fontSize);
+          }
+        }
+        doc.setFontSize(originalSize);
+        cell.styles.fontSize = fontSize;
+      },
     });
-    const endY = doc.lastAutoTable.finalY || (y+10);
-    doc.setFont('helvetica','bold'); doc.setFontSize(12);
-    doc.text(`Totale imponibile: ${fmtEUR(total)}`, 555, endY + 24, { align: 'right' });
+    const endY = doc.lastAutoTable.finalY || y;
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(11);
+    const vat = Math.round(total * 22) / 100;
+    const gross = Math.round((total + vat) * 100) / 100;
+    let totalsY = endY + 20;
+    const requiredBlockHeight = (16 * 3) + 32; // tre righe totali + respiro + footer
+    if ((pageHeight - marginY - totalsY) < requiredBlockHeight) {
+      doc.addPage();
+      let headerY = marginY;
+      if (logo?.dataUrl){
+        const maxLogoWidth = Math.min(140, tableWidth);
+        const ratio = logo.width && logo.height ? (logo.width / logo.height) : 0;
+        const drawHeight = ratio ? (maxLogoWidth / ratio) : 28;
+        doc.addImage(logo.dataUrl, 'PNG', marginX, headerY, maxLogoWidth, drawHeight);
+        headerY += drawHeight + 32;
+      }
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(16);
+      doc.text(headingText, marginX, headerY);
+      headerY += 14;
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(11);
+      doc.text(`Nominativo: ${quoteName}`, marginX, headerY);
+      headerY += 12;
+      doc.text(`Data: ${quoteDate}`, marginX, headerY);
+      headerY += 12;
+      doc.text(`Pagamento: ${quotePayment}`, marginX, headerY);
+      totalsY = headerY + 20;
+    }
+    doc.text(`Totale imponibile: ${fmtEUR(total)}`, marginX + tableWidth, totalsY, { align: 'right' });
+    totalsY += 16;
+    doc.text(`Totale IVA 22%: ${fmtEUR(vat)}`, marginX + tableWidth, totalsY, { align: 'right' });
+    totalsY += 16;
+    doc.text(`Totale importo: ${fmtEUR(gross)}`, marginX + tableWidth, totalsY, { align: 'right' });
+
+    const footerLines = [
+      'Per informazioni tecniche o commerciali:',
+      `Agente di riferimento: ${state.agent.name || state.agent.code || '—'}`,
+    ];
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(10);
+    const footerBaseY = Math.max(totalsY + 28, doc.internal.pageSize.getHeight() - marginY - ((footerLines.length - 1) * 12));
+    footerLines.forEach((line, idx) => {
+      doc.text(line, marginX + tableWidth, footerBaseY + (idx * 12), { align: 'right' });
+    });
   } else {
-    // Fallback senza autotable (basic)
-    doc.text('Errore: jsPDF-Autotable non presente.', marginX, y+20);
+    doc.text('Errore: jsPDF-Autotable non presente.', marginX, y + 20);
   }
 
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
-  doc.save(`preventivo_${safeName}_${state.quoteMeta.date}.pdf`);
+  const safeCode = quoteCode.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  doc.save(`preventivo_${safeCode || safeName}_${state.quoteMeta.date}.pdf`);
 }
 
 function printQuote(){
@@ -1299,6 +1843,8 @@ function printQuote(){
 
   const win = window.open('', '_blank');
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
+  const quoteCode = getQuoteCode();
+  const quotePayment = getQuotePayment();
 
   win.document.write(`
 <!doctype html>
@@ -1309,6 +1855,7 @@ function printQuote(){
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#0f172a; margin:24px; }
     h1 { font-size:20px; margin:0 0 8px 0; }
+    h1 span.code { display:inline-block; margin-left:8px; padding:2px 6px; background:#e2e8f0; border-radius:6px; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; }
     .meta { font-size:12px; color:#334155; margin-bottom:16px; }
     table { width:100%; border-collapse:collapse; font-size:12px; }
     thead th { background:#f1f5f9; text-align:left; border:1px solid #e2e8f0; padding:6px 8px; }
@@ -1319,8 +1866,8 @@ function printQuote(){
   </style>
 </head>
 <body>
-  <h1>Preventivo</h1>
-  <div class="meta">Nominativo: <strong>${escapeHtml(state.quoteMeta.name)}</strong><br>Data: <strong>${state.quoteMeta.date}</strong></div>
+  <h1>Preventivo${quoteCode ? `<span class="code">${escapeHtml(quoteCode)}</span>` : ''}</h1>
+  <div class="meta">Nominativo: <strong>${escapeHtml(state.quoteMeta.name)}</strong><br>Data: <strong>${state.quoteMeta.date}</strong><br>Pagamento: <strong>${escapeHtml(quotePayment)}</strong></div>
   <table>
     <thead>
       <tr>
