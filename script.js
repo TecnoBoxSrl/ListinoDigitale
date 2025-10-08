@@ -123,6 +123,27 @@ const err = (...a) => console.error('[Listino]', ...a);
 const normalize = (s) => (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
 const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 
+const CATEGORY_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const DEFAULT_AVAILABLE_CATEGORY_LETTERS = new Set([...CATEGORY_LETTERS, '#']);
+let lastAvailableCategoryLetters = new Set(DEFAULT_AVAILABLE_CATEGORY_LETTERS);
+
+function isDesktopLayout(){
+  if (window.matchMedia) {
+    return window.matchMedia('(min-width: 1024px)').matches;
+  }
+  return window.innerWidth >= 1024;
+}
+
+function deriveCategoryLetter(cat){
+  const normalized = normalize(cat || '');
+  if (!normalized) return '#';
+  const first = normalized.charAt(0);
+  if (first >= 'a' && first <= 'z') {
+    return first.toUpperCase();
+  }
+  return '#';
+}
+
 
 
 // Scrolla fino alla barra "Cerca prodotti…" tenendo conto dell'header sticky
@@ -135,6 +156,20 @@ function scrollToProductsHeader(){
 
   const y = target.getBoundingClientRect().top + window.pageYOffset - (headerH + 8);
   window.scrollTo({ top: y, behavior: 'smooth' });
+}
+
+function scrollToCategoryResults(){
+  const container = document.getElementById('listinoContainer');
+  if (!container) return;
+
+  const target = container.querySelector('h2, table') || container;
+
+  requestAnimationFrame(() => {
+    const header = document.querySelector('header');
+    const headerH = header ? header.getBoundingClientRect().height : 0;
+    const top = target.getBoundingClientRect().top + window.pageYOffset - (headerH + 12);
+    window.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' });
+  });
 }
 
 function clearSupabaseAuthStorage(){
@@ -216,8 +251,129 @@ const state = {
     name: '',                                       // Nominativo
     date: new Date().toISOString().slice(0, 10),    // yyyy-mm-dd
   },
-selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
+  selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
+  categorySearch: '',
+  categoryLetter: '',
 };
+
+let categoryLayoutBound = false;
+let categoryFiltersBound = false;
+let categoryLetterButtons = [];
+
+function relocateCategoryPanel(){
+  const panel = document.getElementById('catsSticky');
+  const desktopAnchor = document.getElementById('categoryPanelDesktopAnchor');
+  const mobileAnchor = document.getElementById('categoryPanelMobileAnchor');
+  if (!panel || !desktopAnchor || !mobileAnchor) return;
+
+  const isDesktop = isDesktopLayout();
+  const target = isDesktop ? desktopAnchor : mobileAnchor;
+  if (target && panel.parentElement !== target) {
+    target.appendChild(panel);
+  }
+}
+
+function applyCategoryOrientation(){
+  const list = document.getElementById('categoryList');
+  if (!list) return;
+
+  const orientation = isDesktopLayout() ? 'vertical' : 'horizontal';
+
+  list.classList.remove('orientation-horizontal', 'orientation-vertical');
+  list.classList.add(`orientation-${orientation}`);
+}
+
+function initCategoryLayout(){
+  if (categoryLayoutBound) return;
+  categoryLayoutBound = true;
+
+  const handleLayoutChange = () => {
+    relocateCategoryPanel();
+    applyCategoryOrientation();
+    buildCategories();
+  };
+
+  handleLayoutChange();
+  window.addEventListener('resize', handleLayoutChange);
+  window.addEventListener('orientationchange', handleLayoutChange);
+}
+
+function getCategoryLetterButtonBaseClass(){
+  return 'category-letter-button';
+}
+
+function updateCategoryLetterButtons(availableLetters){
+  if (availableLetters) {
+    lastAvailableCategoryLetters = new Set(availableLetters);
+  }
+
+  if (!categoryLetterButtons.length) return;
+
+  const available = availableLetters
+    ? new Set(availableLetters)
+    : new Set(lastAvailableCategoryLetters);
+
+  categoryLetterButtons.forEach(btn => {
+    const value = btn.dataset?.value || '';
+    const isActive = value === state.categoryLetter;
+    const isAvailable = value === '' || available.has(value);
+
+    btn.disabled = value !== '' && !isAvailable;
+    btn.className = getCategoryLetterButtonBaseClass();
+    btn.classList.toggle('is-active', isActive && isAvailable);
+    btn.classList.toggle('is-disabled', value !== '' && !isAvailable);
+    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
+function initCategoryFilters(){
+  if (categoryFiltersBound) return;
+
+  const searchInput = document.getElementById('categorySearchInput');
+  const letterBar = document.getElementById('categoryLetterBar');
+
+  if (searchInput) {
+    searchInput.value = state.categorySearch;
+    searchInput.addEventListener('input', (e) => {
+      state.categorySearch = e.target.value;
+      buildCategories();
+    });
+  }
+
+  if (letterBar) {
+    letterBar.innerHTML = '';
+    categoryLetterButtons = [];
+
+    const options = [
+      { label: 'Tutte', value: '' },
+      ...CATEGORY_LETTERS.map(letter => ({ label: letter, value: letter })),
+      { label: '#', value: '#' },
+    ];
+
+    options.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = opt.label;
+      btn.className = getCategoryLetterButtonBaseClass();
+      btn.dataset.value = opt.value;
+      btn.setAttribute('aria-pressed', opt.value === state.categoryLetter ? 'true' : 'false');
+      btn.addEventListener('click', () => {
+        state.categoryLetter = opt.value;
+        updateCategoryLetterButtons();
+        buildCategories();
+        if (isDesktopLayout()) {
+          scrollToProductsHeader();
+        }
+      });
+      letterBar.appendChild(btn);
+      categoryLetterButtons.push(btn);
+    });
+
+    updateCategoryLetterButtons();
+  }
+
+  categoryFiltersBound = true;
+}
 
 /* ============ BOOT ROBUSTO ============ */
 async function boot(){
@@ -335,6 +491,9 @@ function bindUI(){
   const msg = document.getElementById('quoteMsg');
   if (msg) msg.textContent = 'Preventivo svuotato.';
   });
+
+  initCategoryFilters();
+  initCategoryLayout();
 }
 
 function toggleModal(id, show=true){
@@ -509,9 +668,17 @@ async function afterLogout(){
   state.role='guest';
   state.items=[];
   state.selected.clear();
+  state.selectedCategory = 'Tutte';
+  state.categorySearch = '';
+  state.categoryLetter = '';
   renderQuotePanel();
   $('productGrid') && ( $('productGrid').innerHTML='' );
   $('listinoContainer') && ( $('listinoContainer').innerHTML='' );
+
+  const catSearchInput = document.getElementById('categorySearchInput');
+  if (catSearchInput) catSearchInput.value = '';
+  updateCategoryLetterButtons();
+  buildCategories();
 
 // nascondi nome utente
   const nameEl = document.getElementById('userName');
@@ -633,7 +800,43 @@ function buildCategories(){
 
   // dedup + sort alfabetico (IT) + fallback "Altro"
   const set = new Set((state.items || []).map(p => (p.categoria || 'Altro').trim()));
-  const cats = Array.from(set).sort((a,b)=> a.localeCompare(b,'it'));
+  const allCats = Array.from(set).sort((a,b)=> a.localeCompare(b,'it'));
+  const isDesktop = isDesktopLayout();
+  const normalizedSearch = normalize(state.categorySearch || '');
+  const hasSearch = !!normalizedSearch;
+
+  const handleCategorySelection = (category) => {
+    state.selectedCategory = category;
+    renderView();        // aggiorna listino
+    buildCategories();   // aggiorna evidenziazione
+    if (isDesktopLayout()) {
+      scrollToProductsHeader();
+    } else {
+      scrollToCategoryResults();
+    }
+  };
+
+  let filteredForAvailability = [...allCats];
+
+  if (!isDesktop && hasSearch) {
+    filteredForAvailability = filteredForAvailability.filter(cat => normalize(cat).includes(normalizedSearch));
+  }
+
+  const availableLetters = filteredForAvailability.length
+    ? new Set(filteredForAvailability.map(deriveCategoryLetter))
+    : new Set();
+
+  if (!isDesktop && state.categoryLetter && !availableLetters.has(state.categoryLetter)) {
+    state.categoryLetter = '';
+  }
+
+  updateCategoryLetterButtons(availableLetters);
+
+  let cats = [...filteredForAvailability];
+
+  if (!isDesktop && state.categoryLetter) {
+    cats = cats.filter(cat => deriveCategoryLetter(cat) === state.categoryLetter);
+  }
 
   // container
   box.innerHTML = '';
@@ -643,50 +846,52 @@ function buildCategories(){
   allBtn.type = 'button';
   allBtn.textContent = 'TUTTE';
   allBtn.className = [
-    'block w-full text-left',
+    'inline-flex items-center justify-center w-full text-left',
     'rounded-xl border px-3 py-2 text-sm',
     'transition',
     (state.selectedCategory === 'Tutte')
       ? 'bg-slate-200 border-slate-300 text-slate-900'
       : 'bg-white hover:bg-slate-50'
   ].join(' ');
-  allBtn.addEventListener('click', ()=>{
-    state.selectedCategory = 'Tutte';
-    renderView();        // aggiorna listino
-    buildCategories();   // aggiorna evidenziazione
-scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodotti"
+  allBtn.addEventListener('click', () => {
+    handleCategorySelection('Tutte');
   });
   box.appendChild(allBtn);
 
   // separatore per andare a capo
   const br = document.createElement('div');
-  br.className = 'w-full h-0 my-2';
+  br.className = 'category-break w-full h-0 my-2';
   box.appendChild(br);
 
+  if (!cats.length) {
+    const empty = document.createElement('div');
+    empty.className = 'text-xs text-slate-500 italic';
+    empty.textContent = 'Nessuna categoria trovata.';
+    box.appendChild(empty);
+    applyCategoryOrientation();
+    return;
+  }
+
   // --- Altre categorie: chip su righe successive, no duplicati ---
-  cats.forEach(cat=>{
+  cats.forEach(cat => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = cat;
     btn.className = [
-      'inline-flex items-left justify-center',
+      'inline-flex items-center justify-center w-full text-left',
       'rounded-xl border px-3 py-1.5 text-sm',
       'transition',
       (state.selectedCategory === cat)
         ? 'bg-slate-200 border-slate-300 text-slate-900'
         : 'bg-white hover:bg-slate-50'
     ].join(' ');
-    btn.addEventListener('click', ()=>{
-      state.selectedCategory = cat;
-      renderView();
-      buildCategories();
-scrollToProductsHeader();   // 👈 porta in vista anche il campo "Cerca prodotti"
+    btn.addEventListener('click', () => {
+      handleCategorySelection(cat);
     });
     box.appendChild(btn);
   });
 
-  // stile del contenitore (se non l’hai già messo in HTML)
-  box.classList.add('flex','flex-wrap','gap-2','items-start');
+  applyCategoryOrientation();
 }
 
 /* ============ RENDER SWITCH ============ */
