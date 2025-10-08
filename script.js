@@ -19,6 +19,7 @@ let supabaseRetryCount = 0;
 const MAX_SUPABASE_RETRIES = 10;
 let authListenerBound = false;
 let logoutInFlight = false;
+let pdfLogoCache;
 
 function ensureSupabaseClient(){
   if (supabase) return supabase;
@@ -472,7 +473,7 @@ function bindUI(){
 
   // Preventivi (azioni pannello)
   $('btnExportXlsx')?.addEventListener('click', exportXlsx);
-  $('btnExportPdf')?.addEventListener('click', exportPdf);
+  $('btnExportPdf')?.addEventListener('click', () => { void exportPdf(); });
   $('btnPrintQuote')?.addEventListener('click', printQuote);
   $('btnClearQuote')?.addEventListener('click', ()=>{
     state.selected.clear();
@@ -1417,34 +1418,94 @@ function exportXlsx(){
   }
 }
 
-function exportPdf(){
+async function loadPdfLogo(){
+  if (pdfLogoCache !== undefined) return pdfLogoCache;
+  try {
+    const response = await fetch('./logo.svg');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const svgText = await response.text();
+    const viewBoxMatch = svgText.match(/viewBox\s*=\s*"([^"]+)"/i);
+    let boxWidth = 0;
+    let boxHeight = 0;
+    if (viewBoxMatch){
+      const parts = viewBoxMatch[1].trim().split(/[\s,]+/).map(Number).filter(n=>!Number.isNaN(n));
+      if (parts.length === 4){
+        boxWidth = parts[2];
+        boxHeight = parts[3];
+      }
+    }
+    if (!boxWidth || !boxHeight){
+      boxWidth = 160;
+      boxHeight = 40;
+    }
+    const svgBytes = new TextEncoder().encode(svgText);
+    let binary = '';
+    svgBytes.forEach(b => { binary += String.fromCharCode(b); });
+    const dataUrl = 'data:image/svg+xml;base64,' + window.btoa(binary);
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+    const scale = 4;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round((boxWidth || image.width || 1) * scale));
+    canvas.height = Math.max(1, Math.round((boxHeight || image.height || 1) * scale));
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const pngDataUrl = canvas.toDataURL('image/png');
+    pdfLogoCache = { dataUrl: pngDataUrl, width: boxWidth, height: boxHeight };
+  } catch (error) {
+    console.error('[PDF] Impossibile caricare il logo:', error);
+    pdfLogoCache = null;
+  }
+  return pdfLogoCache;
+}
+
+async function exportPdf(){
   if (!validateQuoteMeta()) return;
   if (!window.jspdf) { alert('Libreria PDF non caricata.'); return; }
   const { jsPDF } = window.jspdf;
 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-  const marginX = 40, marginY = 40;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 40;
+  const marginY = 36;
+  const tableWidth = pageWidth - (marginX * 2);
   let y = marginY;
 
-  // Titolo
-  doc.setFont('helvetica','bold'); doc.setFontSize(16);
-  doc.text('Preventivo', marginX, y); y += 20;
+  const logo = await loadPdfLogo();
+  if (logo?.dataUrl){
+    const maxLogoWidth = Math.min(140, tableWidth);
+    const ratio = logo.width && logo.height ? (logo.width / logo.height) : 0;
+    const drawHeight = ratio ? (maxLogoWidth / ratio) : 28;
+    doc.addImage(logo.dataUrl, 'PNG', marginX, y, maxLogoWidth, drawHeight);
+    y += drawHeight + 18;
+  }
 
-  // Meta
-  doc.setFont('helvetica','normal'); doc.setFontSize(11);
-  doc.text(`Nominativo: ${state.quoteMeta.name}`, marginX, y); y += 16;
-  doc.text(`Data: ${state.quoteMeta.date}`, marginX, y); y += 12;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(16);
+  doc.text('Preventivo', marginX, y);
+  y += 22;
 
-  // Tabella
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(11);
+  doc.text(`Nominativo: ${state.quoteMeta.name}`, marginX, y);
+  y += 16;
+  doc.text(`Data: ${state.quoteMeta.date}`, marginX, y);
+  y += 14;
+
   const head = [['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']];
   const body = [];
-  let total=0;
+  let total = 0;
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
     body.push([
       it.codice,
-      it.descrizione,
+      it.descrizione || '',
       fmtEUR(it.prezzo),
       fmtEUR(it.conai||0),
       String(it.qty),
@@ -1453,27 +1514,82 @@ function exportPdf(){
       fmtEUR(totale),
     ]);
   }
-  // usa autoTable (già inclusa in index)
-  if (doc.autoTable) {
+
+  const baseStyles = {
+    fontSize: 9,
+    textColor: 30,
+    lineColor: [226,232,240],
+    cellPadding: { top: 4, right: 6, bottom: 4, left: 6 },
+    valign: 'middle',
+    overflow: 'visible',
+  };
+  const columnStyles = {
+    0: { halign: 'left', cellWidth: 55 },
+    1: { halign: 'left', cellWidth: 150 },
+    2: { halign: 'right', cellWidth: 55 },
+    3: { halign: 'right', cellWidth: 60 },
+    4: { halign: 'center', cellWidth: 35 },
+    5: { halign: 'center', cellWidth: 45 },
+    6: { halign: 'right', cellWidth: 60 },
+    7: { halign: 'right', cellWidth: 55 },
+  };
+
+  if (doc.autoTable){
     doc.autoTable({
       head,
       body,
-      startY: y + 10,
-      styles: { fontSize: 9, halign: 'right' },
-      headStyles: { fillColor: [241,245,249], textColor: 20, halign: 'right' },
-      columnStyles: {
-        0: { halign: 'left' },
-        1: { halign: 'left', cellWidth: 180 },
-      },
+      startY: y,
       margin: { left: marginX, right: marginX },
+      styles: baseStyles,
+      headStyles: { ...baseStyles, fontStyle: 'bold', fillColor: [241,245,249] },
+      columnStyles,
+      tableWidth,
       theme: 'grid',
+      didParseCell: (data) => {
+        const { cell, section } = data;
+        if (!cell || (section !== 'head' && section !== 'body')) return;
+        const styles = cell.styles || {};
+        const rawText = Array.isArray(cell.text) ? cell.text.join(' ') : String(cell.text ?? '');
+        if (!rawText) return;
+        let paddingX = 0;
+        const padding = styles.cellPadding;
+        if (typeof padding === 'number'){
+          paddingX = padding * 2;
+        } else if (padding){
+          paddingX = (padding.left ?? 0) + (padding.right ?? 0);
+        }
+        const available = cell.width - paddingX;
+        if (available <= 0) return;
+        let fontSize = styles.fontSize || baseStyles.fontSize;
+        const originalSize = doc.getFontSize();
+        let measured = Infinity;
+        while (fontSize > 6){
+          doc.setFontSize(fontSize);
+          measured = doc.getTextWidth(rawText);
+          if (measured <= available) break;
+          fontSize -= 0.5;
+        }
+        if (fontSize < 6) fontSize = 6;
+        doc.setFontSize(fontSize);
+        const finalWidth = doc.getTextWidth(rawText);
+        if (finalWidth > available && finalWidth > 0){
+          const ratioFit = available / finalWidth;
+          const adjusted = Math.max(6, Math.floor(fontSize * ratioFit));
+          if (adjusted < fontSize){
+            fontSize = adjusted;
+            doc.setFontSize(fontSize);
+          }
+        }
+        doc.setFontSize(originalSize);
+        cell.styles.fontSize = fontSize;
+      },
     });
-    const endY = doc.lastAutoTable.finalY || (y+10);
-    doc.setFont('helvetica','bold'); doc.setFontSize(12);
-    doc.text(`Totale imponibile: ${fmtEUR(total)}`, 555, endY + 24, { align: 'right' });
+    const endY = doc.lastAutoTable.finalY || y;
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(11);
+    doc.text(`Totale imponibile: ${fmtEUR(total)}`, marginX + tableWidth, endY + 20, { align: 'right' });
   } else {
-    // Fallback senza autotable (basic)
-    doc.text('Errore: jsPDF-Autotable non presente.', marginX, y+20);
+    doc.text('Errore: jsPDF-Autotable non presente.', marginX, y + 20);
   }
 
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
