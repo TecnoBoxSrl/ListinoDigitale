@@ -750,9 +750,14 @@ async function doLogout(options = {}){
 }
 
 async function afterLogin(userId){
+  let readyDispatched = false;
+
   try{
     const client = ensureSupabaseClient();
     if (!client) throw new Error('Supabase non inizializzato');
+
+    // Mostra subito l'app in modo che la vista prodotti sia raggiungibile
+    showAuthGate(false);
 
     // Provo a leggere ruolo + display_name dal profilo
     let role = 'agent';
@@ -806,9 +811,6 @@ async function afterLogin(userId){
     state.agent.code = fallbackAgentCode || 'AG';
     updateQuoteCodeLabel();
 
-    // Mostra app
-    showAuthGate(false);
-
     // Mostra il nome nell'header (desktop e, se vuoi, mobile)
     const nameEl = document.getElementById('userName');
     if (nameEl) {
@@ -821,11 +823,21 @@ async function afterLogin(userId){
 
     // sblocca FAB
     document.dispatchEvent(new Event('appReady'));
+    readyDispatched = true;
 
   } catch(e){
     console.error('[afterLogin] err:', e);
+    // Assicurati che l'app resti visibile anche in caso di errore post-login
+    showAuthGate(false);
     const info = $('resultInfo');
     if (info) info.textContent = 'Errore caricamento listino';
+  } finally {
+    if (!readyDispatched) {
+      const app = $('appShell');
+      if (app && !app.classList.contains('hidden')) {
+        document.dispatchEvent(new Event('appReady'));
+      }
+    }
   }
 }
 
