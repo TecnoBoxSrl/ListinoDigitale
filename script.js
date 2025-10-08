@@ -134,6 +134,15 @@ const err = (...a) => console.error('[Listino]', ...a);
 const normalize = (s) => (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
 const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function sanitizeClientInitials(name){
   const normalized = String(name || '')
     .normalize('NFD').replace(/\p{Diacritic}/gu, '')
@@ -944,6 +953,83 @@ async function fetchProducts(){
     if (info) info.textContent = 'Errore caricamento listino';
   }
 
+  for (const row of (rows || [])) {
+    items.push({
+      codice: row.codice,
+      descrizione: row.descrizione,
+      dimensione: row.dimensione ?? '',
+      categoria: row.categoria,
+      sottocategoria: row.sottocategoria,
+      prezzo: row.prezzo,
+      conai: row.conai ?? null,
+      unita: row.unita,
+      disponibile: row.disponibile,
+      novita: row.novita,
+      pack: row.pack,
+      pallet: row.pallet,
+      tags: row.tags || [],
+      updated_at: row.updated_at,
+      img: '',
+    });
+  }
+
+  return items;
+}
+
+async function fetchProductsFromCatalog(client) {
+  const items = [];
+  const fullSelect = `
+      id,
+      codice,
+      descrizione,
+      dimensione,
+      categoria,
+      sottocategoria,
+      prezzo,
+      conai,
+      unita,
+      disponibile,
+      novita,
+      pack,
+      pallet,
+      tags,
+      updated_at,
+      product_media(id,kind,path,sort)
+    `;
+
+  let { data, error } = await client
+    .from('products')
+    .select(fullSelect)
+    .order('descrizione', { ascending: true });
+
+  if (error) {
+    const msg = String(error.message || '').toLowerCase();
+    const missingExtra = msg.includes('dimensione') || msg.includes('conai');
+    if (missingExtra) {
+      console.warn('[Data] prodotti senza colonne dimensione/conai, retry fallback');
+      ({ data, error } = await client
+        .from('products')
+        .select(`
+          id,
+          codice,
+          descrizione,
+          categoria,
+          sottocategoria,
+          prezzo,
+          unita,
+          disponibile,
+          novita,
+          pack,
+          pallet,
+          tags,
+          updated_at,
+          product_media(id,kind,path,sort)
+        `)
+        .order('descrizione', { ascending: true }));
+    }
+    if (error) throw error;
+  }
+
   for (const p of (data || [])) {
     const mediaImgs = (p.product_media || [])
       .filter(m => m.kind === 'image')
@@ -981,22 +1067,35 @@ async function fetchProducts(){
 }
 
 async function fetchProductsFromLatestPriceList(client) {
-  const items = [];
-
-  const { data: listData, error: listError } = await client
+  const maxListsToCheck = 5;
+  const { data: lists, error: listError } = await client
     .from('price_lists')
-    .select('id')
-    .order('published_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .select('id, version_label, published_at')
+    .order('published_at', { ascending: false, nullsLast: true })
+    .limit(maxListsToCheck);
 
   if (listError) throw listError;
 
-  const listId = listData?.id;
-  if (!listId) {
-    console.warn('[Data] nessun price list pubblicato');
-    return items;
+  for (const list of lists || []) {
+    try {
+      const rows = await fetchPriceListItemsById(client, list.id);
+      if (rows.length) {
+        return {
+          items: rows.map(normalizePriceListRow),
+          meta: list,
+        };
+      }
+    } catch (errFetch) {
+      console.warn('[Data] price list items fetch fallito per', list.id, errFetch);
+    }
   }
+
+  console.warn('[Data] nessun listino pubblicato con articoli disponibili');
+  return { items: [], meta: null };
+}
+
+async function fetchPriceListItemsById(client, listId) {
+  if (!listId) return [];
 
   const richSelect = `
       codice,
@@ -1048,27 +1147,33 @@ async function fetchProductsFromLatestPriceList(client) {
     if (error) throw error;
   }
 
-  for (const row of (rows || [])) {
-    items.push({
-      codice: row.codice,
-      descrizione: row.descrizione,
-      dimensione: row.dimensione ?? '',
-      categoria: row.categoria,
-      sottocategoria: row.sottocategoria,
-      prezzo: row.prezzo,
-      conai: row.conai ?? null,
-      unita: row.unita,
-      disponibile: row.disponibile,
-      novita: row.novita,
-      pack: row.pack,
-      pallet: row.pallet,
-      tags: row.tags || [],
-      updated_at: row.updated_at,
-      img: '',
-    });
-  }
+  return rows || [];
+}
 
-  return items;
+function normalizePriceListRow(row) {
+  const prezzo = (row?.prezzo === null || row?.prezzo === '' || row?.prezzo === undefined)
+    ? null
+    : Number(row.prezzo);
+  const conai = (row?.conai === null || row?.conai === '' || row?.conai === undefined)
+    ? null
+    : Number(row.conai);
+  return {
+    codice: row?.codice,
+    descrizione: row?.descrizione,
+    dimensione: row?.dimensione ?? '',
+    categoria: row?.categoria,
+    sottocategoria: row?.sottocategoria,
+    prezzo,
+    conai,
+    unita: row?.unita,
+    disponibile: row?.disponibile,
+    novita: row?.novita,
+    pack: row?.pack,
+    pallet: row?.pallet,
+    tags: row?.tags || [],
+    updated_at: row?.updated_at,
+    img: '',
+  };
 }
 
 async function fetchProductsFromCatalog(client) {
@@ -1471,18 +1576,25 @@ function renderListino(){
 
     // righe
     for (const p of items){
+      const codiceSafe = escapeHtml(p.codice);
+      const descrizioneSafe = escapeHtml(p.descrizione);
+      const dimensioneSafe = escapeHtml(p.dimensione);
+      const unitaSafe = escapeHtml(p.unita);
+      const novitaBadge = p.novita
+        ? ' <span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>'
+        : '';
       const tr = document.createElement('tr');
       const checked = state.selected.has(p.codice) ? 'checked' : '';
       tr.innerHTML = `
         <td class="border px-2 py-1 text-center">
-          <input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}>
+          <input type="checkbox" class="selItem" data-code="${codiceSafe}" ${checked}>
         </td>
-        <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${p.codice||''}</td>
+        <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${codiceSafe}</td>
         <td class="border px-2 py-1 col-desc">
-          ${p.descrizione||''} ${p.novita?'<span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>':''}
+          ${descrizioneSafe}${novitaBadge}
         </td>
-        <td class="border px-2 py-1 col-dim">${p.dimensione||''}</td>
-        <td class="border px-2 py-1 col-unit">${p.unita||''}</td>
+        <td class="border px-2 py-1 col-dim">${dimensioneSafe}</td>
+        <td class="border px-2 py-1 col-unit">${unitaSafe}</td>
         <td class="border px-2 py-1 text-right col-price">${fmtEUR(p.prezzo)}</td>
         <td class="border px-2 py-1 text-right col-conai">${fmtEUR(p.conai)}</td>
         <td class="border px-2 py-1 text-center col-img">
@@ -1584,23 +1696,25 @@ function renderCards(){
   if (!arr.length){ grid.innerHTML='<div class="col-span-full text-center text-slate-500 py-10">Nessun articolo.</div>'; return; }
 
   for (const p of arr){
+    const codiceSafe = escapeHtml(p.codice);
+    const descrizioneSafe = escapeHtml(p.descrizione);
     const checked = state.selected.has(p.codice) ? 'checked' : '';
     const card = document.createElement('article');
     card.className='relative card rounded-2xl bg-white border shadow-sm overflow-hidden';
     card.innerHTML=`
       <label class="absolute top-2 left-2 bg-white/80 backdrop-blur rounded-md px-2 py-1 flex items-center gap-1 text-xs">
-        <input type="checkbox" class="selItem" data-code="${p.codice}" ${checked}> Seleziona
+        <input type="checkbox" class="selItem" data-code="${codiceSafe}" ${checked}> Seleziona
       </label>
       <div class="aspect-square bg-slate-100 grid place-content-center">
-        ${p.img ? `<img src="${p.img}" alt="${p.descrizione||''}" class="w-full h-full object-contain" loading="lazy" decoding="async">`
+        ${p.img ? `<img src="${p.img}" alt="${descrizioneSafe}" class="w-full h-full object-contain" loading="lazy" decoding="async">`
                  : `<div class="text-slate-400">Nessuna immagine</div>`}
       </div>
       <div class="p-3 space-y-2">
         <div class="flex items-start justify-between gap-2">
-          <h3 class="font-medium leading-snug line-clamp-2">${p.descrizione||''}</h3>
+          <h3 class="font-medium leading-snug line-clamp-2">${descrizioneSafe}</h3>
           ${p.novita ? '<span class="tag bg-emerald-50 text-emerald-700 border-emerald-200">Novità</span>' : ''}
         </div>
-        <p class="text-xs text-slate-500">${p.codice||''}</p>
+        <p class="text-xs text-slate-500">${codiceSafe}</p>
         <div class="flex items-center justify-between">
           <div class="text-lg font-semibold">${fmtEUR(p.prezzo)}</div>
           ${p.img?`<button class="rounded-xl border px-3 py-1.5 text-sm hover:bg-slate-50 btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">Vedi</button>`:''}
@@ -1685,26 +1799,28 @@ function renderQuotePanel(){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
 
+    const codiceSafe = escapeHtml(it.codice);
+    const descrizioneSafe = escapeHtml(it.descrizione);
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td class="border px-2 py-1 font-mono">${it.codice}</td>
-      <td class="border px-2 py-1"><div class="quote-desc">${it.descrizione}</div></td>
+      <td class="border px-2 py-1 font-mono">${codiceSafe}</td>
+      <td class="border px-2 py-1"><div class="quote-desc">${descrizioneSafe}</div></td>
       <td class="border px-2 py-1 text-right">${fmtEUR(it.prezzo)}</td>
       <td class="border px-2 py-1 text-right">${fmtEUR(it.conai || 0)}</td>
       <td class="border px-2 py-1 text-right">
         <input type="number"
                class="w-16 border rounded px-1 py-0.5 text-right inputQty"
-               data-code="${it.codice}" value="${Number(it.qty) || 1}" step="1" min="1">
+               data-code="${codiceSafe}" value="${Number(it.qty) || 1}" step="1" min="1">
       </td>
       <td class="border px-2 py-1 text-right">
         <input type="number"
                class="w-16 border rounded px-1 py-0.5 text-right inputSconto"
-               data-code="${it.codice}" value="${Number(it.sconto) || 0}" step="1" min="0" max="100">
+               data-code="${codiceSafe}" value="${Number(it.sconto) || 0}" step="1" min="0" max="100">
       </td>
      <td class="border px-2 py-1 text-right cellPrezzoScont">${fmtEUR(prezzoScont)}</td>
 <td class="border px-2 py-1 text-right cellTotaleRiga">${fmtEUR(totale)}</td>
       <td class="border px-2 py-1 text-center">
-        <button class="text-rose-600 underline btnRemove" data-code="${it.codice}">Rimuovi</button>
+        <button class="text-rose-600 underline btnRemove" data-code="${codiceSafe}">Rimuovi</button>
       </td>
     `;
     body.appendChild(tr);
