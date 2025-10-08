@@ -20,6 +20,7 @@ const MAX_SUPABASE_RETRIES = 10;
 let authListenerBound = false;
 let logoutInFlight = false;
 let pdfLogoCache;
+const DEFAULT_QUOTE_PAYMENT = 'Secondo accordi o da definire';
 
 function ensureSupabaseClient(){
   if (supabase) return supabase;
@@ -123,6 +124,44 @@ const log = (...a) => console.log('[Listino]', ...a);
 const err = (...a) => console.error('[Listino]', ...a);
 const normalize = (s) => (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
 const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
+
+function sanitizeClientInitials(name){
+  const normalized = String(name || '')
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  if (!normalized) return 'XX';
+  if (normalized.length === 1) return normalized + 'X';
+  return normalized.slice(0, 2);
+}
+
+function getQuoteYear(){
+  const raw = state.quoteMeta?.date || '';
+  const match = /^\d{4}/.exec(raw);
+  if (match) return match[0];
+  return String(new Date().getFullYear());
+}
+
+function getQuoteCode(){
+  const year = getQuoteYear();
+  const agentCode = (state.agent?.code || 'AG').toString().toUpperCase();
+  const clientCode = sanitizeClientInitials(state.quoteMeta?.name);
+  return `${year}${agentCode}${clientCode}`;
+}
+
+function updateQuoteCodeLabel(){
+  const el = document.getElementById('quoteCodeLabel');
+  if (!el) return;
+  const isGuest = state.role === 'guest';
+  const code = isGuest ? '' : getQuoteCode();
+  el.textContent = code || '—';
+  el.title = code ? `Codice preventivo ${code}` : 'Codice preventivo non disponibile';
+}
+
+function getQuotePayment(){
+  const value = (state.quoteMeta?.payment || '').trim();
+  return value || DEFAULT_QUOTE_PAYMENT;
+}
 
 const CATEGORY_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 const DEFAULT_AVAILABLE_CATEGORY_LETTERS = new Set([...CATEGORY_LETTERS, '#']);
@@ -251,10 +290,15 @@ const state = {
   quoteMeta: {
     name: '',                                       // Nominativo
     date: new Date().toISOString().slice(0, 10),    // yyyy-mm-dd
+    payment: DEFAULT_QUOTE_PAYMENT,
   },
   selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
   categorySearch: '',
   categoryLetter: '',
+  agent: {
+    name: '',
+    code: '',
+  },
 };
 
 let categoryLayoutBound = false;
@@ -389,13 +433,30 @@ async function boot(){
     if (!quoteMetaBound) {
       const nameEl = document.getElementById('quoteName');
       const dateEl = document.getElementById('quoteDate');
+      const paymentEl = document.getElementById('quotePayment');
       if (nameEl) {
         nameEl.value = state.quoteMeta.name;
-        nameEl.addEventListener('input', () => { state.quoteMeta.name = nameEl.value.trim(); });
+        nameEl.addEventListener('input', () => {
+          state.quoteMeta.name = nameEl.value.trim();
+          updateQuoteCodeLabel();
+        });
       }
       if (dateEl) {
         dateEl.value = state.quoteMeta.date;
-        dateEl.addEventListener('change', () => { state.quoteMeta.date = dateEl.value || new Date().toISOString().slice(0,10); });
+        dateEl.addEventListener('change', () => {
+          state.quoteMeta.date = dateEl.value || new Date().toISOString().slice(0,10);
+          updateQuoteCodeLabel();
+        });
+      }
+      if (paymentEl) {
+        paymentEl.value = getQuotePayment();
+        paymentEl.addEventListener('input', () => {
+          const raw = paymentEl.value.trim();
+          state.quoteMeta.payment = raw || DEFAULT_QUOTE_PAYMENT;
+          if (!raw) {
+            paymentEl.value = DEFAULT_QUOTE_PAYMENT;
+          }
+        });
       }
       quoteMetaBound = true;
     }
@@ -477,20 +538,23 @@ function bindUI(){
   $('btnPrintQuote')?.addEventListener('click', printQuote);
   $('btnClearQuote')?.addEventListener('click', ()=>{
     state.selected.clear();
-// svuota anche il nominativo (lasciamo invariata la data)
-  state.quoteMeta.name = '';
-  const nameEl = document.getElementById('quoteName');
-  if (nameEl) nameEl.value = '';
+    // svuota anche il nominativo (lasciamo invariata la data)
+    state.quoteMeta.name = '';
+    state.quoteMeta.payment = DEFAULT_QUOTE_PAYMENT;
+    const nameEl = document.getElementById('quoteName');
+    if (nameEl) nameEl.value = '';
+    const paymentEl = document.getElementById('quotePayment');
+    if (paymentEl) paymentEl.value = DEFAULT_QUOTE_PAYMENT;
     renderQuotePanel();
     document.querySelectorAll('.selItem').forEach(i=>{ i.checked=false; });
-// 🔴 deseleziona anche i checkbox di categoria
-  document.querySelectorAll('.selAllCat').forEach(cb=>{
-    cb.checked = false;
-    cb.indeterminate = false;
-  });
-// messaggio (opzionale)
-  const msg = document.getElementById('quoteMsg');
-  if (msg) msg.textContent = 'Preventivo svuotato.';
+    // 🔴 deseleziona anche i checkbox di categoria
+    document.querySelectorAll('.selAllCat').forEach(cb=>{
+      cb.checked = false;
+      cb.indeterminate = false;
+    });
+    // messaggio (opzionale)
+    const msg = document.getElementById('quoteMsg');
+    if (msg) msg.textContent = 'Preventivo svuotato.';
   });
 
   initCategoryFilters();
@@ -637,6 +701,32 @@ async function afterLogin(userId){
     }
 
     state.role = role;
+    const metadata = user?.user_metadata || {};
+    let agentCode = metadata.agent_code
+                   || metadata.sigla_agente
+                   || metadata.sigla
+                   || metadata.code
+                   || metadata.agentCode
+                   || '';
+    if (!agentCode && prof?.agent_code) agentCode = prof.agent_code;
+    const sanitizedAgentCode = String(agentCode || '')
+      .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+      .replace(/[^a-z0-9]/gi, '')
+      .toUpperCase()
+      .slice(0, 6);
+    let fallbackAgentCode = sanitizedAgentCode;
+    if (!fallbackAgentCode && displayName) {
+      const initials = displayName
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(part => part[0])
+        .join('')
+        .toUpperCase();
+      fallbackAgentCode = initials.slice(0, 4);
+    }
+    state.agent.name = displayName || '';
+    state.agent.code = fallbackAgentCode || 'AG';
+    updateQuoteCodeLabel();
 
     // Mostra app
     showAuthGate(false);
@@ -672,6 +762,18 @@ async function afterLogout(){
   state.selectedCategory = 'Tutte';
   state.categorySearch = '';
   state.categoryLetter = '';
+  state.agent.name = '';
+  state.agent.code = '';
+  state.quoteMeta.name = '';
+  state.quoteMeta.payment = DEFAULT_QUOTE_PAYMENT;
+  state.quoteMeta.date = new Date().toISOString().slice(0, 10);
+  const quoteNameEl = document.getElementById('quoteName');
+  if (quoteNameEl) quoteNameEl.value = '';
+  const quoteDateEl = document.getElementById('quoteDate');
+  if (quoteDateEl) quoteDateEl.value = state.quoteMeta.date;
+  const quotePaymentEl = document.getElementById('quotePayment');
+  if (quotePaymentEl) quotePaymentEl.value = DEFAULT_QUOTE_PAYMENT;
+  updateQuoteCodeLabel();
   renderQuotePanel();
   $('productGrid') && ( $('productGrid').innerHTML='' );
   $('listinoContainer') && ( $('listinoContainer').innerHTML='' );
@@ -1183,6 +1285,7 @@ function lineCalc(it){
 function renderQuotePanel(){
   const body = $('quoteBody'), tot = $('quoteTotal'), cnt = $('quoteItemsCount');
   if (!body || !tot) return;
+  updateQuoteCodeLabel();
   body.innerHTML = '';
 
   let total = 0;
@@ -1356,6 +1459,9 @@ function validateQuoteMeta() {
     if (msg) msg.textContent = 'Seleziona almeno un articolo.';
     return false;
   }
+  state.quoteMeta.payment = getQuotePayment();
+  const paymentEl = document.getElementById('quotePayment');
+  if (paymentEl) paymentEl.value = state.quoteMeta.payment;
   if (msg) msg.textContent = '';
   return true;
 }
@@ -1369,6 +1475,7 @@ function exportXlsx(){
   rows.push(['Preventivo']);
   rows.push(['Nominativo', state.quoteMeta.name]);
   rows.push(['Data', state.quoteMeta.date]);
+  rows.push(['Pagamento', getQuotePayment()]);
   rows.push([]); // riga vuota
 
   // tabella
@@ -1389,7 +1496,9 @@ function exportXlsx(){
   rows.push(['','','','','','','Totale imponibile', Number(total||0)]);
 
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
-  const filename = `preventivo_${safeName}_${state.quoteMeta.date}.xlsx`;
+  const quoteCode = getQuoteCode();
+  const safeCode = quoteCode.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  const filename = `preventivo_${safeCode || safeName}_${state.quoteMeta.date}.xlsx`;
 
   if (window.XLSX){
     const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -1412,7 +1521,9 @@ function exportXlsx(){
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `preventivo_${safeName}_${state.quoteMeta.date}.csv`;
+    const quoteCode = getQuoteCode();
+    const safeCode = quoteCode.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    a.download = `preventivo_${safeCode || safeName}_${state.quoteMeta.date}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
@@ -1471,6 +1582,7 @@ async function exportPdf(){
 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
   const marginX = 40;
   const marginY = 36;
   const tableWidth = pageWidth - (marginX * 2);
@@ -1482,20 +1594,28 @@ async function exportPdf(){
     const ratio = logo.width && logo.height ? (logo.width / logo.height) : 0;
     const drawHeight = ratio ? (maxLogoWidth / ratio) : 28;
     doc.addImage(logo.dataUrl, 'PNG', marginX, y, maxLogoWidth, drawHeight);
-    y += drawHeight + 18;
+    y += drawHeight + 32;
   }
+
+  const quoteName = state.quoteMeta.name || '—';
+  const quoteDate = state.quoteMeta.date || new Date().toISOString().slice(0,10);
+  const quoteCode = getQuoteCode();
+  const quotePayment = getQuotePayment();
 
   doc.setFont('helvetica','bold');
   doc.setFontSize(16);
-  doc.text('Preventivo', marginX, y);
-  y += 22;
+  const headingText = quoteCode ? `Preventivo ${quoteCode}` : 'Preventivo';
+  doc.text(headingText, marginX, y);
+  y += 14;
 
   doc.setFont('helvetica','normal');
   doc.setFontSize(11);
-  doc.text(`Nominativo: ${state.quoteMeta.name}`, marginX, y);
-  y += 16;
-  doc.text(`Data: ${state.quoteMeta.date}`, marginX, y);
-  y += 14;
+  doc.text(`Nominativo: ${quoteName}`, marginX, y);
+  y += 12;
+  doc.text(`Data: ${quoteDate}`, marginX, y);
+  y += 12;
+  doc.text(`Pagamento: ${quotePayment}`, marginX, y);
+  y += 20;
 
   const head = [['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']];
   const body = [];
@@ -1650,17 +1770,53 @@ async function exportPdf(){
     const vat = Math.round(total * 22) / 100;
     const gross = Math.round((total + vat) * 100) / 100;
     let totalsY = endY + 20;
+    const requiredBlockHeight = (16 * 3) + 32; // tre righe totali + respiro + footer
+    if ((pageHeight - marginY - totalsY) < requiredBlockHeight) {
+      doc.addPage();
+      let headerY = marginY;
+      if (logo?.dataUrl){
+        const maxLogoWidth = Math.min(140, tableWidth);
+        const ratio = logo.width && logo.height ? (logo.width / logo.height) : 0;
+        const drawHeight = ratio ? (maxLogoWidth / ratio) : 28;
+        doc.addImage(logo.dataUrl, 'PNG', marginX, headerY, maxLogoWidth, drawHeight);
+        headerY += drawHeight + 32;
+      }
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(16);
+      doc.text(headingText, marginX, headerY);
+      headerY += 14;
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(11);
+      doc.text(`Nominativo: ${quoteName}`, marginX, headerY);
+      headerY += 12;
+      doc.text(`Data: ${quoteDate}`, marginX, headerY);
+      headerY += 12;
+      doc.text(`Pagamento: ${quotePayment}`, marginX, headerY);
+      totalsY = headerY + 20;
+    }
     doc.text(`Totale imponibile: ${fmtEUR(total)}`, marginX + tableWidth, totalsY, { align: 'right' });
     totalsY += 16;
     doc.text(`Totale IVA 22%: ${fmtEUR(vat)}`, marginX + tableWidth, totalsY, { align: 'right' });
     totalsY += 16;
     doc.text(`Totale importo: ${fmtEUR(gross)}`, marginX + tableWidth, totalsY, { align: 'right' });
+
+    const footerLines = [
+      'Per informazioni tecniche o commerciali:',
+      `Agente di riferimento: ${state.agent.name || state.agent.code || '—'}`,
+    ];
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(10);
+    const footerBaseY = Math.max(totalsY + 28, doc.internal.pageSize.getHeight() - marginY - ((footerLines.length - 1) * 12));
+    footerLines.forEach((line, idx) => {
+      doc.text(line, marginX + tableWidth, footerBaseY + (idx * 12), { align: 'right' });
+    });
   } else {
     doc.text('Errore: jsPDF-Autotable non presente.', marginX, y + 20);
   }
 
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
-  doc.save(`preventivo_${safeName}_${state.quoteMeta.date}.pdf`);
+  const safeCode = quoteCode.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  doc.save(`preventivo_${safeCode || safeName}_${state.quoteMeta.date}.pdf`);
 }
 
 function printQuote(){
@@ -1687,6 +1843,8 @@ function printQuote(){
 
   const win = window.open('', '_blank');
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
+  const quoteCode = getQuoteCode();
+  const quotePayment = getQuotePayment();
 
   win.document.write(`
 <!doctype html>
@@ -1697,6 +1855,7 @@ function printQuote(){
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#0f172a; margin:24px; }
     h1 { font-size:20px; margin:0 0 8px 0; }
+    h1 span.code { display:inline-block; margin-left:8px; padding:2px 6px; background:#e2e8f0; border-radius:6px; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; }
     .meta { font-size:12px; color:#334155; margin-bottom:16px; }
     table { width:100%; border-collapse:collapse; font-size:12px; }
     thead th { background:#f1f5f9; text-align:left; border:1px solid #e2e8f0; padding:6px 8px; }
@@ -1707,8 +1866,8 @@ function printQuote(){
   </style>
 </head>
 <body>
-  <h1>Preventivo</h1>
-  <div class="meta">Nominativo: <strong>${escapeHtml(state.quoteMeta.name)}</strong><br>Data: <strong>${state.quoteMeta.date}</strong></div>
+  <h1>Preventivo${quoteCode ? `<span class="code">${escapeHtml(quoteCode)}</span>` : ''}</h1>
+  <div class="meta">Nominativo: <strong>${escapeHtml(state.quoteMeta.name)}</strong><br>Data: <strong>${state.quoteMeta.date}</strong><br>Pagamento: <strong>${escapeHtml(quotePayment)}</strong></div>
   <table>
     <thead>
       <tr>

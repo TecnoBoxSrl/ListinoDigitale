@@ -649,8 +649,14 @@
   <!-- lo scroll orizzontale vive qui -->
   <div class="overflow-x-auto">
     <div class="glass rounded-2xl p-4 border inline-block min-w-full" id="quotePanel">
-      <div class="flex items-center justify-between mb-2">
-        <h2 class="font-semibold whitespace-nowrap">Preventivo</h2>
+      <div class="flex items-center justify-between mb-2 gap-3">
+        <h2 class="font-semibold whitespace-nowrap flex items-center gap-2">
+          Preventivo
+          <span id="quoteCodeLabel"
+                class="inline-flex items-center rounded-md bg-slate-200 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider text-slate-700">
+            —
+          </span>
+        </h2>
         <button id="btnClearQuote" class="text-xs underline whitespace-nowrap">Svuota</button>
       </div>
 
@@ -665,6 +671,12 @@
         <div class="flex items-center gap-2">
           <label for="quoteDate" class="text-sm text-slate-600 whitespace-nowrap">Data</label>
           <input id="quoteDate" type="date" class="rounded-lg border px-2 py-1 text-sm">
+        </div>
+        <div class="flex items-center gap-2">
+          <label for="quotePayment" class="text-sm text-slate-600 whitespace-nowrap">Pagamento</label>
+          <input id="quotePayment" type="text"
+                 class="flex-1 rounded-lg border px-2 py-1 text-sm"
+                 value="Secondo accordi o da definire">
         </div>
       </div>
 
