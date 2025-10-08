@@ -28,6 +28,18 @@
     .quote-desc { white-space: normal; word-break: break-word; line-height: 1.25; }
     #quotePanel button { white-space: nowrap; }
 
+    .quote-meta-row {
+      display: grid;
+      grid-template-columns: minmax(0, 6rem) minmax(0, 1fr);
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .quote-meta-input {
+      width: 100%;
+      min-width: 0;
+    }
+
     .category-list {
       display: grid;
       grid-template-columns: 1fr;
@@ -661,26 +673,20 @@
       </div>
 
       <!-- meta -->
-      <div class="mb-3 grid grid-cols-1 gap-2">
-        <div class="flex items-center gap-2">
+      <div class="mb-3 space-y-2">
+        <div class="quote-meta-row">
           <label for="quoteDate" class="text-sm text-slate-600 whitespace-nowrap">Data</label>
-          <input id="quoteDate" type="date" class="rounded-lg border px-2 py-1 text-sm flex-1">
+          <input id="quoteDate" type="date" class="quote-meta-input rounded-lg border px-2 py-1 text-sm">
         </div>
-        <div class="flex items-center gap-2">
+        <div class="quote-meta-row">
           <label for="quoteName" class="text-sm text-slate-600 whitespace-nowrap">Nominativo</label>
           <input id="quoteName" type="text"
-                 class="flex-1 rounded-lg border px-2 py-1 text-sm">
+                 class="quote-meta-input rounded-lg border px-2 py-1 text-sm">
         </div>
-        <div class="flex items-center gap-2">
+        <div class="quote-meta-row">
           <label for="quotePayment" class="text-sm text-slate-600 whitespace-nowrap">Pagamento</label>
           <input id="quotePayment" type="text"
-                 class="flex-1 rounded-lg border px-2 py-1 text-sm"
-                 value="Secondo accordi o da definire">
-        </div>
-        <div class="flex items-center gap-2">
-          <label for="quotePayment" class="text-sm text-slate-600 whitespace-nowrap">Pagamento</label>
-          <input id="quotePayment" type="text"
-                 class="flex-1 rounded-lg border px-2 py-1 text-sm"
+                 class="quote-meta-input rounded-lg border px-2 py-1 text-sm"
                  value="Secondo accordi o da definire">
         </div>
       </div>

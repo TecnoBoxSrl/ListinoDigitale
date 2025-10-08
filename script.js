@@ -135,18 +135,76 @@ function sanitizeClientInitials(name){
   return normalized.slice(0, 2);
 }
 
-function getQuoteYear(){
+function extractInitials(value, length){
+  const normalized = String(value || '')
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  if (!normalized) return 'X'.repeat(length);
+  if (normalized.length < length) return normalized.padEnd(length, 'X');
+  return normalized.slice(0, length);
+}
+
+function getQuoteDateParts(){
   const raw = state.quoteMeta?.date || '';
-  const match = /^\d{4}/.exec(raw);
-  if (match) return match[0];
-  return String(new Date().getFullYear());
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    return { year: match[1], month: match[2], day: match[3] };
+  }
+  const now = new Date();
+  const year = String(now.getFullYear());
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return { year, month, day };
+}
+
+function getAgentInitials(){
+  const name = state.agent?.name || '';
+  const parts = name
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .toUpperCase()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const fallback = extractInitials(state.agent?.code || 'AG', 4);
+  if (!parts.length) return fallback;
+
+  const firstPart = extractInitials(parts[0], 2);
+  let lastPart = parts.length > 1 ? extractInitials(parts[parts.length - 1], 2) : '';
+
+  if (!lastPart) {
+    lastPart = extractInitials(state.agent?.code || '', 2);
+  }
+
+  const initials = (firstPart + lastPart).padEnd(4, 'X').slice(0, 4);
+  return initials || fallback;
 }
 
 function getQuoteCode(){
-  const year = getQuoteYear();
-  const agentCode = (state.agent?.code || 'AG').toString().toUpperCase();
+  const { year, month, day } = getQuoteDateParts();
   const clientCode = sanitizeClientInitials(state.quoteMeta?.name);
-  return `${year}${agentCode}${clientCode}`;
+  const agentInitials = getAgentInitials();
+  return `${year}${month}${day}${clientCode}${agentInitials}`;
+}
+
+function getQuoteMetaEntries(){
+  const { year, month, day } = getQuoteDateParts();
+  const normalizedDate = `${year}-${month}-${day}`;
+  const entries = [
+    { label: 'Data', value: normalizedDate },
+    { label: 'Nominativo', value: (state.quoteMeta?.name || '').trim() || '—' },
+    { label: 'Pagamento', value: getQuotePayment() },
+  ];
+
+  const seen = new Set();
+  const result = [];
+  for (const entry of entries) {
+    const key = entry.label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(entry);
+  }
+  return result;
 }
 
 function updateQuoteCodeLabel(){
@@ -1483,9 +1541,10 @@ function exportXlsx(){
 
   // header meta
   rows.push(['Preventivo']);
-  rows.push(['Nominativo', state.quoteMeta.name]);
-  rows.push(['Data', state.quoteMeta.date]);
-  rows.push(['Pagamento', getQuotePayment()]);
+  const metaEntries = getQuoteMetaEntries();
+  metaEntries.forEach(entry => {
+    rows.push([entry.label, entry.value]);
+  });
   rows.push([]); // riga vuota
 
   // tabella
@@ -1607,10 +1666,8 @@ async function exportPdf(){
     y += drawHeight + 32;
   }
 
-  const quoteName = state.quoteMeta.name || '—';
-  const quoteDate = state.quoteMeta.date || new Date().toISOString().slice(0,10);
   const quoteCode = getQuoteCode();
-  const quotePayment = getQuotePayment();
+  const metaEntries = getQuoteMetaEntries();
 
   doc.setFont('helvetica','bold');
   doc.setFontSize(16);
@@ -1620,12 +1677,14 @@ async function exportPdf(){
 
   doc.setFont('helvetica','normal');
   doc.setFontSize(11);
-  doc.text(`Nominativo: ${quoteName}`, marginX, y);
-  y += 12;
-  doc.text(`Data: ${quoteDate}`, marginX, y);
-  y += 12;
-  doc.text(`Pagamento: ${quotePayment}`, marginX, y);
-  y += 20;
+  metaEntries.forEach((entry, index) => {
+    const value = String(entry.value || '—');
+    doc.text(`${entry.label}: ${value}`, marginX, y);
+    y += (index === metaEntries.length - 1) ? 20 : 12;
+  });
+  if (!metaEntries.length) {
+    y += 20;
+  }
 
   const head = [['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']];
   const body = [];
@@ -1797,12 +1856,12 @@ async function exportPdf(){
       headerY += 14;
       doc.setFont('helvetica','normal');
       doc.setFontSize(11);
-      doc.text(`Nominativo: ${quoteName}`, marginX, headerY);
-      headerY += 12;
-      doc.text(`Data: ${quoteDate}`, marginX, headerY);
-      headerY += 12;
-      doc.text(`Pagamento: ${quotePayment}`, marginX, headerY);
-      totalsY = headerY + 20;
+      metaEntries.forEach((entry) => {
+        const value = String(entry.value || '—');
+        doc.text(`${entry.label}: ${value}`, marginX, headerY);
+        headerY += 12;
+      });
+      totalsY = headerY + 8;
     }
     doc.text(`Totale imponibile: ${fmtEUR(total)}`, marginX + tableWidth, totalsY, { align: 'right' });
     totalsY += 16;
@@ -1854,7 +1913,12 @@ function printQuote(){
   const win = window.open('', '_blank');
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
   const quoteCode = getQuoteCode();
-  const quotePayment = getQuotePayment();
+  const metaEntries = getQuoteMetaEntries();
+  const metaHtml = metaEntries.length
+    ? metaEntries
+        .map(entry => `${escapeHtml(entry.label)}: <strong>${escapeHtml(String(entry.value || '—'))}</strong>`)
+        .join('<br>')
+    : '<span>—</span>';
 
   win.document.write(`
 <!doctype html>
@@ -1877,7 +1941,7 @@ function printQuote(){
 </head>
 <body>
   <h1>Preventivo${quoteCode ? `<span class="code">${escapeHtml(quoteCode)}</span>` : ''}</h1>
-  <div class="meta">Nominativo: <strong>${escapeHtml(state.quoteMeta.name)}</strong><br>Data: <strong>${state.quoteMeta.date}</strong><br>Pagamento: <strong>${escapeHtml(quotePayment)}</strong></div>
+  <div class="meta">${metaHtml}</div>
   <table>
     <thead>
       <tr>
