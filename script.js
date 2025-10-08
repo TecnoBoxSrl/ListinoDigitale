@@ -1499,10 +1499,12 @@ async function exportPdf(){
 
   const head = [['Codice','Descrizione','Prezzo','CONAI/collo','Q.tà','Sconto %','Prezzo scont.','Totale riga']];
   const body = [];
+  const rawDescriptions = [];
   let total = 0;
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
+    rawDescriptions.push(it.descrizione || '');
     body.push([
       it.codice,
       it.descrizione || '',
@@ -1516,22 +1518,51 @@ async function exportPdf(){
   }
 
   const baseStyles = {
-    fontSize: 9,
+    fontSize: 8.5,
     textColor: 30,
     lineColor: [226,232,240],
-    cellPadding: { top: 4, right: 6, bottom: 4, left: 6 },
+    cellPadding: { top: 4, right: 5, bottom: 4, left: 5 },
     valign: 'middle',
     overflow: 'visible',
   };
+
+  const paddingX = (() => {
+    const padding = baseStyles.cellPadding;
+    if (typeof padding === 'number') return padding * 2;
+    return (padding.left ?? 0) + (padding.right ?? 0);
+  })();
+
+  const defaultMinWidths = [70, 160, 70, 75, 45, 60, 75, 80];
+  const measuredWidths = new Array(head[0].length).fill(0);
+  const rowsForMeasure = [head[0], ...body];
+  rowsForMeasure.forEach((row, rowIndex) => {
+    const isHeader = rowIndex === 0;
+    doc.setFont('helvetica', isHeader ? 'bold' : 'normal');
+    doc.setFontSize(isHeader ? 9.5 : baseStyles.fontSize);
+    row.forEach((cellText, columnIndex) => {
+      const raw = Array.isArray(cellText) ? cellText.join(' ') : String(cellText ?? '');
+      const width = doc.getTextWidth(raw) + paddingX;
+      measuredWidths[columnIndex] = Math.max(measuredWidths[columnIndex], width);
+    });
+  });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(baseStyles.fontSize);
+
+  const minWidths = measuredWidths.map((width, index) => Math.max(width || 0, defaultMinWidths[index]));
+  const descIndex = 1;
+  const otherColumnsTotal = minWidths.reduce((sum, width, index) => index === descIndex ? sum : sum + width, 0);
+  const availableForDescription = Math.max(defaultMinWidths[descIndex], tableWidth - otherColumnsTotal);
+  minWidths[descIndex] = Math.max(minWidths[descIndex], availableForDescription);
+
   const columnStyles = {
-    0: { halign: 'left', cellWidth: 55 },
-    1: { halign: 'left', cellWidth: 150 },
-    2: { halign: 'right', cellWidth: 55 },
-    3: { halign: 'right', cellWidth: 60 },
-    4: { halign: 'center', cellWidth: 35 },
-    5: { halign: 'center', cellWidth: 45 },
-    6: { halign: 'right', cellWidth: 60 },
-    7: { halign: 'right', cellWidth: 55 },
+    0: { halign: 'left', cellWidth: 'auto', minCellWidth: minWidths[0], overflow: 'visible' },
+    1: { halign: 'left', cellWidth: 'auto', minCellWidth: minWidths[1], maxCellWidth: Math.max(minWidths[1], availableForDescription), overflow: 'linebreak' },
+    2: { halign: 'right', cellWidth: 'auto', minCellWidth: minWidths[2], overflow: 'visible' },
+    3: { halign: 'right', cellWidth: 'auto', minCellWidth: minWidths[3], overflow: 'visible' },
+    4: { halign: 'center', cellWidth: 'auto', minCellWidth: minWidths[4], overflow: 'visible' },
+    5: { halign: 'center', cellWidth: 'auto', minCellWidth: minWidths[5], overflow: 'visible' },
+    6: { halign: 'right', cellWidth: 'auto', minCellWidth: minWidths[6], overflow: 'visible' },
+    7: { halign: 'right', cellWidth: 'auto', minCellWidth: minWidths[7], overflow: 'visible' },
   };
 
   if (doc.autoTable){
@@ -1541,9 +1572,9 @@ async function exportPdf(){
       startY: y,
       margin: { left: marginX, right: marginX },
       styles: baseStyles,
-      headStyles: { ...baseStyles, fontStyle: 'bold', fillColor: [241,245,249] },
+      headStyles: { ...baseStyles, fontStyle: 'bold', fontSize: 9.5, fillColor: [241,245,249] },
       columnStyles,
-      tableWidth,
+      tableWidth: 'auto',
       theme: 'grid',
       didParseCell: (data) => {
         const { cell, section } = data;
@@ -1560,8 +1591,37 @@ async function exportPdf(){
         }
         const available = cell.width - paddingX;
         if (available <= 0) return;
-        let fontSize = styles.fontSize || baseStyles.fontSize;
         const originalSize = doc.getFontSize();
+        let fontSize = styles.fontSize || baseStyles.fontSize;
+        if (data.column.index === 1){
+          styles.overflow = 'linebreak';
+          if (section === 'body'){
+            const fullDescription = rawDescriptions[data.row.index] ?? rawText;
+            let lines = [];
+            if (available > 0){
+              doc.setFontSize(fontSize);
+              lines = doc.splitTextToSize(fullDescription, available);
+              while (lines.length > 2 && fontSize > 4){
+                fontSize -= 0.25;
+                doc.setFontSize(fontSize);
+                lines = doc.splitTextToSize(fullDescription, available);
+              }
+              if (lines.length > 2){
+                const trimmed = lines.slice(0, 2);
+                const last = trimmed[trimmed.length - 1] || '';
+                trimmed[trimmed.length - 1] = last.endsWith('…') ? last : `${last.replace(/\s+$/,'')}…`;
+                lines = trimmed;
+              }
+            }
+            if (fontSize < 4) fontSize = 4;
+            if (lines.length){
+              cell.text = lines;
+            }
+            cell.styles.fontSize = fontSize;
+          }
+          doc.setFontSize(originalSize);
+          return;
+        }
         let measured = Infinity;
         while (fontSize > 6){
           doc.setFontSize(fontSize);
@@ -1587,7 +1647,14 @@ async function exportPdf(){
     const endY = doc.lastAutoTable.finalY || y;
     doc.setFont('helvetica','bold');
     doc.setFontSize(11);
-    doc.text(`Totale imponibile: ${fmtEUR(total)}`, marginX + tableWidth, endY + 20, { align: 'right' });
+    const vat = Math.round(total * 22) / 100;
+    const gross = Math.round((total + vat) * 100) / 100;
+    let totalsY = endY + 20;
+    doc.text(`Totale imponibile: ${fmtEUR(total)}`, marginX + tableWidth, totalsY, { align: 'right' });
+    totalsY += 16;
+    doc.text(`Totale IVA 22%: ${fmtEUR(vat)}`, marginX + tableWidth, totalsY, { align: 'right' });
+    totalsY += 16;
+    doc.text(`Totale importo: ${fmtEUR(gross)}`, marginX + tableWidth, totalsY, { align: 'right' });
   } else {
     doc.text('Errore: jsPDF-Autotable non presente.', marginX, y + 20);
   }
