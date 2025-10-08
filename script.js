@@ -974,6 +974,151 @@ async function fetchProducts(){
     console.error('[Data] fetchProducts error', e);
     if (info) info.textContent = 'Errore caricamento listino';
   }
+
+  for (const p of (data || [])) {
+    const mediaImgs = (p.product_media || [])
+      .filter(m => m.kind === 'image')
+      .sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
+
+    let imgUrl = '';
+    if (mediaImgs[0]) {
+      const { data: signed, error: sErr } = await client
+        .storage.from(STORAGE_BUCKET)
+        .createSignedUrl(mediaImgs[0].path, 600);
+      if (sErr) console.warn('[Storage] signedURL warn:', sErr.message);
+      imgUrl = signed?.signedUrl || '';
+    }
+
+    items.push({
+      codice: p.codice,
+      descrizione: p.descrizione,
+      dimensione: p.dimensione ?? '',
+      categoria: p.categoria,
+      sottocategoria: p.sottocategoria,
+      prezzo: p.prezzo,
+      conai: p.conai ?? null,
+      unita: p.unita,
+      disponibile: p.disponibile,
+      novita: p.novita,
+      pack: p.pack,
+      pallet: p.pallet,
+      tags: p.tags || [],
+      updated_at: p.updated_at,
+      img: imgUrl,
+    });
+  }
+
+  return items;
+}
+
+async function fetchProductsFromLatestPriceList(client) {
+  const maxListsToCheck = 5;
+  const { data: lists, error: listError } = await client
+    .from('price_lists')
+    .select('id, version_label, published_at')
+    .order('published_at', { ascending: false, nullsLast: true })
+    .limit(maxListsToCheck);
+
+  if (listError) throw listError;
+
+  for (const list of lists || []) {
+    try {
+      const rows = await fetchPriceListItemsById(client, list.id);
+      if (rows.length) {
+        return {
+          items: rows.map(normalizePriceListRow),
+          meta: list,
+        };
+      }
+    } catch (errFetch) {
+      console.warn('[Data] price list items fetch fallito per', list.id, errFetch);
+    }
+  }
+
+  console.warn('[Data] nessun listino pubblicato con articoli disponibili');
+  return { items: [], meta: null };
+}
+
+async function fetchPriceListItemsById(client, listId) {
+  if (!listId) return [];
+
+  const richSelect = `
+      codice,
+      descrizione,
+      dimensione,
+      categoria,
+      sottocategoria,
+      prezzo,
+      conai,
+      unita,
+      disponibile,
+      novita,
+      pack,
+      pallet,
+      tags,
+      updated_at
+    `;
+
+  let { data: rows, error } = await client
+    .from('price_list_items')
+    .select(richSelect)
+    .eq('price_list_id', listId)
+    .order('descrizione', { ascending: true });
+
+  if (error) {
+    const msg = String(error.message || '').toLowerCase();
+    const missingExtra = msg.includes('dimensione') || msg.includes('conai');
+    if (missingExtra) {
+      console.warn('[Data] price_list_items senza dimensione/conai, retry base select');
+      ({ data: rows, error } = await client
+        .from('price_list_items')
+        .select(`
+          codice,
+          descrizione,
+          categoria,
+          sottocategoria,
+          prezzo,
+          unita,
+          disponibile,
+          novita,
+          pack,
+          pallet,
+          tags,
+          updated_at
+        `)
+        .eq('price_list_id', listId)
+        .order('descrizione', { ascending: true }));
+    }
+    if (error) throw error;
+  }
+
+  return rows || [];
+}
+
+function normalizePriceListRow(row) {
+  const prezzo = (row?.prezzo === null || row?.prezzo === '' || row?.prezzo === undefined)
+    ? null
+    : Number(row.prezzo);
+  const conai = (row?.conai === null || row?.conai === '' || row?.conai === undefined)
+    ? null
+    : Number(row.conai);
+  return {
+    codice: row?.codice,
+    descrizione: row?.descrizione,
+    dimensione: row?.dimensione ?? '',
+    categoria: row?.categoria,
+    sottocategoria: row?.sottocategoria,
+    prezzo,
+    conai,
+    unita: row?.unita,
+    disponibile: row?.disponibile,
+    novita: row?.novita,
+    pack: row?.pack,
+    pallet: row?.pallet,
+    tags: row?.tags || [],
+    updated_at: row?.updated_at,
+    img: '',
+  };
 }
 
 async function fetchProductsFromCatalog(client) {
