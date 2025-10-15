@@ -926,57 +926,78 @@ async function afterLogout(){
 async function fetchProducts(){
   console.log('[Data] fetchProducts…');
   const info = $('resultInfo');
-  try{
-    const client = ensureSupabaseClient();
-    if (!client) throw new Error('Supabase non inizializzato');
 
-    let items = [];
-    let usedFallback = false;
-    let fallbackMeta = null;
+  try {
+    const pageSize = 1000;
+    let from = 0, to = pageSize - 1;
+    const rows = [];
 
-    try {
-      items = await fetchProductsFromCatalog(client);
-    } catch (primaryErr) {
-      console.warn('[Data] prodotti primary fetch fallito, provo fallback price list', primaryErr);
+    while (true) {
+      const { data, error } = await supabase
+        .from('products')
+        .select(`
+          id, codice, descrizione, categoria, sottocategoria,
+          prezzo, unita, disponibile, novita, pack, pallet, tags,
+          updated_at, dimensione, conai, conai_per_collo,
+          product_media(id, kind, path, sort)
+        `)
+        .order('descrizione', { ascending: true })
+        .range(from, to);      // 👈 pagina
+
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+
+      rows.push(...data);
+      if (data.length < pageSize) break;  // ultima pagina
+      from += pageSize; to += pageSize;
     }
 
-    if (!items.length) {
-      try {
-        const fallbackRes = await fetchProductsFromLatestPriceList(client);
-        items = fallbackRes.items;
-        fallbackMeta = fallbackRes.meta;
-        usedFallback = items.length > 0;
-      } catch (fallbackErr) {
-        console.error('[Data] fallback price list fallito', fallbackErr);
+    // Mappa righe → items della webapp
+    const items = [];
+    for (const p of rows) {
+      const mediaImgs = (p.product_media || [])
+        .filter(m => m.kind === 'image')
+        .sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
+
+      let imgUrl = '';
+      if (mediaImgs[0]) {
+        const { data: signed, error: sErr } = await supabase
+          .storage.from(STORAGE_BUCKET)
+          .createSignedUrl(mediaImgs[0].path, 600);
+        if (sErr) console.warn('[Storage] signedURL warn:', sErr.message);
+        imgUrl = signed?.signedUrl || '';
       }
+
+      items.push({
+        codice: p.codice,
+        descrizione: p.descrizione,
+        dimensione: p.dimensione,
+        categoria: p.categoria,
+        sottocategoria: p.sottocategoria,
+        prezzo: p.prezzo,
+        conai: p.conai,
+        unita: p.unita,
+        disponibile: p.disponibile,
+        novita: p.novita,
+        pack: p.pack,
+        pallet: p.pallet,
+        tags: p.tags || [],
+        updated_at: p.updated_at,
+        conaiPerCollo: p.conai_per_collo || 0,
+        img: imgUrl,
+      });
     }
 
     state.items = items;
     buildCategories();
-
-    if (info) {
-      if (items.length) {
-        if (usedFallback) {
-          const label = fallbackMeta?.version_label || 'ultimo listino pubblicato';
-          const suffix = label ? ` (${label})` : '';
-          info.textContent = `${items.length} articoli${suffix}`;
-        } else {
-          info.textContent = `${items.length} articoli`;
-        }
-      } else {
-        info.textContent = 'Nessun articolo disponibile';
-      }
-    }
-
-    const fallbackLog = usedFallback
-      ? ` (fallback price list${fallbackMeta?.version_label ? ` ${fallbackMeta.version_label}` : ''})`
-      : '';
-    console.log('[Data] prodotti caricati:', items.length, fallbackLog);
-  } catch(e){
+    if (info) info.textContent = `${items.length} articoli`;
+    console.log('[Data] prodotti:', items.length);
+  } catch (e) {
     console.error('[Data] fetchProducts error', e);
     if (info) info.textContent = 'Errore caricamento listino';
   }
 }
+
 
 async function fetchProductsFromCatalog(client) {
   const items = [];
