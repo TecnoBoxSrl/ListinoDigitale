@@ -96,7 +96,14 @@ async function startAuthFlow(){
     }
 
     const { data:{ session }, error } = await client.auth.getSession();
-    if (error) console.warn('[Auth] getSession warn:', error);
+    if (error) {
+      console.warn('[Auth] getSession warn:', error);
+      if (isSupabaseUnavailableError(error)) {
+        showAuthGate(true);
+        showReconnectHelp('Supabase non risponde. Riattiva il progetto e premi “Forza riconnessione”.');
+        return;
+      }
+    }
 
     if (session?.user) {
       console.log('[Auth] sessione presente', session.user.id);
@@ -123,8 +130,12 @@ async function startAuthFlow(){
   } catch (error) {
     console.error('[Boot] startAuthFlow error:', error);
     showAuthGate(true);
-    const m = $('loginMsg');
-    if (m) m.textContent = 'Errore di inizializzazione. Vedi console.';
+    if (isSupabaseUnavailableError(error)) {
+      showReconnectHelp('Connessione al backend non riuscita. Verifica Supabase e riprova.');
+    } else {
+      const m = $('loginMsg');
+      if (m) m.textContent = 'Errore di inizializzazione. Vedi console.';
+    }
   }
 }
 
@@ -321,6 +332,63 @@ function clearSupabaseAuthStorage(){
   } catch (storageErr) {
     console.warn('[Auth] clearSupabaseAuthStorage warn:', storageErr);
   }
+}
+
+function showReconnectHelp(message){
+  const btn = $('btnForceReconnect');
+  if (btn) {
+    btn.classList.remove('hidden');
+  }
+
+  const msg = $('loginMsg');
+  if (msg && message) {
+    msg.textContent = message;
+  }
+}
+
+function isSupabaseUnavailableError(error){
+  const msg = (error?.message || '').toLowerCase();
+  return (
+    msg.includes('failed to fetch') ||
+    msg.includes('network error') ||
+    msg.includes('status code 503') ||
+    msg.includes('unexpected token') ||
+    msg.includes('paused') ||
+    msg.includes('project is paused')
+  );
+}
+
+function forceReconnect(){
+  console.log('[Boot] Forzo la riconnessione: pulizia cache e reload');
+  try {
+    supabase?.removeAllChannels?.();
+  } catch (error) {
+    console.warn('[Boot] removeAllChannels warn:', error);
+  }
+
+  clearSupabaseAuthStorage();
+
+  supabase = null;
+  supabaseInitWarned = false;
+  authListenerBound = false;
+  logoutInFlight = false;
+  supabaseRetryCount = 0;
+  if (supabaseRetryTimer) {
+    clearTimeout(supabaseRetryTimer);
+    supabaseRetryTimer = null;
+  }
+
+  const msg = $('loginMsg');
+  if (msg) msg.textContent = 'Cache pulita, ricarico…';
+
+  setTimeout(() => {
+    try {
+      window.location.reload();
+    } catch (err) {
+      console.warn('[Boot] reload fallito, reindirizzo', err);
+      window.location.href = window.location.href;
+    }
+  }, 120);
 }
 
 
@@ -592,6 +660,7 @@ function bindUI(){
 
   // Login
   $('btnDoLogin')?.addEventListener('click', doLogin);
+  $('btnForceReconnect')?.addEventListener('click', forceReconnect);
   const email = $('loginEmail'), pass = $('loginPassword');
   [email, pass].forEach(el => el?.addEventListener('keydown', e => {
     if(e.key==='Enter'){ e.preventDefault(); doLogin(); }
@@ -683,6 +752,9 @@ async function doLogin(){
     if (error) {
       console.warn('[Auth] signIn error:', error);
       msg && (msg.textContent = 'Accesso non riuscito: ' + error.message);
+      if (isSupabaseUnavailableError(error)) {
+        showReconnectHelp('Backend non raggiungibile. Riattiva il progetto Supabase e riprova.');
+      }
       return;
     }
 
