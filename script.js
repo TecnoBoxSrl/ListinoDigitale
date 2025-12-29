@@ -99,8 +99,7 @@ async function startAuthFlow(){
     if (error) {
       console.warn('[Auth] getSession warn:', error);
       if (isSupabaseUnavailableError(error)) {
-        showAuthGate(true);
-        showReconnectHelp('Supabase non risponde. Riattiva il progetto e premi “Forza riconnessione”.');
+        handleSupabaseOffline('Supabase non risponde. Riattiva il progetto e premi “Forza riconnessione”.');
         return;
       }
     }
@@ -129,10 +128,10 @@ async function startAuthFlow(){
 
   } catch (error) {
     console.error('[Boot] startAuthFlow error:', error);
-    showAuthGate(true);
     if (isSupabaseUnavailableError(error)) {
-      showReconnectHelp('Connessione al backend non riuscita. Verifica Supabase e riprova.');
+      handleSupabaseOffline('Connessione al backend non riuscita. Verifica Supabase e riprova.');
     } else {
+      showAuthGate(true);
       const m = $('loginMsg');
       if (m) m.textContent = 'Errore di inizializzazione. Vedi console.';
     }
@@ -343,6 +342,21 @@ function showReconnectHelp(message){
   const msg = $('loginMsg');
   if (msg && message) {
     msg.textContent = message;
+  }
+}
+
+function handleSupabaseOffline(message, options = {}) {
+  const { keepAuthGateVisible = true } = options;
+
+  if (keepAuthGateVisible) {
+    showAuthGate(true);
+  }
+
+  showReconnectHelp(message || 'Supabase non risponde. Riattiva il progetto e riprova.');
+
+  const info = $('resultInfo');
+  if (info && message) {
+    info.textContent = message;
   }
 }
 
@@ -753,7 +767,7 @@ async function doLogin(){
       console.warn('[Auth] signIn error:', error);
       msg && (msg.textContent = 'Accesso non riuscito: ' + error.message);
       if (isSupabaseUnavailableError(error)) {
-        showReconnectHelp('Backend non raggiungibile. Riattiva il progetto Supabase e riprova.');
+        handleSupabaseOffline('Backend non raggiungibile. Riattiva il progetto Supabase e riprova.');
       }
       return;
     }
@@ -779,7 +793,9 @@ async function doLogin(){
     await afterLogin(userId);
   } catch (e) {
     console.error('[Auth] eccezione login:', e);
-    if (msg) {
+    if (isSupabaseUnavailableError(e)) {
+      handleSupabaseOffline('Connessione al backend non riuscita. Riattiva Supabase e usa “Forza riconnessione”.');
+    } else if (msg) {
       msg.textContent = e?.message ? String(e.message) : 'Errore accesso. Vedi console.';
     }
   }
@@ -1066,7 +1082,11 @@ async function fetchProducts(){
     console.log('[Data] prodotti:', items.length);
   } catch (e) {
     console.error('[Data] fetchProducts error', e);
-    if (info) info.textContent = 'Errore caricamento listino';
+    if (isSupabaseUnavailableError(e)) {
+      handleSupabaseOffline('Backend Supabase non raggiungibile. Riattiva il progetto e usa “Forza riconnessione”.', { keepAuthGateVisible: false });
+    } else if (info) {
+      info.textContent = 'Errore caricamento listino';
+    }
   }
 }
 
