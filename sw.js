@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'listino-v5';
+const CACHE_VERSION = 'listino-v6';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -30,6 +30,9 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
+  // Skip non-GET requests so we don't attempt to cache POST/PUT bodies
+  if (request.method !== 'GET') return;
+
   if (url.hostname.endsWith('supabase.co')) return;
 
   if (request.mode === 'navigate') {
@@ -50,7 +53,7 @@ async function cacheFirst(request) {
   const cached = await cache.match(request);
   if (cached) return cached;
   const response = await fetch(request);
-  if (response && response.ok) {
+  if (request.method === 'GET' && response && response.ok) {
     cache.put(request, response.clone());
   }
   return response;
@@ -61,7 +64,7 @@ async function networkFirst(request, fallbackUrl) {
   const cacheKey = fallbackUrl ? new Request(fallbackUrl) : request;
   try {
     const response = await fetch(request);
-    if (response && response.ok) {
+    if (request.method === 'GET' && response && response.ok) {
       cache.put(cacheKey, response.clone());
     }
     return response;
@@ -77,7 +80,7 @@ async function staleWhileRevalidate(request) {
   const cached = await cache.match(request);
   const networkFetch = fetch(request)
     .then((response) => {
-      if (response && response.ok) {
+      if (request.method === 'GET' && response && response.ok) {
         cache.put(request, response.clone());
       }
       return response;
