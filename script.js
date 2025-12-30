@@ -30,22 +30,10 @@ let logoutInFlight = false;
 let pdfLogoCache;
 const DEFAULT_QUOTE_PAYMENT = 'Secondo accordi o da definire';
 const DEFAULT_QUOTE_EMPTY_MESSAGE = 'Inserisci almeno 1 articolo';
-const INFO_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Icona informazioni">
-  <defs>
-    <radialGradient id="bg" cx="30%" cy="30%" r="70%">
-      <stop offset="0%" stop-color="#1f2937" />
-      <stop offset="55%" stop-color="#0f172a" />
-      <stop offset="100%" stop-color="#020617" />
-    </radialGradient>
-    <linearGradient id="shine" x1="20%" y1="20%" x2="60%" y2="60%">
-      <stop offset="0%" stop-color="rgba(255,255,255,0.35)" />
-      <stop offset="100%" stop-color="rgba(255,255,255,0)" />
-    </linearGradient>
-  </defs>
-  <circle cx="32" cy="32" r="30" fill="url(#bg)" />
-  <path d="M14 22c5-8 15-12 24-10" fill="none" stroke="url(#shine)" stroke-width="4" stroke-linecap="round" />
-  <path d="M32 46v-18" fill="none" stroke="#7ddc3a" stroke-width="6" stroke-linecap="round" />
-  <circle cx="32" cy="20" r="4" fill="#7ddc3a" />
+const INFO_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+  <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8" />
+  <path d="M12 17v-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+  <circle cx="12" cy="8" r="1.2" fill="currentColor" />
 </svg>`;
 let quoteFabMessageTimer = null;
 
