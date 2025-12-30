@@ -1530,7 +1530,7 @@ function renderListino(){
             <button type="button" class="stampa-btn" aria-label="Stampa articolo" title="Stampa">
               ${PRINT_ICON_SVG}
             </button>
-            <input type="radio" class="stampa-radio" name="stampaChoice" value="${codeAttr}" title="Seleziona articolo per stampa">
+            <input type="radio" class="stampa-radio" value="${codeAttr}" title="Seleziona articolo per stampa">
           </div>
         </td>
         <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${codiceSafe}</td>
@@ -1596,7 +1596,7 @@ function renderListino(){
       });
     }
 
-    // ======== LISTENER: radio di stampa (selezionabile/deselezionabile) ========
+    // ======== LISTENER: radio di stampa (selezionabili e deselezionabili) ========
     const stampaRadios = Array.from(table.querySelectorAll('.stampa-radio'));
     stampaRadios.forEach(radio => {
       const rememberState = () => {
@@ -1617,9 +1617,7 @@ function renderListino(){
           return;
         }
 
-        stampaRadios.forEach(r => {
-          r.dataset.wasChecked = r === radio ? 'true' : 'false';
-        });
+        radio.dataset.wasChecked = 'true';
       });
     });
 
