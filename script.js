@@ -1599,25 +1599,21 @@ function renderListino(){
     // ======== LISTENER: radio di stampa (selezionabili e deselezionabili) ========
     const stampaRadios = Array.from(table.querySelectorAll('.stampa-radio'));
     stampaRadios.forEach(radio => {
-      const rememberState = () => {
-        radio.dataset.wasChecked = radio.checked ? 'true' : 'false';
-      };
+      radio.dataset.wasChecked = radio.checked ? 'true' : 'false';
 
-      radio.addEventListener('pointerdown', rememberState);
       radio.addEventListener('keydown', (e) => {
-        if (e.key === ' ' || e.key === 'Enter') rememberState();
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          radio.click();
+        }
       });
 
       radio.addEventListener('click', (e) => {
+        e.preventDefault();
         const wasChecked = radio.dataset.wasChecked === 'true';
-        if (wasChecked) {
-          e.preventDefault();
-          radio.checked = false;
-          radio.dataset.wasChecked = 'false';
-          return;
-        }
-
-        radio.dataset.wasChecked = 'true';
+        const nextChecked = !wasChecked;
+        radio.checked = nextChecked;
+        radio.dataset.wasChecked = nextChecked ? 'true' : 'false';
       });
     });
 
