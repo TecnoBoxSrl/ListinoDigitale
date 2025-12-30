@@ -1596,6 +1596,27 @@ function renderListino(){
       });
     }
 
+    // ======== LISTENER: radio di stampa (selezionabili e deselezionabili) ========
+    const stampaRadios = Array.from(table.querySelectorAll('.stampa-radio'));
+    stampaRadios.forEach(radio => {
+      radio.dataset.wasChecked = radio.checked ? 'true' : 'false';
+
+      radio.addEventListener('keydown', (e) => {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          radio.click();
+        }
+      });
+
+      radio.addEventListener('click', (e) => {
+        e.preventDefault();
+        const wasChecked = radio.dataset.wasChecked === 'true';
+        const nextChecked = !wasChecked;
+        radio.checked = nextChecked;
+        radio.dataset.wasChecked = nextChecked ? 'true' : 'false';
+      });
+    });
+
     // ======== LISTENER: righe .selItem (selezione singola + refresh header immediato) ========
     table.querySelectorAll('.selItem').forEach(chk=>{
       chk.addEventListener('change', (e)=>{
