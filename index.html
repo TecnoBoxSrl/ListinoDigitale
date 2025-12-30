@@ -177,6 +177,91 @@
       text-align: center;
     }
 
+    #listinoContainer th.col-stampa,
+    #listinoContainer td.col-stampa {
+      width: 6rem;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    #listinoContainer th.col-info,
+    #listinoContainer td.col-info {
+      width: 5rem;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .info-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1rem;
+      height: 1rem;
+      border-radius: 999px;
+      background: transparent;
+      border: none;
+      color: #0f172a;
+      padding: 0;
+    }
+
+    .info-pill svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .stampa-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.35rem;
+      height: 1.35rem;
+      border-radius: 6px;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      box-shadow: none;
+      padding: 0.15rem;
+      color: #0f172a;
+      transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .stampa-cell {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+    }
+
+    .stampa-radio {
+      width: 1rem;
+      height: 1rem;
+      accent-color: #0f172a;
+    }
+
+    .stampa-btn:hover {
+      transform: translateY(-1px);
+      background: #f1f5f9;
+      border-color: #94a3b8;
+    }
+
+    .stampa-btn img {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
     #listinoContainer th:first-child,
     #listinoContainer td:first-child {
       white-space: nowrap;
@@ -553,6 +638,7 @@
              placeholder="Password" autocomplete="current-password" required>
 
       <button id="btnDoLogin" class="w-full rounded-xl bg-sky-600 text-white py-2">Accedi</button>
+      <button id="btnForceReconnect" class="w-full rounded-xl border py-2 mt-2 hidden">Forza riconnessione</button>
       <button id="btnSendReset" class="w-full rounded-xl border py-2 mt-2">Ho dimenticato la password</button>
 
       <p id="loginMsg" class="text-xs text-slate-500 mt-3 text-center"></p>
