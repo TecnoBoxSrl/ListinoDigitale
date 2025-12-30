@@ -1530,7 +1530,7 @@ function renderListino(){
             <button type="button" class="stampa-btn" aria-label="Stampa articolo" title="Stampa">
               ${PRINT_ICON_SVG}
             </button>
-            <input type="radio" class="stampa-radio" value="${codeAttr}" title="Seleziona articolo per stampa">
+            <input type="checkbox" class="stampa-checkbox" value="${codeAttr}" title="Seleziona articolo per stampa">
           </div>
         </td>
         <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${codiceSafe}</td>
