@@ -1482,6 +1482,7 @@ function renderListino(){
               <input type="checkbox" class="selAllCat" data-cat="${encodeURIComponent(cat)}" title="Seleziona tutti">
             </div>
           </th>
+          <th class="border px-2 py-1 text-center col-info">Info</th>
           <th class="border px-2 py-1 text-left col-code">Codice</th>
           <th class="border px-2 py-1 text-left col-desc">Descrizione</th>
           <th class="border px-2 py-1 text-left col-dim">Dimensione</th>
@@ -1510,6 +1511,9 @@ function renderListino(){
       tr.innerHTML = `
         <td class="border px-2 py-1 text-center">
           <input type="checkbox" class="selItem" data-code="${codeAttr}" ${checked}>
+        </td>
+        <td class="border px-2 py-1 text-center col-info">
+          <button type="button" class="info-pill" aria-label="Info articolo" title="Info">i</button>
         </td>
         <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${codiceSafe}</td>
         <td class="border px-2 py-1 col-desc">
