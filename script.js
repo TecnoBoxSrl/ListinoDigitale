@@ -1525,9 +1525,12 @@ function renderListino(){
           </button>
         </td>
         <td class="border px-2 py-1 text-center col-stampa">
-          <button type="button" class="stampa-btn" aria-label="Stampa articolo" title="Stampa">
-            <img src="./stampa-icon.svg" alt="" aria-hidden="true">
-          </button>
+          <div class="stampa-cell">
+            <button type="button" class="stampa-btn" aria-label="Stampa articolo" title="Stampa">
+              <img src="./stampa-icon.svg" alt="" aria-hidden="true">
+            </button>
+            <input type="radio" class="stampa-radio" name="stampaChoice" value="${codeAttr}" title="Seleziona articolo per stampa">
+          </div>
         </td>
         <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${codiceSafe}</td>
         <td class="border px-2 py-1 col-desc">
