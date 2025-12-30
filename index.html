@@ -177,6 +177,75 @@
       text-align: center;
     }
 
+    #listinoContainer th.col-stampa,
+    #listinoContainer td.col-stampa {
+      width: 5rem;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    #listinoContainer th.col-info,
+    #listinoContainer td.col-info {
+      width: 5rem;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .info-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1rem;
+      height: 1rem;
+      border-radius: 999px;
+      background: transparent;
+      border: none;
+      padding: 0;
+    }
+
+    .info-pill svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .stampa-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 30%, #1f2937 0%, #0f172a 55%, #020617 100%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+      padding: 0.2rem;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .stampa-btn:hover {
+      transform: translateY(-1px) scale(1.02);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+    }
+
+    .stampa-btn img {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
     #listinoContainer th:first-child,
     #listinoContainer td:first-child {
       white-space: nowrap;
@@ -553,6 +622,7 @@
              placeholder="Password" autocomplete="current-password" required>
 
       <button id="btnDoLogin" class="w-full rounded-xl bg-sky-600 text-white py-2">Accedi</button>
+      <button id="btnForceReconnect" class="w-full rounded-xl border py-2 mt-2 hidden">Forza riconnessione</button>
       <button id="btnSendReset" class="w-full rounded-xl border py-2 mt-2">Ho dimenticato la password</button>
 
       <p id="loginMsg" class="text-xs text-slate-500 mt-3 text-center"></p>
