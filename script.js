@@ -31,11 +31,15 @@ let pdfLogoCache;
 const DEFAULT_QUOTE_PAYMENT = 'Secondo accordi o da definire';
 const DEFAULT_QUOTE_EMPTY_MESSAGE = 'Inserisci almeno 1 articolo';
 const INFO_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-  <circle cx="12" cy="12" r="10" fill="#111827" />
+  <circle cx="12" cy="12" r="10" fill="#2ba945" />
   <path d="M11.2 9.25h1.6c.22 0 .4.18.4.4v7.1c0 .22-.18.4-.4.4h-1.6a.4.4 0 0 1-.4-.4v-7.1c0-.22.18-.4.4-.4Z" fill="#ffffff" />
   <circle cx="12" cy="6.9" r="1.1" fill="#ffffff" />
 </svg>`;
-const PRINT_ICON_SVG = INFO_ICON_SVG;
+const PRINT_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+  <circle cx="12" cy="12" r="10" fill="#dc2626" />
+  <path d="M11.2 9.25h1.6c.22 0 .4.18.4.4v7.1c0 .22-.18.4-.4.4h-1.6a.4.4 0 0 1-.4-.4v-7.1c0-.22.18-.4.4-.4Z" fill="#ffffff" />
+  <circle cx="12" cy="6.9" r="1.1" fill="#ffffff" />
+</svg>`;
 let quoteFabMessageTimer = null;
 
 function ensureSupabaseClient(){
