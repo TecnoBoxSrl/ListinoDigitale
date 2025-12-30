@@ -1483,6 +1483,7 @@ function renderListino(){
             </div>
           </th>
           <th class="border px-2 py-1 text-center col-info">Info</th>
+          <th class="border px-2 py-1 text-center col-stampa">Stampa</th>
           <th class="border px-2 py-1 text-left col-code">Codice</th>
           <th class="border px-2 py-1 text-left col-desc">Descrizione</th>
           <th class="border px-2 py-1 text-left col-dim">Dimensione</th>
@@ -1514,6 +1515,11 @@ function renderListino(){
         </td>
         <td class="border px-2 py-1 text-center col-info">
           <button type="button" class="info-pill" aria-label="Info articolo" title="Info">i</button>
+        </td>
+        <td class="border px-2 py-1 text-center col-stampa">
+          <button type="button" class="stampa-btn" aria-label="Stampa articolo" title="Stampa">
+            <img src="./stampa-icon.svg" alt="" aria-hidden="true">
+          </button>
         </td>
         <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${codiceSafe}</td>
         <td class="border px-2 py-1 col-desc">

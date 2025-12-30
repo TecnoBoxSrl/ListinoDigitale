@@ -1,9 +1,10 @@
-const CACHE_VERSION = 'listino-v6';
+const CACHE_VERSION = 'listino-v7';
 const PRECACHE_URLS = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './logo.svg'
+  './logo.svg',
+  './stampa-icon.svg'
 ];
 
 self.addEventListener('install', (event) => {
