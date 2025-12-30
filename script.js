@@ -31,9 +31,9 @@ let pdfLogoCache;
 const DEFAULT_QUOTE_PAYMENT = 'Secondo accordi o da definire';
 const DEFAULT_QUOTE_EMPTY_MESSAGE = 'Inserisci almeno 1 articolo';
 const INFO_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-  <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8" />
-  <path d="M12 17v-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-  <circle cx="12" cy="8" r="1.2" fill="currentColor" />
+  <circle cx="12" cy="12" r="10" fill="#111827" />
+  <rect x="11" y="10.5" width="2" height="7" rx="1" fill="#ffffff" />
+  <circle cx="12" cy="7.25" r="1.15" fill="#ffffff" />
 </svg>`;
 let quoteFabMessageTimer = null;
 
