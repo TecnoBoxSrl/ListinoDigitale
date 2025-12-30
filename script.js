@@ -35,6 +35,7 @@ const INFO_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 2
   <path d="M11.2 9.25h1.6c.22 0 .4.18.4.4v7.1c0 .22-.18.4-.4.4h-1.6a.4.4 0 0 1-.4-.4v-7.1c0-.22.18-.4.4-.4Z" fill="#ffffff" />
   <circle cx="12" cy="6.9" r="1.1" fill="#ffffff" />
 </svg>`;
+const PRINT_ICON_SVG = INFO_ICON_SVG;
 let quoteFabMessageTimer = null;
 
 function ensureSupabaseClient(){
@@ -1527,7 +1528,7 @@ function renderListino(){
         <td class="border px-2 py-1 text-center col-stampa">
           <div class="stampa-cell">
             <button type="button" class="stampa-btn" aria-label="Stampa articolo" title="Stampa">
-              <img src="./stampa-icon.svg" alt="" aria-hidden="true">
+              ${PRINT_ICON_SVG}
             </button>
             <input type="radio" class="stampa-radio" name="stampaChoice" value="${codeAttr}" title="Seleziona articolo per stampa">
           </div>
@@ -1594,6 +1595,33 @@ function renderListino(){
         // (il pannello e il contatore FAB sono già aggiornati dalle add/remove)
       });
     }
+
+    // ======== LISTENER: radio di stampa (selezionabile/deselezionabile) ========
+    const stampaRadios = Array.from(table.querySelectorAll('.stampa-radio'));
+    stampaRadios.forEach(radio => {
+      const rememberState = () => {
+        radio.dataset.wasChecked = radio.checked ? 'true' : 'false';
+      };
+
+      radio.addEventListener('pointerdown', rememberState);
+      radio.addEventListener('keydown', (e) => {
+        if (e.key === ' ' || e.key === 'Enter') rememberState();
+      });
+
+      radio.addEventListener('click', (e) => {
+        const wasChecked = radio.dataset.wasChecked === 'true';
+        if (wasChecked) {
+          e.preventDefault();
+          radio.checked = false;
+          radio.dataset.wasChecked = 'false';
+          return;
+        }
+
+        stampaRadios.forEach(r => {
+          r.dataset.wasChecked = r === radio ? 'true' : 'false';
+        });
+      });
+    });
 
     // ======== LISTENER: righe .selItem (selezione singola + refresh header immediato) ========
     table.querySelectorAll('.selItem').forEach(chk=>{
