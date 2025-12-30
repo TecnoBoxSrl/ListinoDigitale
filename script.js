@@ -20,7 +20,7 @@ if ('serviceWorker' in navigator) {
 }
 
 /* === Supabase (UMD globale) === */
-let supabase = null;
+let supabaseClient = null;
 let supabaseInitWarned = false;
 let supabaseRetryTimer = null;
 let supabaseRetryCount = 0;
@@ -33,7 +33,7 @@ const DEFAULT_QUOTE_EMPTY_MESSAGE = 'Inserisci almeno 1 articolo';
 let quoteFabMessageTimer = null;
 
 function ensureSupabaseClient(){
-  if (supabase) return supabase;
+  if (supabaseClient) return supabaseClient;
 
   if (!window.supabase?.createClient){
     if (!supabaseInitWarned){
@@ -44,14 +44,14 @@ function ensureSupabaseClient(){
   }
 
   try {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     console.log('[Boot] Supabase client OK');
   } catch (error) {
     console.error('[Boot] Errore init Supabase:', error);
-    supabase = null;
+    supabaseClient = null;
   }
 
-  return supabase;
+  return supabaseClient;
 }
 
 function scheduleSupabaseRetry(){
@@ -375,14 +375,14 @@ function isSupabaseUnavailableError(error){
 function forceReconnect(){
   console.log('[Boot] Forzo la riconnessione: pulizia cache e reload');
   try {
-    supabase?.removeAllChannels?.();
+    supabaseClient?.removeAllChannels?.();
   } catch (error) {
     console.warn('[Boot] removeAllChannels warn:', error);
   }
 
   clearSupabaseAuthStorage();
 
-  supabase = null;
+  supabaseClient = null;
   supabaseInitWarned = false;
   authListenerBound = false;
   logoutInFlight = false;
@@ -1021,7 +1021,7 @@ async function fetchProducts(){
     const rows = [];
 
     while (true) {
-      const { data, error } = await supabase
+      const { data, error } = await supabaseClient
         .from('products')
         .select(`
           id, codice, descrizione, categoria, sottocategoria,
@@ -1049,7 +1049,7 @@ async function fetchProducts(){
 
       let imgUrl = '';
       if (mediaImgs[0]) {
-        const { data: signed, error: sErr } = await supabase
+        const { data: signed, error: sErr } = await supabaseClient
           .storage.from(STORAGE_BUCKET)
           .createSignedUrl(mediaImgs[0].path, 600);
         if (sErr) console.warn('[Storage] signedURL warn:', sErr.message);
