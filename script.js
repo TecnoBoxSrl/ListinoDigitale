@@ -20,7 +20,7 @@ if ('serviceWorker' in navigator) {
 }
 
 /* === Supabase (UMD globale) === */
-let supabase = null;
+let supabaseClient = null;
 let supabaseInitWarned = false;
 let supabaseRetryTimer = null;
 let supabaseRetryCount = 0;
@@ -30,10 +30,16 @@ let logoutInFlight = false;
 let pdfLogoCache;
 const DEFAULT_QUOTE_PAYMENT = 'Secondo accordi o da definire';
 const DEFAULT_QUOTE_EMPTY_MESSAGE = 'Inserisci almeno 1 articolo';
+const INFO_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+  <circle cx="12" cy="12" r="10" fill="#111827" />
+  <path d="M11.2 9.25h1.6c.22 0 .4.18.4.4v7.1c0 .22-.18.4-.4.4h-1.6a.4.4 0 0 1-.4-.4v-7.1c0-.22.18-.4.4-.4Z" fill="#ffffff" />
+  <circle cx="12" cy="6.9" r="1.1" fill="#ffffff" />
+</svg>`;
+const PRINT_ICON_SVG = INFO_ICON_SVG;
 let quoteFabMessageTimer = null;
 
 function ensureSupabaseClient(){
-  if (supabase) return supabase;
+  if (supabaseClient) return supabaseClient;
 
   if (!window.supabase?.createClient){
     if (!supabaseInitWarned){
@@ -44,14 +50,14 @@ function ensureSupabaseClient(){
   }
 
   try {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     console.log('[Boot] Supabase client OK');
   } catch (error) {
     console.error('[Boot] Errore init Supabase:', error);
-    supabase = null;
+    supabaseClient = null;
   }
 
-  return supabase;
+  return supabaseClient;
 }
 
 function scheduleSupabaseRetry(){
@@ -96,7 +102,13 @@ async function startAuthFlow(){
     }
 
     const { data:{ session }, error } = await client.auth.getSession();
-    if (error) console.warn('[Auth] getSession warn:', error);
+    if (error) {
+      console.warn('[Auth] getSession warn:', error);
+      if (isSupabaseUnavailableError(error)) {
+        handleSupabaseOffline('Supabase non risponde. Riattiva il progetto e premi “Forza riconnessione”.');
+        return;
+      }
+    }
 
     if (session?.user) {
       console.log('[Auth] sessione presente', session.user.id);
@@ -122,9 +134,13 @@ async function startAuthFlow(){
 
   } catch (error) {
     console.error('[Boot] startAuthFlow error:', error);
-    showAuthGate(true);
-    const m = $('loginMsg');
-    if (m) m.textContent = 'Errore di inizializzazione. Vedi console.';
+    if (isSupabaseUnavailableError(error)) {
+      handleSupabaseOffline('Connessione al backend non riuscita. Verifica Supabase e riprova.');
+    } else {
+      showAuthGate(true);
+      const m = $('loginMsg');
+      if (m) m.textContent = 'Errore di inizializzazione. Vedi console.';
+    }
   }
 }
 
@@ -321,6 +337,78 @@ function clearSupabaseAuthStorage(){
   } catch (storageErr) {
     console.warn('[Auth] clearSupabaseAuthStorage warn:', storageErr);
   }
+}
+
+function showReconnectHelp(message){
+  const btn = $('btnForceReconnect');
+  if (btn) {
+    btn.classList.remove('hidden');
+  }
+
+  const msg = $('loginMsg');
+  if (msg && message) {
+    msg.textContent = message;
+  }
+}
+
+function handleSupabaseOffline(message, options = {}) {
+  const { keepAuthGateVisible = true } = options;
+
+  if (keepAuthGateVisible) {
+    showAuthGate(true);
+  }
+
+  showReconnectHelp(message || 'Supabase non risponde. Riattiva il progetto e riprova.');
+
+  const info = $('resultInfo');
+  if (info && message) {
+    info.textContent = message;
+  }
+}
+
+function isSupabaseUnavailableError(error){
+  const msg = (error?.message || '').toLowerCase();
+  return (
+    msg.includes('failed to fetch') ||
+    msg.includes('network error') ||
+    msg.includes('status code 503') ||
+    msg.includes('unexpected token') ||
+    msg.includes('paused') ||
+    msg.includes('project is paused')
+  );
+}
+
+function forceReconnect(){
+  console.log('[Boot] Forzo la riconnessione: pulizia cache e reload');
+  try {
+    supabaseClient?.removeAllChannels?.();
+  } catch (error) {
+    console.warn('[Boot] removeAllChannels warn:', error);
+  }
+
+  clearSupabaseAuthStorage();
+
+  supabaseClient = null;
+  supabaseInitWarned = false;
+  authListenerBound = false;
+  logoutInFlight = false;
+  supabaseRetryCount = 0;
+  if (supabaseRetryTimer) {
+    clearTimeout(supabaseRetryTimer);
+    supabaseRetryTimer = null;
+  }
+
+  const msg = $('loginMsg');
+  if (msg) msg.textContent = 'Cache pulita, ricarico…';
+
+  setTimeout(() => {
+    try {
+      window.location.reload();
+    } catch (err) {
+      console.warn('[Boot] reload fallito, reindirizzo', err);
+      window.location.href = window.location.href;
+    }
+  }, 120);
 }
 
 
@@ -592,6 +680,7 @@ function bindUI(){
 
   // Login
   $('btnDoLogin')?.addEventListener('click', doLogin);
+  $('btnForceReconnect')?.addEventListener('click', forceReconnect);
   const email = $('loginEmail'), pass = $('loginPassword');
   [email, pass].forEach(el => el?.addEventListener('keydown', e => {
     if(e.key==='Enter'){ e.preventDefault(); doLogin(); }
@@ -683,6 +772,9 @@ async function doLogin(){
     if (error) {
       console.warn('[Auth] signIn error:', error);
       msg && (msg.textContent = 'Accesso non riuscito: ' + error.message);
+      if (isSupabaseUnavailableError(error)) {
+        handleSupabaseOffline('Backend non raggiungibile. Riattiva il progetto Supabase e riprova.');
+      }
       return;
     }
 
@@ -707,7 +799,9 @@ async function doLogin(){
     await afterLogin(userId);
   } catch (e) {
     console.error('[Auth] eccezione login:', e);
-    if (msg) {
+    if (isSupabaseUnavailableError(e)) {
+      handleSupabaseOffline('Connessione al backend non riuscita. Riattiva Supabase e usa “Forza riconnessione”.');
+    } else if (msg) {
       msg.textContent = e?.message ? String(e.message) : 'Errore accesso. Vedi console.';
     }
   }
@@ -933,7 +1027,7 @@ async function fetchProducts(){
     const rows = [];
 
     while (true) {
-      const { data, error } = await supabase
+      const { data, error } = await supabaseClient
         .from('products')
         .select(`
           id, codice, descrizione, categoria, sottocategoria,
@@ -961,7 +1055,7 @@ async function fetchProducts(){
 
       let imgUrl = '';
       if (mediaImgs[0]) {
-        const { data: signed, error: sErr } = await supabase
+        const { data: signed, error: sErr } = await supabaseClient
           .storage.from(STORAGE_BUCKET)
           .createSignedUrl(mediaImgs[0].path, 600);
         if (sErr) console.warn('[Storage] signedURL warn:', sErr.message);
@@ -994,7 +1088,11 @@ async function fetchProducts(){
     console.log('[Data] prodotti:', items.length);
   } catch (e) {
     console.error('[Data] fetchProducts error', e);
-    if (info) info.textContent = 'Errore caricamento listino';
+    if (isSupabaseUnavailableError(e)) {
+      handleSupabaseOffline('Backend Supabase non raggiungibile. Riattiva il progetto e usa “Forza riconnessione”.', { keepAuthGateVisible: false });
+    } else if (info) {
+      info.textContent = 'Errore caricamento listino';
+    }
   }
 }
 
@@ -1390,6 +1488,8 @@ function renderListino(){
               <input type="checkbox" class="selAllCat" data-cat="${encodeURIComponent(cat)}" title="Seleziona tutti">
             </div>
           </th>
+          <th class="border px-2 py-1 text-center col-info">Info</th>
+          <th class="border px-2 py-1 text-center col-stampa">Stampa</th>
           <th class="border px-2 py-1 text-left col-code">Codice</th>
           <th class="border px-2 py-1 text-left col-desc">Descrizione</th>
           <th class="border px-2 py-1 text-left col-dim">Dimensione</th>
@@ -1418,6 +1518,20 @@ function renderListino(){
       tr.innerHTML = `
         <td class="border px-2 py-1 text-center">
           <input type="checkbox" class="selItem" data-code="${codeAttr}" ${checked}>
+        </td>
+        <td class="border px-2 py-1 text-center col-info">
+          <button type="button" class="info-pill" aria-label="Info articolo" title="Info">
+            ${INFO_ICON_SVG}
+            <span class="sr-only">Info</span>
+          </button>
+        </td>
+        <td class="border px-2 py-1 text-center col-stampa">
+          <div class="stampa-cell">
+            <button type="button" class="stampa-btn" aria-label="Stampa articolo" title="Stampa">
+              ${PRINT_ICON_SVG}
+            </button>
+            <input type="checkbox" class="stampa-checkbox" value="${codeAttr}" title="Seleziona articolo per stampa">
+          </div>
         </td>
         <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${codiceSafe}</td>
         <td class="border px-2 py-1 col-desc">
