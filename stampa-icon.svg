@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="Stampa" fill="none">
+  <rect x="6.5" y="9" width="11" height="7.5" rx="1.5" stroke="#0f172a" stroke-width="1.6" />
+  <path d="M8 9V6.5h8V9" stroke="#0f172a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M8.75 14.5h6.5V18H8.75z" fill="#e2e8f0" stroke="#0f172a" stroke-width="1.6" stroke-linejoin="round" />
+  <path d="M7.75 12h2.5" stroke="#0f172a" stroke-width="1.4" stroke-linecap="round" />
+  <path d="M13.75 12h2.5" stroke="#0f172a" stroke-width="1.4" stroke-linecap="round" />
+  <circle cx="9" cy="7.75" r="0.55" fill="#0f172a" />
+</svg>
