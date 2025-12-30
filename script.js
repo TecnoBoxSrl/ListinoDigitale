@@ -1514,7 +1514,10 @@ function renderListino(){
           <input type="checkbox" class="selItem" data-code="${codeAttr}" ${checked}>
         </td>
         <td class="border px-2 py-1 text-center col-info">
-          <button type="button" class="info-pill" aria-label="Info articolo" title="Info">i</button>
+          <button type="button" class="info-pill" aria-label="Info articolo" title="Info">
+            <img src="./info-icon.svg" alt="" aria-hidden="true">
+            <span class="sr-only">Info</span>
+          </button>
         </td>
         <td class="border px-2 py-1 text-center col-stampa">
           <button type="button" class="stampa-btn" aria-label="Stampa articolo" title="Stampa">

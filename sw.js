@@ -1,9 +1,10 @@
-const CACHE_VERSION = 'listino-v7';
+const CACHE_VERSION = 'listino-v8';
 const PRECACHE_URLS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './logo.svg',
+  './info-icon.svg',
   './stampa-icon.svg'
 ];
 
