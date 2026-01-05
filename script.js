@@ -1476,6 +1476,7 @@ function renderListino(){
   for (const cat of cats){
     const catFilterRaw = state.categoryProductFilters?.[cat] ?? '';
     const catFilter = normalize(catFilterRaw);
+    const catKey = encodeURIComponent(cat);
     const items = byCat
       .get(cat)
       .filter(p => !catFilter || normalize(`${p.codice||''} ${(p.descrizione||'')} ${(p.tags||[]).join(' ')}`).includes(catFilter))
@@ -1500,9 +1501,20 @@ function renderListino(){
     filterInput.placeholder = 'Cerca solo in questa categoria';
     filterInput.className = 'flex-1 rounded-xl border px-3 py-1.5 text-sm';
     filterInput.value = catFilterRaw;
+    filterInput.dataset.catFilter = catKey;
     filterInput.addEventListener('input', (e) => {
+      const { selectionStart, selectionEnd } = e.target;
+      const scrollY = window.scrollY;
       state.categoryProductFilters[cat] = e.target.value;
       renderListino();
+      const nextInput = document.querySelector(`input[data-cat-filter="${catKey}"]`);
+      if (nextInput) {
+        nextInput.focus();
+        const start = typeof selectionStart === 'number' ? selectionStart : nextInput.value.length;
+        const end = typeof selectionEnd === 'number' ? selectionEnd : start;
+        nextInput.setSelectionRange(start, end);
+      }
+      window.scrollTo({ top: scrollY });
     });
     filterWrap.appendChild(filterInput);
 
