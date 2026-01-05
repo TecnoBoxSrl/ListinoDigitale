@@ -1320,6 +1320,7 @@ function buildCategories(){
   const hasSearch = !!normalizedSearch;
 
   const handleCategorySelection = (category) => {
+    state.categoryProductFilters = {}; // reset filtri di categoria quando si cambia sezione
     state.selectedCategory = category;
     renderView();        // aggiorna listino
     buildCategories();   // aggiorna evidenziazione
