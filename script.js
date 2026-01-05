@@ -1504,7 +1504,8 @@ function renderListino(){
     filterInput.dataset.catFilter = catKey;
     filterInput.addEventListener('input', (e) => {
       const { selectionStart, selectionEnd } = e.target;
-      const scrollY = window.scrollY;
+      const prevTop = e.target.getBoundingClientRect().top;
+      const prevScrollY = window.scrollY;
       state.categoryProductFilters[cat] = e.target.value;
       renderListino();
       const nextInput = document.querySelector(`input[data-cat-filter="${catKey}"]`);
@@ -1513,8 +1514,10 @@ function renderListino(){
         const start = typeof selectionStart === 'number' ? selectionStart : nextInput.value.length;
         const end = typeof selectionEnd === 'number' ? selectionEnd : start;
         nextInput.setSelectionRange(start, end);
+        const nextTop = nextInput.getBoundingClientRect().top;
+        const delta = nextTop - prevTop;
+        window.scrollTo({ top: prevScrollY + delta });
       }
-      window.scrollTo({ top: scrollY });
     });
     filterWrap.appendChild(filterInput);
 
