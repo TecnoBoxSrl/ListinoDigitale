@@ -470,6 +470,7 @@ const state = {
   selectedCategory: 'Tutte',   // 👈 QUI la nuova proprietà
   categorySearch: '',
   categoryLetter: '',
+  categoryProductFilters: {},
   agent: {
     name: '',
     code: '',
@@ -1472,13 +1473,39 @@ function renderListino(){
   if (!cats.length){ container.innerHTML='<div class="text-slate-500 py-10 text-center">Nessun articolo.</div>'; return; }
 
   for (const cat of cats){
-    const items = byCat.get(cat).sort((a,b)=>(a.codice||'').localeCompare(b.codice||'','it'));
+    const catFilterRaw = state.categoryProductFilters?.[cat] ?? '';
+    const catFilter = normalize(catFilterRaw);
+    const items = byCat
+      .get(cat)
+      .filter(p => !catFilter || normalize(`${p.codice||''} ${(p.descrizione||'')} ${(p.tags||[]).join(' ')}`).includes(catFilter))
+      .sort((a,b)=>(a.codice||'').localeCompare(b.codice||'','it'));
 
     // Titolo categoria
     const h = document.createElement('h2');
     h.className='text-lg font-semibold mt-2 mb-1';
     h.textContent=cat;
     container.appendChild(h);
+
+    const filterWrap = document.createElement('div');
+    filterWrap.className = 'mb-2 flex items-center gap-2';
+
+    const filterLabel = document.createElement('label');
+    filterLabel.className = 'text-xs font-medium text-slate-600 uppercase tracking-wide';
+    filterLabel.textContent = 'Filtra categoria';
+    filterWrap.appendChild(filterLabel);
+
+    const filterInput = document.createElement('input');
+    filterInput.type = 'search';
+    filterInput.placeholder = 'Cerca solo in questa categoria';
+    filterInput.className = 'flex-1 rounded-xl border px-3 py-1.5 text-sm';
+    filterInput.value = catFilterRaw;
+    filterInput.addEventListener('input', (e) => {
+      state.categoryProductFilters[cat] = e.target.value;
+      renderListino();
+    });
+    filterWrap.appendChild(filterInput);
+
+    container.appendChild(filterWrap);
 
     // Tabella
     const table = document.createElement('table');
