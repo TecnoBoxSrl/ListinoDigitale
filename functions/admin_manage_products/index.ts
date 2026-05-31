@@ -110,6 +110,8 @@ function normalizeTags(value: unknown) {
 
 function normalizeProduct(row: Record<string, unknown>) {
   const now = new Date().toISOString();
+  const conai = parseItalianNumber(row.Conai ?? row.conai);
+  const conaiPerCollo = parseItalianNumber(row.ConaiPerCollo ?? row.conai_per_collo ?? row["CONAI/collo"]);
   return {
     codice: String(row.Codice ?? row.codice ?? "").trim(),
     descrizione: String(row.Descrizione ?? row.descrizione ?? "").trim(),
@@ -117,8 +119,8 @@ function normalizeProduct(row: Record<string, unknown>) {
     categoria: String(row.Categoria ?? row.categoria ?? "").trim(),
     sottocategoria: String(row.Sottocategoria ?? row.sottocategoria ?? "").trim(),
     prezzo: parseItalianNumber(row.Prezzo ?? row.prezzo),
-    conai: parseItalianNumber(row.Conai ?? row.conai),
-    conai_per_collo: parseItalianNumber(row.ConaiPerCollo ?? row.conai_per_collo ?? row["CONAI/collo"]),
+    conai,
+    conai_per_collo: conaiPerCollo ?? conai ?? 0,
     unita: String(row.Unita ?? row.unita ?? "").trim() || "pz",
     disponibile: parseBoolean(row.Disponibile ?? row.disponibile, true),
     novita: parseBoolean(row.Novita ?? row.novita, false),
