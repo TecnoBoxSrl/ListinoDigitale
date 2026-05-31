@@ -693,7 +693,7 @@ function bindUI(){
   $('btnSendReset')?.addEventListener('click', sendReset);
 
   // Logout
-  $('btnLogout')?.addEventListener('click', () => { doLogout({ reason: 'manual' }); });
+  $('btnLogout')?.addEventListener('click', () => { doLogout({ reason: 'manual', hard: true, reload: true }); });
 
   // Vista
   $('viewListino')?.addEventListener('click', ()=>{ state.view='listino'; renderView(); });
@@ -836,6 +836,11 @@ async function doLogout(options = {}){
   logoutInFlight = true;
   try {
     log(`[Auth] Logout richiesto (${reason})`);
+    showAuthGate(true);
+if (hard) {
+  clearSupabaseAuthStorage();
+}
+await afterLogout();
     try {
       const client = ensureSupabaseClient();
       if (client?.auth) {
@@ -845,11 +850,7 @@ async function doLogout(options = {}){
       console.warn('[Auth] signOut fallito:', error);
     }
 
-    if (hard) {
-      clearSupabaseAuthStorage();
-    }
-
-    await afterLogout();
+  
 
     if (reload) {
       setTimeout(() => {
