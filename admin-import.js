@@ -89,8 +89,12 @@
     setMessage('');
   }
 
+  function aliasSet(targetField){
+    return [targetField, ...(FIELD_ALIASES[targetField] || [])].map(normalize);
+  }
+
   function findValue(row, targetField){
-    const aliases = [targetField, ...(FIELD_ALIASES[targetField] || [])].map(normalize);
+    const aliases = aliasSet(targetField);
     for (const [key, value] of Object.entries(row || {})) {
       if (aliases.includes(normalize(key))) return value;
     }
@@ -107,19 +111,62 @@
     return normalized;
   }
 
+  function headerScore(row){
+    const cells = (row || []).map(normalize).filter(Boolean);
+    if (!cells.length) return 0;
+    const has = (field) => cells.some(cell => aliasSet(field).includes(cell));
+    let score = 0;
+    if (has('Codice')) score += 5;
+    if (has('Descrizione')) score += 5;
+    if (has('Prezzo')) score += 2;
+    if (has('Unita')) score += 1;
+    if (has('Conai')) score += 1;
+    if (has('Categoria')) score += 1;
+    return score;
+  }
+
+  function makeHeaders(headerRow){
+    const seen = new Map();
+    return (headerRow || []).map((cell, index) => {
+      const base = String(cell || '').trim() || `Colonna ${index + 1}`;
+      const key = normalize(base);
+      const count = seen.get(key) || 0;
+      seen.set(key, count + 1);
+      return count ? `${base} ${count}` : base;
+    });
+  }
+
+  function rowsFromSheet(sheet){
+    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false, blankrows: false });
+    const candidates = matrix.slice(0, 30).map((row, index) => ({ index, score: headerScore(row) }));
+    const best = candidates.sort((a, b) => b.score - a.score)[0];
+
+    if (!best || best.score < 10) {
+      return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+    }
+
+    const headers = makeHeaders(matrix[best.index]);
+    return matrix.slice(best.index + 1)
+      .filter(row => (row || []).some(cell => String(cell || '').trim()))
+      .map((row) => headers.reduce((record, header, index) => {
+        record[header] = row[index] ?? '';
+        return record;
+      }, {}));
+  }
+
   async function readRows(file){
     const extension = file.name.split('.').pop()?.toLowerCase();
     if (extension === 'csv') {
       const text = await file.text();
       const workbook = XLSX.read(text, { type: 'string' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+      return rowsFromSheet(sheet);
     }
 
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+    return rowsFromSheet(sheet);
   }
 
   function renderPreview(rows){
