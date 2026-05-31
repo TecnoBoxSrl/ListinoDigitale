@@ -21,6 +21,10 @@ create policy "price_lists write admin" on public.price_lists for all using ( pu
 create policy "price_list_items write admin" on public.price_list_items for all using ( public.is_admin(auth.uid()) ) with check ( public.is_admin(auth.uid()) );
 create policy "change_log write admin" on public.change_log for all using ( public.is_admin(auth.uid()) ) with check ( public.is_admin(auth.uid()) );
 
+alter table public.price_list_items add column if not exists dimensione text;
+alter table public.price_list_items add column if not exists conai numeric(12,4);
+alter table public.price_list_items add column if not exists conai_per_collo numeric(12,4);
+
 create index if not exists products_codice_idx on public.products (codice);
 create index if not exists products_categoria_idx on public.products (categoria);
 create index if not exists price_lists_published_at_idx on public.price_lists (published_at desc);
