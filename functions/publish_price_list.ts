@@ -69,9 +69,12 @@ function normalizeRow(row: Record<string, unknown>) {
   return {
     codice: String(row.Codice ?? row.codice ?? "").trim(),
     descrizione: String(row.Descrizione ?? row.descrizione ?? "").trim(),
+    dimensione: String(row.Dimensione ?? row.dimensione ?? "").trim(),
     categoria: String(row.Categoria ?? row.categoria ?? "").trim(),
     sottocategoria: String(row.Sottocategoria ?? row.sottocategoria ?? "").trim(),
     prezzo: parseItalianNumber(row.Prezzo ?? row.prezzo),
+    conai: parseItalianNumber(row.Conai ?? row.conai),
+    conai_per_collo: parseItalianNumber(row.ConaiPerCollo ?? row.conai_per_collo ?? row["CONAI/collo"]),
     unita: String(row.Unita ?? row.unita ?? "pz").trim() || "pz",
     disponibile: parseBoolean(row.Disponibile ?? row.disponibile, true),
     novita: parseBoolean(row.Novita ?? row.novita, false),
@@ -149,7 +152,7 @@ Deno.serve(async (req) => {
 
     const { data: current, error: currentError } = await client
       .from("products")
-      .select("codice,prezzo,descrizione,disponibile,novita,tags");
+      .select("codice,prezzo,descrizione,dimensione,conai,conai_per_collo,disponibile,novita,tags");
     if (currentError) throw currentError;
 
     const currentByCode = new Map((current || []).map((product: any) => [product.codice, product]));
@@ -168,6 +171,11 @@ Deno.serve(async (req) => {
       const delta: Record<string, unknown> = {};
       if (Number(existing.prezzo) !== row.prezzo) delta.prezzo = { from: existing.prezzo, to: row.prezzo };
       if (existing.descrizione !== row.descrizione) delta.descrizione = { from: existing.descrizione, to: row.descrizione };
+      if ((existing.dimensione || "") !== row.dimensione) delta.dimensione = { from: existing.dimensione, to: row.dimensione };
+      if (Number(existing.conai || 0) !== Number(row.conai || 0)) delta.conai = { from: existing.conai, to: row.conai };
+      if (Number(existing.conai_per_collo || 0) !== Number(row.conai_per_collo || 0)) {
+        delta.conai_per_collo = { from: existing.conai_per_collo, to: row.conai_per_collo };
+      }
       if (existing.disponibile !== row.disponibile) delta.disponibile = { from: existing.disponibile, to: row.disponibile };
       if (existing.novita !== row.novita) delta.novita = { from: existing.novita, to: row.novita };
       if (JSON.stringify(existing.tags || []) !== JSON.stringify(row.tags || [])) {

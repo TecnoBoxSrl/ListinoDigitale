@@ -314,7 +314,19 @@
       border-radius: .2rem;
       padding: 0 .12em;
     }
+.admin-panel {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+}
 
+.admin-preview {
+  max-height: 16rem;
+  overflow: auto;
+}
+
+.admin-preview table {
+  min-width: 760px;
+}
     @media (max-width: 767.98px) {
       .header-inner {
         flex-direction: column;
@@ -735,7 +747,46 @@
     <!-- Conteggio articoli filtrati -->
     <div id="resultInfo" class="text-sm text-slate-600">Caricamento…</div>
   </div>
+<div id="adminImportPanel" class="admin-panel hidden rounded-xl p-4 mb-4">
+  <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h3 class="text-sm font-semibold text-slate-900">Importa listino</h3>
+        <p class="text-xs text-slate-600">Carica il file Excel o CSV esportato da Ad Hoc.</p>
+      </div>
+      <span id="adminImportRoleBadge" class="hidden w-fit rounded-md bg-slate-200 px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-wide text-slate-700">Admin</span>
+    </div>
 
+    <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+      <div class="space-y-1">
+        <label for="adminImportFile" class="block text-xs font-medium uppercase tracking-wide text-slate-600">File listino</label>
+        <input id="adminImportFile" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+               class="w-full rounded-lg border bg-white px-3 py-2 text-sm">
+      </div>
+      <div class="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+        <label class="inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm text-slate-700">
+          <input id="adminNotifyAgents" type="checkbox" class="h-4 w-4 accent-sky-600">
+          Avvisa agenti
+        </label>
+        <button id="btnPublishPriceList" cl
+      </div>
+    </div>
+
+    <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem]">
+      <div class="space-y-1">
+        <label for="adminVersionLabel" class="block text-xs font-medium uppercase tracking-wide text-slate-600">Versione</label>
+        <input id="adminVersionLabel" type="text" class="w-full rounded-lg border bg-white px-3 py-2 text-sm" placeholder="es. 2026-05-31-v2">
+      </div>
+      <div class="space-y-1">
+        <label class="block text-xs font-medium uppercase tracking-wide text-slate-600">Righe valide</label>
+        <div id="adminImportCount" class="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700">0</div>
+      </div>
+    </div>
+
+    <div id="adminImportPreview" class="admin-preview hidden rounded-lg border bg-white"></div>
+    <p id="adminImportMsg" class="text-xs text-slate-600"></p>
+  </div>
+</div>
   <div id="categoryPanelMobileAnchor" class="lg:hidden mt-4 space-y-3"></div>
 
   <div id="listinoContainer" class="space-y-8 overflow-x-auto"></div>
@@ -878,8 +929,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- forza aggiornamento -->
-  <script src="./script.js?v=tablet-drawer-10" defer></script>
-
+ <script src="./script.js?v=admin-import-1" defer></script>
+<script src="./admin-import.js?v=1" defer></script>
 <div id="floatingActions"
      class="fixed z-[9999]
             bottom-[max(1rem,env(safe-area-inset-bottom))]
