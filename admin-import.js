@@ -4,19 +4,19 @@
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
 
   const FIELD_ALIASES = {
-    Codice: ['codice', 'cod. articolo', 'cod articolo', 'cod_articolo', 'articolo', 'sku', 'code'],
+    Codice: ['codice', 'codice articolo', 'cod. articolo', 'cod articolo', 'cod_articolo', 'articolo', 'sku', 'code'],
     Descrizione: ['descrizione', 'descrizione articolo', 'desc', 'description'],
-    Categoria: ['categoria', 'cat', 'famiglia', 'gruppo merceologico', 'gruppo'],
+    Categoria: ['categoria', 'cat', 'famiglia', 'gruppo merceologico', 'gruppo', 'descrizione 1', 'descrizione_1', 'descrizione gruppo', 'descrizione gruppo merceologico'],
     Sottocategoria: ['sottocategoria', 'sotto categoria', 'subcategoria', 'linea'],
-    Prezzo: ['prezzo', 'prezzo listino', 'prezzo vendita', 'listino', 'price'],
-    Unita: ['unita', 'um', 'u.m.', 'unita misura'],
+    Prezzo: ['prezzo', 'prezzo articolo', 'prezzo listino', 'prezzo vendita', 'listino', 'price'],
+    Unita: ['unita', 'unità', '1 unita di misura', '1^ unita di misura', '1^ unità di misura', 'unita misura', 'unità di misura', 'unita di misura', 'um', 'u.m.'],
     Disponibile: ['disponibile', 'attivo', 'abilitato', 'visibile'],
     Novita: ['novita', 'new', 'nuovo'],
     Pack: ['pack', 'imballo', 'conf', 'confezione'],
     Pallet: ['pallet', 'bancale'],
     Tag: ['tag', 'tags', 'etichette'],
     Dimensione: ['dimensione', 'dimensioni', 'misure', 'formato'],
-    Conai: ['conai', 'conai/collo', 'conai collo'],
+    Conai: ['conai', 'conai articolo', 'conai/collo', 'conai collo'],
     ConaiPerCollo: ['conai per collo', 'conai_per_collo', 'conai/collo'],
   };
 
@@ -26,6 +26,7 @@
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
     .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
     .toLowerCase()
     .trim();
   const escapeHtml = (value) => String(value ?? '')
@@ -129,7 +130,7 @@
       preview.classList.add('hidden');
       return;
     }
-    const columns = ['Codice', 'Descrizione', 'Categoria', 'Prezzo', 'Unita', 'Disponibile', 'Novita'];
+    const columns = ['Codice', 'Descrizione', 'Categoria', 'Prezzo', 'Unita', 'Conai'];
     preview.innerHTML = `
       <table class="w-full text-xs">
         <thead class="bg-slate-100 text-slate-700">
@@ -166,7 +167,7 @@
       setMessage(
         validRows.length
           ? `${validRows.length} righe pronte da pubblicare.`
-          : 'Nessuna riga valida trovata. Verifica che il file abbia almeno Codice e Descrizione.',
+          : 'Nessuna riga valida trovata. Verifica che il file abbia almeno Codice articolo e Descrizione.',
         validRows.length ? 'success' : 'error'
       );
     } catch (error) {
