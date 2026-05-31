@@ -38,6 +38,23 @@ function requireEnv(name: string) {
   return value;
 }
 
+function describeError(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object") {
+    const obj = error as Record<string, unknown>;
+    const parts = [obj.message, obj.details, obj.hint, obj.code]
+      .map((part) => String(part || "").trim())
+      .filter(Boolean);
+    if (parts.length) return parts.join(" - ");
+    try {
+      return JSON.stringify(error);
+    } catch (_) {
+      return "Errore interno non leggibile";
+    }
+  }
+  return String(error || "Errore interno");
+}
+
 function getBearerToken(req: Request) {
   const auth = req.headers.get("authorization") || "";
   const match = auth.match(/^Bearer\s+(.+)$/i);
@@ -398,7 +415,8 @@ Deno.serve(async (req) => {
 
     return jsonResponse({ ok: false, error: "Azione non valida" }, 400);
   } catch (error) {
-    console.error("[admin_manage_products]", error);
-    return jsonResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500);
+    const message = describeError(error);
+    console.error("[admin_manage_products]", message, error);
+    return jsonResponse({ ok: false, error: message }, 500);
   }
 });
