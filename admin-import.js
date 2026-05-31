@@ -136,22 +136,49 @@
     });
   }
 
+  function looksLikeDataRow(row){
+    const code = String(row?.[0] ?? '').trim();
+    const desc = String(row?.[1] ?? '').trim();
+    const nCode = normalize(code);
+    const nDesc = normalize(desc);
+    if (!code || !desc) return false;
+    if (nCode.includes('codice') || nDesc === 'descrizione') return false;
+    if (nCode.includes('codice articolo del prodotto')) return false;
+    return true;
+  }
+
+  function positionalAdhocRows(matrix){
+    return (matrix || [])
+      .filter(looksLikeDataRow)
+      .map((row) => ({
+        Codice: row[0] ?? '',
+        Descrizione: row[1] ?? '',
+        Unita: row[2] ?? '',
+        Prezzo: row[3] ?? '',
+        Conai: row[4] ?? '',
+        Categoria: row[5] ?? '',
+      }));
+  }
+
   function rowsFromSheet(sheet){
     const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false, blankrows: false });
     const candidates = matrix.slice(0, 30).map((row, index) => ({ index, score: headerScore(row) }));
     const best = candidates.sort((a, b) => b.score - a.score)[0];
 
     if (!best || best.score < 10) {
-      return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+      return positionalAdhocRows(matrix);
     }
 
     const headers = makeHeaders(matrix[best.index]);
-    return matrix.slice(best.index + 1)
+    const namedRows = matrix.slice(best.index + 1)
       .filter(row => (row || []).some(cell => String(cell || '').trim()))
       .map((row) => headers.reduce((record, header, index) => {
         record[header] = row[index] ?? '';
         return record;
       }, {}));
+
+    const validNamedRows = namedRows.map(normalizeRow).filter(row => row.Codice && row.Descrizione);
+    return validNamedRows.length ? namedRows : positionalAdhocRows(matrix.slice(best.index + 1));
   }
 
   async function readRows(file){
