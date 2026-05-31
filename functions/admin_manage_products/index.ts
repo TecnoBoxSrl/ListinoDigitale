@@ -3,8 +3,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "authorization, content-type",
+  "access-control-allow-headers": "authorization, apikey, content-type, x-client-info",
   "access-control-allow-methods": "POST, OPTIONS",
+  "access-control-max-age": "86400",
 };
 
 const PRODUCT_FIELDS = [
@@ -345,12 +346,34 @@ async function history(client: ReturnType<typeof createClient>) {
 
   const { data: batches, error: batchesError } = await client
     .from("admin_change_batches")
-    .select("id,action_type,label,item_count,created_count,updated_count,unchanged_count,created_at,admin_change_items(old_codice,new_codice,change_type,delta)")
+    .select("id,action_type,label,item_count,created_count,updated_count,unchanged_count,created_at")
     .order("created_at", { ascending: false })
     .limit(20);
   if (batchesError) throw batchesError;
 
-  return jsonResponse({ ok: true, full_imports: fullImports, changes: batches || [] });
+  const batchIds = (batches || []).map((batch: any) => batch.id);
+  const { data: batchItems, error: batchItemsError } = batchIds.length
+    ? await client
+        .from("admin_change_items")
+        .select("batch_id,old_codice,new_codice,change_type,delta")
+        .in("batch_id", batchIds)
+        .order("created_at", { ascending: true })
+    : { data: [], error: null };
+  if (batchItemsError) throw batchItemsError;
+
+  const byBatch = new Map<string, any[]>();
+  for (const item of batchItems || []) {
+    const arr = byBatch.get(item.batch_id) || [];
+    arr.push(item);
+    byBatch.set(item.batch_id, arr);
+  }
+
+  const changes = (batches || []).map((batch: any) => ({
+    ...batch,
+    admin_change_items: byBatch.get(batch.id) || [],
+  }));
+
+  return jsonResponse({ ok: true, full_imports: fullImports, changes });
 }
 
 Deno.serve(async (req) => {
