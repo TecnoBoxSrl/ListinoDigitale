@@ -54,6 +54,72 @@
     );
   }
 
+  function setPublishBusy(isBusy){
+    const btn = $('btnPublishPriceList');
+    if (!btn) return;
+    btn.disabled = isBusy || state.rows.length === 0;
+    btn.textContent = isBusy ? 'Pubblicazione...' : 'Pubblica';
+  }
+
+  function formatImportDate(value){
+    try {
+      return new Intl.DateTimeFormat('it-IT', {
+        dateStyle: 'short',
+        timeStyle: 'short',
+      }).format(new Date(value));
+    } catch (_) {
+      return value || '-';
+    }
+  }
+
+  function ensureLastImportBox(){
+    let box = $('adminLastImport');
+    if (box) return box;
+    const msg = $('adminImportMsg');
+    if (!msg?.parentElement) return null;
+    box = document.createElement('div');
+    box.id = 'adminLastImport';
+    box.className = 'hidden rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700';
+    msg.parentElement.insertBefore(box, msg);
+    return box;
+  }
+
+  function renderLastImport(record){
+    const box = ensureLastImportBox();
+    if (!box) return;
+    if (!record) {
+      box.classList.add('hidden');
+      box.innerHTML = '';
+      return;
+    }
+    box.classList.remove('hidden');
+    box.innerHTML = `
+      <div class="font-semibold text-slate-900">Ultimo import eseguito</div>
+      <div class="mt-1 grid gap-1 sm:grid-cols-2">
+        <div><span class="text-slate-500">Data:</span> ${escapeHtml(formatImportDate(record.at))}</div>
+        <div><span class="text-slate-500">Versione:</span> ${escapeHtml(record.version || '-')}</div>
+        <div><span class="text-slate-500">Righe:</span> ${escapeHtml(record.rows ?? '-')}</div>
+        <div><span class="text-slate-500">Esito:</span> nuovi ${escapeHtml(record.created ?? 0)}, aggiornati ${escapeHtml(record.updated ?? 0)}, ritirati ${escapeHtml(record.removed ?? 0)}</div>
+      </div>
+    `;
+  }
+
+  function saveLastImport(record){
+    try {
+      localStorage.setItem('tecnobox:lastPriceListImport', JSON.stringify(record));
+    } catch (_) {}
+    renderLastImport(record);
+  }
+
+  function loadLastImport(){
+    try {
+      const raw = localStorage.getItem('tecnobox:lastPriceListImport');
+      renderLastImport(raw ? JSON.parse(raw) : null);
+    } catch (_) {
+      renderLastImport(null);
+    }
+  }
+
   function setPanelVisible(visible){
     $('adminImportPanel')?.classList.toggle('hidden', !visible);
     $('adminImportRoleBadge')?.classList.toggle('hidden', !visible);
@@ -79,8 +145,7 @@
     state.rows = [];
     const count = $('adminImportCount');
     if (count) count.textContent = '0';
-    const btn = $('btnPublishPriceList');
-    if (btn) btn.disabled = true;
+    setPublishBusy(false);
     const preview = $('adminImportPreview');
     if (preview) {
       preview.innerHTML = '';
@@ -235,7 +300,7 @@
       const validRows = rawRows.map(normalizeRow).filter(row => row.Codice && row.Descrizione);
       state.rows = validRows;
       $('adminImportCount').textContent = String(validRows.length);
-      $('btnPublishPriceList').disabled = validRows.length === 0;
+      setPublishBusy(false);
       renderPreview(validRows);
 
       setMessage(
@@ -252,7 +317,6 @@
   }
 
   async function publishRows(){
-    const btn = $('btnPublishPriceList');
     try {
       if (!state.rows.length) {
         setMessage('Carica prima un file listino valido.', 'error');
@@ -275,8 +339,8 @@
       };
       if (versionLabel) headers['x-version-label'] = versionLabel;
 
-      btn.disabled = true;
-      setMessage('Pubblicazione listino in corso...');
+      setPublishBusy(true);
+      setMessage('Pubblicazione listino in corso... attendi, non chiudere la pagina.');
       const { data, error } = await client.functions.invoke('publish_price_list', {
         body: { rows: state.rows },
         headers,
@@ -285,13 +349,21 @@
       if (error) throw error;
       if (!data?.ok) throw new Error(data?.error || 'Pubblicazione non riuscita');
 
+      saveLastImport({
+        at: new Date().toISOString(),
+        version: data.version,
+        rows: state.rows.length,
+        created: data.created,
+        updated: data.updated,
+        removed: data.removed,
+      });
       setMessage(`Listino pubblicato: ${data.version}. Nuovi ${data.created}, aggiornati ${data.updated}, ritirati ${data.removed}.`, 'success');
       setTimeout(() => window.location.reload(), 1200);
     } catch (error) {
       console.error('[AdminImport] publish error', error);
       setMessage(error?.message || 'Errore durante la pubblicazione del listino.', 'error');
     } finally {
-      if (btn) btn.disabled = state.rows.length === 0;
+      setPublishBusy(false);
     }
   }
 
@@ -301,6 +373,7 @@
     const today = new Date().toISOString().slice(0, 10);
     if ($('adminVersionLabel') && !$('adminVersionLabel').value) $('adminVersionLabel').value = today;
     setPanelVisible(false);
+    loadLastImport();
 
     const client = ensureClient();
     client?.auth?.onAuthStateChange?.(() => { void refreshRole(); });
