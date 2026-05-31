@@ -9,7 +9,7 @@
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+    .replace(/\"/g, '&quot;')
     .replace(/'/g, '&#39;');
   const normalize = (value) => String(value || '')
     .normalize('NFD')
@@ -52,12 +52,28 @@
     if (sessionError) throw sessionError;
     if (!session?.access_token) throw new Error('Sessione scaduta. Esci e rientra.');
 
-    const { data, error } = await client.functions.invoke('admin_manage_products', {
-      body,
-      headers: { Authorization: `Bearer ${session.access_token}` },
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_manage_products`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        authorization: `Bearer ${session.access_token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
     });
-    if (error) throw error;
-    if (!data?.ok) throw new Error(data?.error || 'Operazione non riuscita');
+
+    const rawText = await response.text();
+    let data = null;
+    try {
+      data = rawText ? JSON.parse(rawText) : null;
+    } catch (_) {
+      data = null;
+    }
+
+    if (!response.ok || !data?.ok) {
+      throw new Error(data?.error || rawText || `Errore funzione ${response.status}`);
+    }
+
     return data;
   }
 
@@ -117,7 +133,7 @@
               <input id="adminProductNew" type="checkbox" class="h-4 w-4 accent-sky-600"> Novita
             </label>
             <div class="md:col-span-2 flex flex-wrap gap-2">
-              <button type="submit" class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white">Salva articolo</button>
+              <button id="btnAdminSaveProduct" type="submit" class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300">Salva articolo</button>
               <button id="btnAdminClearProduct" type="button" class="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700">Pulisci</button>
             </div>
           </form>
@@ -251,7 +267,12 @@
 
   async function saveProduct(event){
     event.preventDefault();
+    const btn = $('btnAdminSaveProduct');
     try {
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Salvataggio...';
+      }
       setMessage('Salvataggio articolo...');
       const data = await invokeAdmin({
         action: 'save_product',
@@ -263,6 +284,11 @@
       setTimeout(() => window.location.reload(), 900);
     } catch (error) {
       setMessage(error?.message || 'Errore salvataggio articolo.', 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Salva articolo';
+      }
     }
   }
 
