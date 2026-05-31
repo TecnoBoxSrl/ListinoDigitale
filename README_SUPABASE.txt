@@ -4,8 +4,17 @@ Contiene:
 - script.js (fetch sicuro da Supabase, solo lettura per agenti)
 - sw.js (PWA senza cache per Supabase)
 - supabase_schema.sql (schema + RLS)
-- functions/publish_price_list.ts, functions/notify_agents.ts (scheletri)
+- functions/publish_price_list.ts, functions/notify_agents.ts
 Passi: crea progetto, lancia SQL, imposta bucket 'media' (privato), crea utenti/ruoli, deploy funzioni, inserisci URL/anon key in script.js, pubblica su GitHub Pages.
+
+Sicurezza funzioni
+------------------
+- publish_price_list accetta solo richieste POST di utenti autenticati con profilo role='admin'.
+- notify_agents accetta richieste admin oppure chiamate interne firmate con INTERNAL_FUNCTION_SECRET.
+- Configura lo stesso valore segreto su entrambe le funzioni:
+  supabase secrets set INTERNAL_FUNCTION_SECRET="valore-lungo-casuale"
+- Per evitare doppie pubblicazioni accidentali, publish_price_list usa x-version-label se presente; altrimenti usa la data corrente. Se la versione esiste gia, risponde 409 invece di creare un duplicato.
+- Per pubblicare piu listini nello stesso giorno, inviare un header x-version-label diverso, per esempio 2026-05-31-v2.
 
 FAQ rapidissima
 ----------------
