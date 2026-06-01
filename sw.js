@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'listino-v21';
+const CACHE_VERSION = 'listino-v22';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -31,15 +31,10 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests so we don't attempt to cache POST/PUT bodies
+  // Skip non-GET requests so we don't attempt to cache POST/PUT bodies.
   if (request.method !== 'GET') return;
 
   if (url.hostname.endsWith('supabase.co')) return;
-
-  if (url.pathname.endsWith('/admin-manage.js') && !url.searchParams.has('source')) {
-    event.respondWith(adminManageWithoutReload(url));
-    return;
-  }
 
   if (request.mode === 'navigate') {
     event.respondWith(networkFirst(request, './index.html'));
@@ -53,27 +48,6 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(cacheFirst(request));
 });
-
-async function adminManageWithoutReload(url) {
-  const sourceUrl = new URL(url.href);
-  sourceUrl.searchParams.set('source', '1');
-  const response = await fetch(sourceUrl.toString(), { cache: 'no-store' });
-  let code = await response.text();
-  code = code.replace(
-    "      await loadHistory();\n      setTimeout(() => window.location.reload(), 900);",
-    "      if (data.product) fillForm(data.product);\n      if (data.product?.codice) $('adminOriginalCode').value = data.product.codice;\n      await loadHistory();"
-  );
-  code = code.replace(
-    "      await loadHistory();\n      setTimeout(() => window.location.reload(), 1200);",
-    "      await loadHistory();"
-  );
-  return new Response(code, {
-    headers: {
-      'content-type': 'application/javascript; charset=utf-8',
-      'cache-control': 'no-store'
-    }
-  });
-}
 
 async function cacheFirst(request) {
   const cache = await caches.open(CACHE_VERSION);
