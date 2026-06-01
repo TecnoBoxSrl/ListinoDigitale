@@ -256,6 +256,12 @@
       background: transparent;
     }
 
+    .stampa-btn:disabled,
+    .stampa-checkbox:disabled {
+      cursor: not-allowed;
+      opacity: 0.35;
+    }
+
     .stampa-btn svg {
       display: block;
       width: 100%;
@@ -931,7 +937,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- forza aggiornamento -->
-<script src="./script.js?v=print-pricing-1" defer></script>
+<script src="./script.js?v=print-option-availability-1" defer></script>
 <script src="./admin-import.js?v=adhoc-positions-2" defer></script>
   <script src="./admin-manage.js?v=print-pricing-1" defer></script>
 <div id="floatingActions"

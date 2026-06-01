@@ -1576,6 +1576,11 @@ function renderListino(){
       const descrizioneSafe = escapeHtml(p.descrizione);
       const dimensioneSafe = escapeHtml(p.dimensione);
       const unitaSafe = escapeHtml(p.unita);
+      const printAvailable = Number(p.prezzoStampa || 0) > 0 && Number(p.quantitaMinimaStampa || 0) > 0;
+      const printTitle = printAvailable
+        ? `Stampa disponibile: ${fmtEUR(p.prezzoStampa)} - minimo ${Number(p.quantitaMinimaStampa)} pz`
+        : 'Stampa non disponibile per questo articolo';
+      const printDisabled = printAvailable ? '' : 'disabled aria-disabled="true"';
       const novitaBadge = p.novita
         ? ' <span class="ml-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-[2px]">Novità</span>'
         : '';
@@ -1593,10 +1598,10 @@ function renderListino(){
         </td>
         <td class="border px-2 py-1 text-center col-stampa">
           <div class="stampa-cell">
-            <button type="button" class="stampa-btn" aria-label="Stampa articolo" title="Stampa">
+            <button type="button" class="stampa-btn" aria-label="${printTitle}" title="${printTitle}" ${printDisabled}>
               ${PRINT_ICON_SVG}
             </button>
-            <input type="checkbox" class="stampa-checkbox" value="${codeAttr}" title="Seleziona articolo per stampa">
+            <input type="checkbox" class="stampa-checkbox" value="${codeAttr}" title="${printTitle}" ${printDisabled}>
           </div>
         </td>
         <td class="border px-2 py-1 whitespace-nowrap font-mono col-code">${codiceSafe}</td>
@@ -1667,6 +1672,7 @@ function renderListino(){
       const selected = state.selected.get(code);
       chk.checked = !!selected?.stampa;
       chk.addEventListener('change', (e) => {
+        if (e.currentTarget.disabled) return;
         const prod = state.items.find(x => String(x.codice || '') === code);
         if (!prod) return;
         if (e.currentTarget.checked) {
@@ -1787,8 +1793,9 @@ function renderCards(){
 
 /* ============ PREVENTIVI (lato destro) ============ */
 function addToQuote(p, options = {}){
-  const usePrint = options.stampa === true;
   const minPrintQty = Number(p.quantitaMinimaStampa || 0);
+  const hasPrintOption = Number(p.prezzoStampa || 0) > 0 && minPrintQty > 0;
+  const usePrint = options.stampa === true && hasPrintOption;
   const basePrice = usePrint ? Number(p.prezzoStampa || 0) : Number(p.prezzo || 0);
   const item = state.selected.get(p.codice) || {
     codice: p.codice,
