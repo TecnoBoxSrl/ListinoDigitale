@@ -1824,10 +1824,11 @@ function removeFromQuote(code){
   scheduleQuotePanelRender();
 }
 
-function lineCalc(it){
+function lineCalc(it, options = {}){
+  const includeConai = options.includeConai !== false;
   const sconto = Math.min(100, Math.max(0, Number(it.sconto || 0)));
   const prezzoScont = Number(it.prezzo || 0) * (1 - sconto / 100);
-  const totale = prezzoScont * Number(it.qty || 0) + (Number(it.conai || 0) * Number(it.qty || 0));
+  const totale = prezzoScont * Number(it.qty || 0) + (includeConai ? Number(it.conai || 0) * Number(it.qty || 0) : 0);
   return { prezzoScont, totale };
 }
 
@@ -1842,6 +1843,11 @@ function computeVatBreakdown(baseAmount, rate = 0.22){
   const vat = roundCurrency(imponibile * rate);
   const gross = roundCurrency(imponibile + vat);
   return { vat, gross };
+}
+
+function shouldShowConaiInExport(){
+  const input = document.getElementById('quoteShowConaiExport');
+  return input ? input.checked !== false : true;
 }
 
 function quoteDescription(item){
@@ -2093,6 +2099,7 @@ function validateQuoteMeta() {
 
 function exportXlsx(){
   if (!validateQuoteMeta()) return;
+  const includeConai = shouldShowConaiInExport();
 
   const rows = [];
 
@@ -2105,25 +2112,34 @@ function exportXlsx(){
   rows.push([]); // riga vuota
 
   // tabella
-  rows.push(['Codice','Descrizione','Prezzo','CONAI','Q.tà','Sconto %','Prezzo scont.','Totale riga']);
+  rows.push(includeConai
+    ? ['Codice','Descrizione','Prezzo','CONAI','Q.ta','Sconto %','Prezzo scont.','Totale riga']
+    : ['Codice','Descrizione','Prezzo','Q.ta','Sconto %','Prezzo scont.','Totale riga']
+  );
 
   let total=0;
   for (const it of state.selected.values()){
-    const { prezzoScont, totale } = lineCalc(it);
+    const { prezzoScont, totale } = lineCalc(it, { includeConai });
     total += totale;
-    rows.push([
+    const row = [
       it.codice, quoteDescription(it),
-      Number(it.prezzo||0), Number(it.conai||0),
+      Number(it.prezzo||0),
+    ];
+    if (includeConai) row.push(Number(it.conai||0));
+    row.push(
       Number(it.qty||0), Number(it.sconto||0),
       Number(prezzoScont||0), Number(totale||0),
-    ]);
+    );
+    rows.push(row);
   }
   rows.push([]);
   const imponibile = roundCurrency(total);
   const { vat, gross } = computeVatBreakdown(imponibile);
-  rows.push(['','','','','','','Totale imponibile', Number(imponibile||0)]);
-  rows.push(['','','','','','','Totale IVA 22%', Number(vat||0)]);
-  rows.push(['','','','','','','Totale importo', Number(gross||0)]);
+  const summaryPrefix = includeConai ? ['', '', '', '', '', ''] : ['', '', '', '', ''];
+  rows.push([...summaryPrefix, 'Totale imponibile', Number(imponibile||0)]);
+  if (!includeConai) rows.push([...summaryPrefix, 'Totale conai da calcolare', '']);
+  rows.push([...summaryPrefix, 'Totale IVA 22%', Number(vat||0)]);
+  rows.push([...summaryPrefix, 'Totale importo', Number(gross||0)]);
 
   const safeName = (state.quoteMeta.name || 'cliente').replace(/[^\w\- ]+/g,'_').trim().replace(/\s+/g,'_');
   const quoteCode = getQuoteCode();
@@ -2209,6 +2225,7 @@ async function exportPdf(){
   if (!validateQuoteMeta()) return;
   if (!window.jspdf) { alert('Libreria PDF non caricata.'); return; }
   const { jsPDF } = window.jspdf;
+  const includeConai = shouldShowConaiInExport();
 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -2247,24 +2264,30 @@ async function exportPdf(){
     y += 20;
   }
 
-  const head = [['Codice','Descrizione','Prezzo','CONAI','Q.tà','Sconto %','Prezzo scont.','Totale riga']];
+  const head = [includeConai
+    ? ['Codice','Descrizione','Prezzo','CONAI','Q.ta','Sconto %','Prezzo scont.','Totale riga']
+    : ['Codice','Descrizione','Prezzo','Q.ta','Sconto %','Prezzo scont.','Totale riga']
+  ];
   const body = [];
   const rawDescriptions = [];
   let total = 0;
   for (const it of state.selected.values()){
-    const { prezzoScont, totale } = lineCalc(it);
+    const { prezzoScont, totale } = lineCalc(it, { includeConai });
     total += totale;
     rawDescriptions.push(quoteDescription(it));
-    body.push([
+    const row = [
       it.codice,
       quoteDescription(it),
       fmtEUR(it.prezzo),
-      fmtEUR(it.conai||0),
+    ];
+    if (includeConai) row.push(fmtEUR(it.conai||0));
+    row.push(
       String(it.qty),
       String(it.sconto),
       fmtEUR(prezzoScont),
       fmtEUR(totale),
-    ]);
+    );
+    body.push(row);
   }
 
   const baseStyles = {
@@ -2285,7 +2308,9 @@ async function exportPdf(){
   const columnCount = head[0].length;
   const maxContentWidth = Math.max(0, tableWidth - (columnCount * paddingX));
 
-  const baseMinWidths = [40, 104, 48, 46, 32, 42, 56, 62];
+  const baseMinWidths = includeConai
+    ? [40, 104, 48, 46, 32, 42, 56, 62]
+    : [40, 124, 48, 32, 42, 56, 62];
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   const headerWidths = head[0].map((text) => {
@@ -2313,7 +2338,7 @@ async function exportPdf(){
 
   let totalContentWidth = columnWidths.reduce((sum, width) => sum + width, 0);
   if (totalContentWidth > maxContentWidth) {
-    const shrinkOrder = [1, 0, 2, 3, 6, 7, 5, 4];
+    const shrinkOrder = includeConai ? [1, 0, 2, 3, 6, 7, 5, 4] : [1, 0, 2, 5, 6, 4, 3];
     let overflow = totalContentWidth - maxContentWidth;
     for (const index of shrinkOrder) {
       if (overflow <= 0) break;
@@ -2335,16 +2360,18 @@ async function exportPdf(){
 
   const naturalTableWidth = Math.min(tableWidth, totalContentWidth + (columnCount * paddingX));
 
-  const columnStyles = {
-    0: { halign: 'left', cellWidth: columnWidths[0], minCellWidth: columnWidths[0], maxCellWidth: columnWidths[0], overflow: 'visible' },
-    1: { halign: 'left', cellWidth: columnWidths[1], minCellWidth: columnWidths[1], maxCellWidth: columnWidths[1], overflow: 'linebreak' },
-    2: { halign: 'right', cellWidth: columnWidths[2], minCellWidth: columnWidths[2], maxCellWidth: columnWidths[2], overflow: 'visible' },
-    3: { halign: 'right', cellWidth: columnWidths[3], minCellWidth: columnWidths[3], maxCellWidth: columnWidths[3], overflow: 'visible' },
-    4: { halign: 'center', cellWidth: columnWidths[4], minCellWidth: columnWidths[4], maxCellWidth: columnWidths[4], overflow: 'visible' },
-    5: { halign: 'center', cellWidth: columnWidths[5], minCellWidth: columnWidths[5], maxCellWidth: columnWidths[5], overflow: 'visible' },
-    6: { halign: 'right', cellWidth: columnWidths[6], minCellWidth: columnWidths[6], maxCellWidth: columnWidths[6], overflow: 'visible' },
-    7: { halign: 'right', cellWidth: columnWidths[7], minCellWidth: columnWidths[7], maxCellWidth: columnWidths[7], overflow: 'visible' },
-  };
+  const columnStyles = {};
+  columnWidths.forEach((width, index) => {
+    const isDescription = index === 1;
+    const isQtyOrDiscount = includeConai ? [4, 5].includes(index) : [3, 4].includes(index);
+    columnStyles[index] = {
+      halign: isDescription || index === 0 ? 'left' : isQtyOrDiscount ? 'center' : 'right',
+      cellWidth: width,
+      minCellWidth: width,
+      maxCellWidth: width,
+      overflow: isDescription ? 'linebreak' : 'visible',
+    };
+  });
 
   if (doc.autoTable){
     doc.autoTable({
@@ -2436,7 +2463,7 @@ async function exportPdf(){
     const imponibileTot = roundCurrency(total);
     const { vat, gross } = computeVatBreakdown(imponibileTot);
     let totalsY = endY + 20;
-    const requiredBlockHeight = (16 * 3) + 32; // tre righe totali + respiro + footer
+    const requiredBlockHeight = (16 * (includeConai ? 3 : 4)) + 32; // righe totali + respiro + footer
     if ((pageHeight - marginY - totalsY) < requiredBlockHeight) {
       doc.addPage();
       let headerY = marginY;
@@ -2464,6 +2491,10 @@ async function exportPdf(){
     doc.setTextColor(15, 23, 42);
     doc.text(`Totale imponibile: ${fmtEUR(imponibileTot)}`, totalsX, totalsY, { align: 'right' });
     totalsY += 16;
+    if (!includeConai) {
+      doc.text('Totale conai da calcolare', totalsX, totalsY, { align: 'right' });
+      totalsY += 16;
+    }
     doc.text(`Totale IVA 22%: ${fmtEUR(vat)}`, totalsX, totalsY, { align: 'right' });
     totalsY += 16;
     doc.setTextColor(220, 38, 38);
@@ -2491,19 +2522,20 @@ async function exportPdf(){
 
 function printQuote(){
   if (!validateQuoteMeta()) return;
+  const includeConai = shouldShowConaiInExport();
 
   // HTML semplice con stile simile
   let rowsHtml = '';
   let total=0;
   for (const it of state.selected.values()){
-    const { prezzoScont, totale } = lineCalc(it);
+    const { prezzoScont, totale } = lineCalc(it, { includeConai });
     total += totale;
     rowsHtml += `
       <tr>
         <td>${it.codice}</td>
         <td>${escapeHtml(quoteDescription(it))}</td>
         <td class="tr">${fmtEUR(it.prezzo)}</td>
-        <td class="tr">${fmtEUR(it.conai||0)}</td>
+        ${includeConai ? `<td class="tr">${fmtEUR(it.conai||0)}</td>` : ''}
         <td class="tr">${it.qty}</td>
         <td class="tr">${it.sconto}</td>
         <td class="tr">${fmtEUR(prezzoScont)}</td>
@@ -2552,7 +2584,7 @@ function printQuote(){
         <th>Codice</th>
         <th>Descrizione</th>
         <th class="tr">Prezzo</th>
-        <th class="tr">CONAI/collo</th>
+        ${includeConai ? '<th class="tr">CONAI/collo</th>' : ''}
         <th class="tr">Q.tà</th>
         <th class="tr">Sconto %</th>
         <th class="tr">Prezzo scont.</th>
@@ -2564,15 +2596,20 @@ function printQuote(){
     </tbody>
     <tfoot class="totals">
       <tr>
-        <td colspan="7" class="tr">Totale imponibile</td>
+        <td colspan="${includeConai ? 7 : 6}" class="tr">Totale imponibile</td>
         <td class="tr">${fmtEUR(imponibile)}</td>
       </tr>
+      ${!includeConai ? `
       <tr>
-        <td colspan="7" class="tr">Totale IVA 22%</td>
+        <td colspan="6" class="tr">Totale conai da calcolare</td>
+        <td class="tr"></td>
+      </tr>` : ''}
+      <tr>
+        <td colspan="${includeConai ? 7 : 6}" class="tr">Totale IVA 22%</td>
         <td class="tr">${fmtEUR(vat)}</td>
       </tr>
       <tr>
-        <td colspan="7" class="tr">Totale importo</td>
+        <td colspan="${includeConai ? 7 : 6}" class="tr">Totale importo</td>
         <td class="tr amount">${fmtEUR(gross)}</td>
       </tr>
     </tfoot>
