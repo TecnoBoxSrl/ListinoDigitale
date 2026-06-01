@@ -155,6 +155,12 @@ const err = (...a) => console.error('[Listino]', ...a);
 const normalize = (s) => (s||'').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
 const fmtEUR = (n) => (n==null||isNaN(n)) ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 
+function toNumberOrNull(value){
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -734,6 +740,7 @@ function bindUI(){
     if (paymentEl) paymentEl.value = DEFAULT_QUOTE_PAYMENT;
     renderQuotePanel();
     document.querySelectorAll('.selItem').forEach(i=>{ i.checked=false; });
+    document.querySelectorAll('.stampa-checkbox').forEach(i=>{ i.checked=false; });
     // 🔴 deseleziona anche i checkbox di categoria
     document.querySelectorAll('.selAllCat').forEach(cb=>{
       cb.checked = false;
@@ -1039,6 +1046,7 @@ async function fetchProducts(){
           id, codice, descrizione, categoria, sottocategoria,
           prezzo, unita, disponibile, novita, pack, pallet, tags,
           updated_at, dimensione, conai, conai_per_collo,
+          prezzo_stampa, quantita_minima_stampa,
           product_media(id, kind, path, sort)
         `)
         .order('descrizione', { ascending: true })
@@ -1075,6 +1083,8 @@ async function fetchProducts(){
         categoria: p.categoria,
         sottocategoria: p.sottocategoria,
         prezzo: p.prezzo,
+        prezzoStampa: toNumberOrNull(p.prezzo_stampa),
+        quantitaMinimaStampa: Number(p.quantita_minima_stampa) || 0,
         conai: p.conai,
         unita: p.unita,
         disponibile: p.disponibile,
@@ -1113,6 +1123,8 @@ async function fetchProductsFromCatalog(client) {
       categoria,
       sottocategoria,
       prezzo,
+      prezzo_stampa,
+      quantita_minima_stampa,
       conai,
       unita,
       disponibile,
@@ -1178,6 +1190,8 @@ async function fetchProductsFromCatalog(client) {
       categoria: p.categoria,
       sottocategoria: p.sottocategoria,
       prezzo: p.prezzo,
+      prezzoStampa: toNumberOrNull(p.prezzo_stampa),
+      quantitaMinimaStampa: Number(p.quantita_minima_stampa) || 0,
       conai: p.conai ?? null,
       unita: p.unita,
       disponibile: p.disponibile,
@@ -1231,6 +1245,8 @@ async function fetchPriceListItemsById(client, listId) {
       categoria,
       sottocategoria,
       prezzo,
+      prezzo_stampa,
+      quantita_minima_stampa,
       conai,
       unita,
       disponibile,
@@ -1291,6 +1307,8 @@ function normalizePriceListRow(row) {
     categoria: row?.categoria,
     sottocategoria: row?.sottocategoria,
     prezzo,
+    prezzoStampa: toNumberOrNull(row?.prezzo_stampa),
+    quantitaMinimaStampa: Number(row?.quantita_minima_stampa) || 0,
     conai,
     unita: row?.unita,
     disponibile: row?.disponibile,
@@ -1644,24 +1662,25 @@ function renderListino(){
       });
     }
 
-    // ======== LISTENER: radio di stampa (selezionabili e deselezionabili) ========
-    const stampaRadios = Array.from(table.querySelectorAll('.stampa-radio'));
-    stampaRadios.forEach(radio => {
-      radio.dataset.wasChecked = radio.checked ? 'true' : 'false';
-
-      radio.addEventListener('keydown', (e) => {
-        if (e.key === ' ' || e.key === 'Enter') {
-          e.preventDefault();
-          radio.click();
+    table.querySelectorAll('.stampa-checkbox').forEach(chk => {
+      const code = decodeURIComponent(chk.value || '');
+      const selected = state.selected.get(code);
+      chk.checked = !!selected?.stampa;
+      chk.addEventListener('change', (e) => {
+        const prod = state.items.find(x => String(x.codice || '') === code);
+        if (!prod) return;
+        if (e.currentTarget.checked) {
+          if (!prod.prezzoStampa || !prod.quantitaMinimaStampa) {
+            e.currentTarget.checked = false;
+            showQuoteFabMessage('Prezzo stampato non configurato per questo articolo.');
+            return;
+          }
+          addToQuote(prod, { stampa: true });
+          const encodedSelector = CSS.escape(encodeURIComponent(code));
+          document.querySelectorAll(`.selItem[data-code="${encodedSelector}"]`).forEach(i => { i.checked = true; });
+        } else if (state.selected.has(code)) {
+          addToQuote(prod, { stampa: false, keepQty: true });
         }
-      });
-
-      radio.addEventListener('click', (e) => {
-        e.preventDefault();
-        const wasChecked = radio.dataset.wasChecked === 'true';
-        const nextChecked = !wasChecked;
-        radio.checked = nextChecked;
-        radio.dataset.wasChecked = nextChecked ? 'true' : 'false';
       });
     });
 
@@ -1767,22 +1786,35 @@ function renderCards(){
 }
 
 /* ============ PREVENTIVI (lato destro) ============ */
-function addToQuote(p){
+function addToQuote(p, options = {}){
+  const usePrint = options.stampa === true;
+  const minPrintQty = Number(p.quantitaMinimaStampa || 0);
+  const basePrice = usePrint ? Number(p.prezzoStampa || 0) : Number(p.prezzo || 0);
   const item = state.selected.get(p.codice) || {
     codice: p.codice,
     descrizione: p.descrizione,
-    prezzo: Number(p.prezzo) || 0,
     conai: Number(p.conai) || 0,
     qty: 1,
     sconto: 0
   };
-  if (state.selected.has(p.codice)) item.qty += 1;
+  item.prezzo = basePrice || 0;
+  item.stampa = usePrint;
+  item.prezzoBase = Number(p.prezzo) || 0;
+  item.prezzoStampa = Number(p.prezzoStampa) || 0;
+  item.quantitaMinimaStampa = usePrint ? minPrintQty : 0;
+  if (usePrint) {
+    item.qty = Math.max(Number(item.qty || 1), minPrintQty || 1);
+  } else if (state.selected.has(p.codice) && !options.keepQty) {
+    item.qty += 1;
+  }
   state.selected.set(p.codice, item);
   renderQuotePanel();
 }
 
 function removeFromQuote(code){
   state.selected.delete(code);
+  const encodedSelector = CSS.escape(encodeURIComponent(code));
+  document.querySelectorAll(`.stampa-checkbox[value="${encodedSelector}"]`).forEach(i => { i.checked = false; });
   renderQuotePanel();
 }
 
@@ -1806,6 +1838,13 @@ function computeVatBreakdown(baseAmount, rate = 0.22){
   return { vat, gross };
 }
 
+function quoteDescription(item){
+  const base = String(item?.descrizione || '');
+  if (!item?.stampa) return base;
+  const minQty = Number(item.quantitaMinimaStampa || 0);
+  return `${base} (stampato${minQty ? `, minimo ${minQty} pz` : ''})`;
+}
+
 function renderQuotePanel(){
   const body = $('quoteBody'), tot = $('quoteTotal'), cnt = $('quoteItemsCount');
   const vatEl = $('quoteVat');
@@ -1824,17 +1863,20 @@ function renderQuotePanel(){
     const rawCode = String(it.codice ?? '');
     const codeAttr = encodeURIComponent(rawCode);
     const codiceSafe = escapeHtml(rawCode);
+    const printNote = it.stampa
+      ? `<div class="mt-1 text-[11px] font-medium text-rose-700">Stampato - minimo ${Number(it.quantitaMinimaStampa || 0)} pz</div>`
+      : '';
     const descrizioneSafe = escapeHtml(it.descrizione);
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="border px-2 py-1 font-mono">${codiceSafe}</td>
-      <td class="border px-2 py-1"><div class="quote-desc">${descrizioneSafe}</div></td>
+      <td class="border px-2 py-1"><div class="quote-desc">${descrizioneSafe}${printNote}</div></td>
       <td class="border px-2 py-1 text-right">${fmtEUR(it.prezzo)}</td>
       <td class="border px-2 py-1 text-right">${fmtEUR(it.conai || 0)}</td>
       <td class="border px-2 py-1 text-right">
         <input type="number"
                class="w-16 border rounded px-1 py-0.5 text-right inputQty"
-               data-code="${codeAttr}" value="${Number(it.qty) || 1}" step="1" min="1">
+               data-code="${codeAttr}" value="${Number(it.qty) || 1}" step="1" min="${it.stampa ? Math.max(1, Number(it.quantitaMinimaStampa || 1)) : 1}">
       </td>
       <td class="border px-2 py-1 text-right">
         <input type="number"
@@ -1961,9 +2003,10 @@ function renderQuotePanel(){
   };
 
   bindNumberField('.inputQty', {
-    normalize: (raw) => {
+    normalize: (raw, item) => {
       const parsed = parseInt(String(raw || '').trim(), 10);
-      return Math.max(1, Number.isNaN(parsed) ? 1 : parsed);
+      const minQty = item?.stampa ? Math.max(1, Number(item.quantitaMinimaStampa || 1)) : 1;
+      return Math.max(minQty, Number.isNaN(parsed) ? minQty : parsed);
     },
     apply: (item, value) => {
       item.qty = value;
@@ -1996,6 +2039,7 @@ function renderQuotePanel(){
       state.selected.delete(code);
       const encodedSelector = CSS.escape(encodeURIComponent(code));
       document.querySelectorAll(`.selItem[data-code="${encodedSelector}"]`).forEach(i=>{ i.checked = false; });
+      document.querySelectorAll(`.stampa-checkbox[value="${encodedSelector}"]`).forEach(i=>{ i.checked = false; });
       renderQuotePanel();
     });
   });
@@ -2060,7 +2104,7 @@ function exportXlsx(){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
     rows.push([
-      it.codice, it.descrizione,
+      it.codice, quoteDescription(it),
       Number(it.prezzo||0), Number(it.conai||0),
       Number(it.qty||0), Number(it.sconto||0),
       Number(prezzoScont||0), Number(totale||0),
@@ -2202,10 +2246,10 @@ async function exportPdf(){
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
     total += totale;
-    rawDescriptions.push(it.descrizione || '');
+    rawDescriptions.push(quoteDescription(it));
     body.push([
       it.codice,
-      it.descrizione || '',
+      quoteDescription(it),
       fmtEUR(it.prezzo),
       fmtEUR(it.conai||0),
       String(it.qty),
@@ -2449,7 +2493,7 @@ function printQuote(){
     rowsHtml += `
       <tr>
         <td>${it.codice}</td>
-        <td>${it.descrizione}</td>
+        <td>${escapeHtml(quoteDescription(it))}</td>
         <td class="tr">${fmtEUR(it.prezzo)}</td>
         <td class="tr">${fmtEUR(it.conai||0)}</td>
         <td class="tr">${it.qty}</td>

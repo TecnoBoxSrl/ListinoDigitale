@@ -134,6 +134,8 @@
             ${input('adminProductUnit', 'Unita')}
             ${input('adminProductPrice', 'Prezzo')}
             ${input('adminProductConai', 'CONAI')}
+            ${input('adminProductPrintPrice', 'Prezzo stampato')}
+            ${input('adminProductPrintMinQty', 'Q.t? minima stampa')}
             ${input('adminProductCategory', 'Categoria')}
             ${input('adminProductDimension', 'Dimensione', 'md:col-span-2')}
             <label class="inline-flex items-center gap-2 text-xs text-slate-700">
@@ -270,6 +272,8 @@
     $('adminProductUnit').value = product.unita || '';
     $('adminProductPrice').value = formatDecimal(product.prezzo);
     $('adminProductConai').value = formatDecimal(product.conai ?? product.conai_per_collo);
+    $('adminProductPrintPrice').value = formatDecimal(product.prezzo_stampa);
+    $('adminProductPrintMinQty').value = product.quantita_minima_stampa ?? '';
     $('adminProductCategory').value = product.categoria || '';
     $('adminProductDimension').value = product.dimensione || '';
     $('adminProductAvailable').checked = product.disponibile !== false;
@@ -283,6 +287,8 @@
       unita: $('adminProductUnit')?.value || '',
       prezzo: $('adminProductPrice')?.value || '',
       conai: $('adminProductConai')?.value || '',
+      prezzo_stampa: $('adminProductPrintPrice')?.value || '',
+      quantita_minima_stampa: $('adminProductPrintMinQty')?.value || '',
       categoria: $('adminProductCategory')?.value || '',
       dimensione: $('adminProductDimension')?.value || '',
       disponibile: !!$('adminProductAvailable')?.checked,
@@ -421,7 +427,7 @@
 
   function clearForm(){
     $('adminProductForm')?.classList.add('hidden');
-    ['adminOriginalCode','adminProductCode','adminProductDescription','adminProductUnit','adminProductPrice','adminProductConai','adminProductCategory','adminProductDimension'].forEach((id) => {
+    ['adminOriginalCode','adminProductCode','adminProductDescription','adminProductUnit','adminProductPrice','adminProductConai','adminProductPrintPrice','adminProductPrintMinQty','adminProductCategory','adminProductDimension'].forEach((id) => {
       const el = $(id);
       if (el) el.value = '';
     });

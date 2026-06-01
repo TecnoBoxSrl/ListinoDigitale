@@ -24,6 +24,10 @@ create policy "change_log write admin" on public.change_log for all using ( publ
 alter table public.price_list_items add column if not exists dimensione text;
 alter table public.price_list_items add column if not exists conai numeric(12,4);
 alter table public.price_list_items add column if not exists conai_per_collo numeric(12,4);
+alter table public.products add column if not exists prezzo_stampa numeric(12,4);
+alter table public.products add column if not exists quantita_minima_stampa integer;
+alter table public.price_list_items add column if not exists prezzo_stampa numeric(12,4);
+alter table public.price_list_items add column if not exists quantita_minima_stampa integer;
 
 create index if not exists products_codice_idx on public.products (codice);
 create index if not exists products_categoria_idx on public.products (categoria);

@@ -31,7 +31,7 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests so we don't attempt to cache POST/PUT bodies.
+  // Skip non-GET requests so we don't attempt to cache POST/PUT bodies
   if (request.method !== 'GET') return;
 
   if (url.hostname.endsWith('supabase.co')) return;

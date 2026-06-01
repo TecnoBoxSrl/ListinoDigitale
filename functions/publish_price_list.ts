@@ -10,7 +10,7 @@ const corsHeaders = {
   "access-control-max-age": "86400",
 };
 
-const PRODUCT_COLUMNS = "codice,descrizione,dimensione,categoria,sottocategoria,conai,conai_per_collo,prezzo,unita,disponibile,novita,pack,pallet,tags,updated_at";
+const PRODUCT_COLUMNS = "codice,descrizione,dimensione,categoria,sottocategoria,conai,conai_per_collo,prezzo,prezzo_stampa,quantita_minima_stampa,unita,disponibile,novita,pack,pallet,tags,updated_at";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -133,27 +133,6 @@ function productPatch(row: Record<string, unknown>) {
   return patch;
 }
 
-function snapshotItem(priceListId: string, product: Record<string, unknown>) {
-  return {
-    price_list_id: priceListId,
-    codice: product.codice ?? null,
-    descrizione: product.descrizione ?? null,
-    dimensione: product.dimensione ?? null,
-    categoria: product.categoria ?? null,
-    sottocategoria: product.sottocategoria ?? null,
-    conai: product.conai ?? null,
-    conai_per_collo: product.conai_per_collo ?? null,
-    prezzo: product.prezzo ?? null,
-    unita: product.unita ?? null,
-    disponibile: product.disponibile ?? null,
-    novita: product.novita ?? null,
-    pack: product.pack ?? null,
-    pallet: product.pallet ?? null,
-    tags: product.tags ?? [],
-    updated_at: product.updated_at ?? null,
-  };
-}
-
 function buildVersionLabel(req: Request) {
   const fromHeader = req.headers.get("x-version-label")?.trim();
   if (fromHeader) return fromHeader;
@@ -174,6 +153,29 @@ async function resolveVersionLabel(client: ReturnType<typeof createClient>, requ
   let counter = 2;
   while (existing.has(`${base}-${counter}`)) counter += 1;
   return `${base}-${counter}`;
+}
+
+function snapshotItem(priceListId: string, product: Record<string, unknown>) {
+  return {
+    price_list_id: priceListId,
+    codice: product.codice ?? null,
+    descrizione: product.descrizione ?? null,
+    dimensione: product.dimensione ?? null,
+    categoria: product.categoria ?? null,
+    sottocategoria: product.sottocategoria ?? null,
+    conai: product.conai ?? null,
+    conai_per_collo: product.conai_per_collo ?? null,
+    prezzo: product.prezzo ?? null,
+    prezzo_stampa: product.prezzo_stampa ?? null,
+    quantita_minima_stampa: product.quantita_minima_stampa ?? null,
+    unita: product.unita ?? null,
+    disponibile: product.disponibile ?? null,
+    novita: product.novita ?? null,
+    pack: product.pack ?? null,
+    pallet: product.pallet ?? null,
+    tags: product.tags ?? [],
+    updated_at: product.updated_at ?? null,
+  };
 }
 
 async function readRows(req: Request) {
@@ -251,11 +253,8 @@ Deno.serve(async (req) => {
       if (Number(existing.conai_per_collo || 0) !== Number(row.conai_per_collo || 0)) {
         delta.conai_per_collo = { from: existing.conai_per_collo, to: row.conai_per_collo };
       }
-      if ((existing.unita || "") !== row.unita) delta.unita = { from: existing.unita, to: row.unita };
       if (existing.disponibile !== row.disponibile) delta.disponibile = { from: existing.disponibile, to: row.disponibile };
       if (existing.novita !== row.novita) delta.novita = { from: existing.novita, to: row.novita };
-      if ((existing.pack || "") !== row.pack) delta.pack = { from: existing.pack, to: row.pack };
-      if ((existing.pallet || "") !== row.pallet) delta.pallet = { from: existing.pallet, to: row.pallet };
       if (JSON.stringify(existing.tags || []) !== JSON.stringify(row.tags || [])) {
         delta.tags = { from: existing.tags, to: row.tags };
       }

@@ -15,6 +15,8 @@ const PRODUCT_FIELDS = [
   "categoria",
   "sottocategoria",
   "prezzo",
+  "prezzo_stampa",
+  "quantita_minima_stampa",
   "conai",
   "conai_per_collo",
   "unita",
@@ -111,6 +113,13 @@ function parseItalianNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function parsePositiveInteger(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = Number.parseInt(raw.replace(/[^0-9]/g, ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function parseBoolean(value: unknown, defaultValue = false) {
   if (typeof value === "boolean") return value;
   const raw = String(value ?? "").trim().toLowerCase();
@@ -132,7 +141,7 @@ function normalizeProduct(row: Record<string, unknown>) {
   const now = new Date().toISOString();
   const conai = parseItalianNumber(row.Conai ?? row.conai);
   const conaiPerCollo = parseItalianNumber(row.ConaiPerCollo ?? row.conai_per_collo ?? row["CONAI/collo"]);
-  return {
+  const product: Record<string, unknown> = {
     codice: String(row.Codice ?? row.codice ?? "").trim(),
     descrizione: String(row.Descrizione ?? row.descrizione ?? "").trim(),
     dimensione: String(row.Dimensione ?? row.dimensione ?? "").trim(),
@@ -149,6 +158,38 @@ function normalizeProduct(row: Record<string, unknown>) {
     tags: normalizeTags(row.Tag ?? row.Tags ?? row.tags),
     updated_at: now,
   };
+
+  const hasPrintPrice = "PrezzoStampa" in row || "prezzo_stampa" in row || "Prezzo stampato" in row;
+  const hasPrintMinQty = "QuantitaMinimaStampa" in row || "quantita_minima_stampa" in row || "Qta minima stampa" in row || "Q.t? minima stampa" in row;
+  if (hasPrintPrice) {
+    product.prezzo_stampa = parseItalianNumber(row.PrezzoStampa ?? row.prezzo_stampa ?? row["Prezzo stampato"]);
+  }
+  if (hasPrintMinQty) {
+    product.quantita_minima_stampa = parsePositiveInteger(
+      row.QuantitaMinimaStampa ?? row.quantita_minima_stampa ?? row["Qta minima stampa"] ?? row["Q.t? minima stampa"],
+    );
+  }
+  validatePrintRule(product);
+  return product;
+}
+
+function validatePrintRule(product: Record<string, unknown>) {
+  const hasPrintPrice = "prezzo_stampa" in product;
+  const hasPrintMinQty = "quantita_minima_stampa" in product;
+  if (!hasPrintPrice && !hasPrintMinQty) return;
+
+  const price = product.prezzo_stampa;
+  const minQty = product.quantita_minima_stampa;
+  const priceEmpty = price === null || price === undefined || price === "";
+  const qtyEmpty = minQty === null || minQty === undefined || minQty === "";
+
+  if (priceEmpty && qtyEmpty) return;
+  if (priceEmpty || qtyEmpty) {
+    throw new Error("Prezzo stampato e quantit? minima stampa devono essere compilati insieme");
+  }
+  if (Number(price) <= 0 || Number(minQty) <= 0) {
+    throw new Error("Prezzo stampato e quantit? minima stampa devono essere maggiori di zero");
+  }
 }
 
 function normalizeForCompare(value: unknown) {
@@ -164,6 +205,7 @@ function buildDelta(before: Record<string, unknown> | null, after: Record<string
   if (!before) return delta;
 
   for (const field of PRODUCT_FIELDS) {
+    if (!(field in after)) continue;
     if (normalizeForCompare(before[field]) !== normalizeForCompare(after[field])) {
       delta[field] = { from: before[field] ?? null, to: after[field] ?? null };
     }
@@ -221,7 +263,7 @@ async function searchProducts(client: ReturnType<typeof createClient>, query: st
 
   const { data, error } = await client
     .from("products")
-    .select("id,codice,descrizione,dimensione,categoria,sottocategoria,prezzo,conai,conai_per_collo,unita,disponibile,novita,pack,pallet,tags,updated_at")
+    .select("id,codice,descrizione,dimensione,categoria,sottocategoria,prezzo,prezzo_stampa,quantita_minima_stampa,conai,conai_per_collo,unita,disponibile,novita,pack,pallet,tags,updated_at")
     .or(`codice.ilike.%${q}%,descrizione.ilike.%${q}%`)
     .order("codice", { ascending: true })
     .limit(20);
