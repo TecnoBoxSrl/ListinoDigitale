@@ -435,29 +435,8 @@ function resizeQuotePanel() {
 
 function applyQuotePanelSize() {
   const panel = document.getElementById('quotePanel'); 
-  const table = document.getElementById('quoteTable');
-  if (!panel || !table) return;
-
-  // su tablet e mobile: pannello a tutta larghezza
-  if (window.innerWidth <= 1024) {
-    panel.style.width = '100%';
-    return;
-  }
-
-  // quanto spazio occupa la colonna delle categorie a sinistra (se presente)
-  const leftAside = document.querySelector('aside.lg\\:col-span-3'); 
-  const leftW = leftAside ? leftAside.getBoundingClientRect().width : 0;
-
-  // quanto spazio serve per vedere tutta la tabella
-  const needed = (table.scrollWidth || 0) + 32; // un po’ di padding
-
-  // quanto possiamo al massimo (margine 24px lato finestra)
-  const max = Math.max(320, window.innerWidth - 24);
-
-  // usa il min tra needed e max, così se la tabella è enorme compare lo scroll esterno
-  const width = Math.min(needed, max);
-
-  panel.style.width = width + 'px';
+  if (!panel) return;
+  panel.style.width = '100%';
 }
 
 window.addEventListener('resize', resizeQuotePanel);
@@ -2788,16 +2767,7 @@ function createQuoteDrawer(){
 
   function updateDrawerWidth(){
     if (!drawer) return;
-    const viewport = Math.max(window.innerWidth || 0, 320);
-    if (viewport <= 768){
-      drawer.style.width = '100vw';
-      return;
-    }
-    const table = document.getElementById('quoteTable');
-    const tableWidth = (table?.scrollWidth || 0) + 48;
-    const maxWidth = Math.max(360, viewport - 48);
-    const width = Math.min(Math.max(420, tableWidth), maxWidth);
-    drawer.style.width = `${width}px`;
+    drawer.style.width = '100vw';
   }
 
   function movePanelToDrawer(){
@@ -2821,8 +2791,10 @@ function createQuoteDrawer(){
     hideQuoteFabMessage();
     movePanelToDrawer();
     updateDrawerWidth();
-    drawer.style.transform = 'translateX(0%)';
     backdrop.style.display = 'block';
+    requestAnimationFrame(() => {
+      drawer.style.transform = 'translateX(0%)';
+    });
     document.body.classList.add('modal-open');
     if (window.BackToTopController?.disable) window.BackToTopController.disable();
     isOpen = true;
@@ -2836,7 +2808,6 @@ function createQuoteDrawer(){
     document.body.classList.remove('modal-open');
     if (window.BackToTopController?.enable) window.BackToTopController.enable();
     isOpen = false;
-    resizeQuotePanel();
   }
 
   function toggleDrawer(){
