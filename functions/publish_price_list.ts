@@ -133,6 +133,30 @@ function productPatch(row: Record<string, unknown>) {
   return patch;
 }
 
+function normalizeForCompare(value: unknown) {
+  if (Array.isArray(value)) return JSON.stringify(value);
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
+function buildProductDelta(existing: Record<string, unknown>, row: Record<string, unknown>) {
+  const fields = PRODUCT_COLUMNS
+    .split(",")
+    .map((field) => field.trim())
+    .filter((field) => field && field !== "updated_at");
+  const delta: Record<string, unknown> = {};
+
+  for (const field of fields) {
+    if (normalizeForCompare(existing[field]) !== normalizeForCompare(row[field])) {
+      delta[field] = { from: existing[field] ?? null, to: row[field] ?? null };
+    }
+  }
+
+  return delta;
+}
+
 function buildVersionLabel(req: Request) {
   const fromHeader = req.headers.get("x-version-label")?.trim();
   if (fromHeader) return fromHeader;
@@ -199,6 +223,34 @@ async function readPayload(req: Request) {
   throw new Error("Body non valido: inviare un array di righe o { rows: [...] }");
 }
 
+async function fetchAllProducts(client: ReturnType<typeof createClient>) {
+  const pageSize = 1000;
+  const rows: any[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const to = from + pageSize - 1;
+    const { data, error } = await client
+      .from("products")
+      .select(PRODUCT_COLUMNS)
+      .order("codice", { ascending: true })
+      .range(from, to);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
+async function insertRowsInChunks(client: ReturnType<typeof createClient>, table: string, rows: any[]) {
+  const chunkSize = 500;
+  for (let index = 0; index < rows.length; index += chunkSize) {
+    const chunk = rows.slice(index, index + chunkSize);
+    const { error } = await client.from(table).insert(chunk);
+    if (error) throw error;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse({ ok: false, error: "Metodo non consentito" }, 405);
@@ -213,7 +265,6 @@ Deno.serve(async (req) => {
 
     const payload = await readPayload(req);
     const rows = payload.rows;
-    const missingPolicy = String((payload.body as Record<string, unknown>)?.missing_policy || "keep");
     const incoming = rows.map(normalizeRow).filter((row) => row.codice && row.descrizione);
     if (!incoming.length) {
       return jsonResponse({ ok: false, error: "Nessuna riga valida da pubblicare" }, 400);
@@ -230,11 +281,7 @@ Deno.serve(async (req) => {
     const version = await resolveVersionLabel(client, requestedVersion);
 
     const incomingCodes = incoming.map((row) => row.codice);
-    const { data: current, error: currentError } = await client
-      .from("products")
-      .select(PRODUCT_COLUMNS)
-      .in("codice", incomingCodes);
-    if (currentError) throw currentError;
+    const current = await fetchAllProducts(client);
 
     const currentByCode = new Map((current || []).map((product: any) => [product.codice, product]));
     const created: any[] = [];
@@ -249,21 +296,7 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const delta: Record<string, unknown> = {};
-      if (Number(existing.prezzo) !== row.prezzo) delta.prezzo = { from: existing.prezzo, to: row.prezzo };
-      if (existing.descrizione !== row.descrizione) delta.descrizione = { from: existing.descrizione, to: row.descrizione };
-      if ((existing.dimensione || "") !== row.dimensione) delta.dimensione = { from: existing.dimensione, to: row.dimensione };
-      if ((existing.categoria || "") !== row.categoria) delta.categoria = { from: existing.categoria, to: row.categoria };
-      if ((existing.sottocategoria || "") !== row.sottocategoria) delta.sottocategoria = { from: existing.sottocategoria, to: row.sottocategoria };
-      if (Number(existing.conai || 0) !== Number(row.conai || 0)) delta.conai = { from: existing.conai, to: row.conai };
-      if (Number(existing.conai_per_collo || 0) !== Number(row.conai_per_collo || 0)) {
-        delta.conai_per_collo = { from: existing.conai_per_collo, to: row.conai_per_collo };
-      }
-      if (existing.disponibile !== row.disponibile) delta.disponibile = { from: existing.disponibile, to: row.disponibile };
-      if (existing.novita !== row.novita) delta.novita = { from: existing.novita, to: row.novita };
-      if (JSON.stringify(existing.tags || []) !== JSON.stringify(row.tags || [])) {
-        delta.tags = { from: existing.tags, to: row.tags };
-      }
+      const delta = buildProductDelta(existing, row);
 
       if (Object.keys(delta).length) updated.push({ ...row, delta });
       else unchanged += 1;
@@ -279,8 +312,7 @@ Deno.serve(async (req) => {
     const priceListId = priceList.id;
 
     if (created.length) {
-      const { error } = await client.from("products").insert(created);
-      if (error) throw error;
+      await insertRowsInChunks(client, "products", created);
     }
 
     for (const row of updated) {
@@ -288,28 +320,20 @@ Deno.serve(async (req) => {
       if (error) throw error;
     }
 
-    if (missingPolicy === "disable") {
-      const { data: availableRows, error: availableError } = await client
+    const incomingCodeSet = new Set(incomingCodes);
+    for (const product of (current || []).filter((item: any) => !incomingCodeSet.has(item.codice) && item.disponibile !== false)) {
+      const { error } = await client
         .from("products")
-        .select(PRODUCT_COLUMNS)
-        .eq("disponibile", true);
-      if (availableError) throw availableError;
-
-      const incomingCodeSet = new Set(incomingCodes);
-      for (const product of (availableRows || []).filter((item: any) => !incomingCodeSet.has(item.codice))) {
-        const { error } = await client
-          .from("products")
-          .update({ disponibile: false, novita: false, updated_at: new Date().toISOString() })
-          .eq("codice", product.codice);
-        if (error) throw error;
-        removed.push({
-          ...product,
-          delta: {
-            disponibile: { from: true, to: false },
-            novita: { from: product.novita ?? null, to: false },
-          },
-        });
-      }
+        .update({ disponibile: false, novita: false, updated_at: new Date().toISOString() })
+        .eq("codice", product.codice);
+      if (error) throw error;
+      removed.push({
+        ...product,
+        delta: {
+          disponibile: { from: product.disponibile ?? null, to: false },
+          novita: { from: product.novita ?? null, to: false },
+        },
+      });
     }
 
     const changes = [
@@ -319,17 +343,13 @@ Deno.serve(async (req) => {
     ];
 
     if (changes.length) {
-      const { error } = await client.from("change_log").insert(changes);
-      if (error) throw error;
+      await insertRowsInChunks(client, "change_log", changes);
     }
 
-    const { data: snapshot, error: snapshotError } = await client.from("products").select(PRODUCT_COLUMNS);
-    if (snapshotError) throw snapshotError;
-
-    if (snapshot?.length) {
+    const snapshot = incoming.slice().sort((a, b) => String(a.descrizione || "").localeCompare(String(b.descrizione || ""), "it"));
+    if (snapshot.length) {
       const items = snapshot.map((product: any) => snapshotItem(priceListId, product));
-      const { error } = await client.from("price_list_items").insert(items);
-      if (error) throw error;
+      await insertRowsInChunks(client, "price_list_items", items);
     }
 
     let notification: unknown = { ok: true, skipped: true };
@@ -352,7 +372,7 @@ Deno.serve(async (req) => {
       updated: updated.length,
       unchanged,
       removed: removed.length,
-      missing_policy: missingPolicy,
+      mode: "full_replace",
       notification,
     });
   } catch (error) {
