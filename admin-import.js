@@ -20,7 +20,7 @@
     ConaiPerCollo: ['conai per collo', 'conai_per_collo', 'conai/collo'],
   };
 
-  const state = { rows: [], client: null };
+  const state = { rows: [], duplicateCodes: [], client: null };
   const $ = (id) => document.getElementById(id);
   const normalize = (value) => String(value || '')
     .normalize('NFD')
@@ -98,9 +98,10 @@
       <div class="mt-1 grid gap-1 sm:grid-cols-2">
         <div><span class="text-slate-500">Data:</span> ${escapeHtml(formatImportDate(record.at))}</div>
         <div><span class="text-slate-500">Versione:</span> ${escapeHtml(record.version || '-')}</div>
-        <div><span class="text-slate-500">Righe:</span> ${escapeHtml(record.rows ?? '-')}</div>
-        <div><span class="text-slate-500">Esito:</span> nuovi ${escapeHtml(record.created ?? 0)}, aggiornati ${escapeHtml(record.updated ?? 0)}, ritirati ${escapeHtml(record.removed ?? 0)}</div>
+        <div><span class="text-slate-500">Righe inviate:</span> ${escapeHtml(record.rows ?? '-')}</div>
+        <div><span class="text-slate-500">Esito:</span> nuovi ${escapeHtml(record.created ?? 0)}, aggiornati ${escapeHtml(record.updated ?? 0)}, invariati ${escapeHtml(record.unchanged ?? 0)}</div>
       </div>
+      ${record.ignoredDuplicates ? `<div class="mt-1 text-amber-700">Duplicati ignorati: ${escapeHtml(record.ignoredDuplicates)}</div>` : ''}
     `;
   }
 
@@ -143,6 +144,7 @@
 
   function clearImport(){
     state.rows = [];
+    state.duplicateCodes = [];
     const count = $('adminImportCount');
     if (count) count.textContent = '0';
     setPublishBusy(false);
@@ -174,6 +176,23 @@
     normalized.Codice = String(normalized.Codice || '').trim();
     normalized.Descrizione = String(normalized.Descrizione || '').trim();
     return normalized;
+  }
+
+  function dedupeRows(rows){
+    const seen = new Set();
+    const duplicates = new Set();
+    const uniqueRows = [];
+    rows.forEach((row) => {
+      const code = String(row.Codice || '').trim();
+      if (!code) return;
+      if (seen.has(code)) {
+        duplicates.add(code);
+        return;
+      }
+      seen.add(code);
+      uniqueRows.push(row);
+    });
+    return { rows: uniqueRows, duplicateCodes: Array.from(duplicates).sort() };
   }
 
   function headerScore(row){
@@ -271,6 +290,7 @@
     }
     const columns = ['Codice', 'Descrizione', 'Categoria', 'Prezzo', 'Unita', 'Conai'];
     preview.innerHTML = `
+      ${state.duplicateCodes.length ? `<div class="border-b bg-amber-50 px-3 py-2 text-xs text-amber-800">Codici duplicati ignorati: ${escapeHtml(state.duplicateCodes.slice(0, 12).join(', '))}${state.duplicateCodes.length > 12 ? '...' : ''}</div>` : ''}
       <table class="w-full text-xs">
         <thead class="bg-slate-100 text-slate-700">
           <tr>${columns.map(col => `<th class="border-b px-2 py-2 text-left font-semibold">${escapeHtml(col)}</th>`).join('')}</tr>
@@ -298,21 +318,66 @@
       setMessage('Lettura file in corso...');
       const rawRows = await readRows(file);
       const validRows = rawRows.map(normalizeRow).filter(row => row.Codice && row.Descrizione);
-      state.rows = validRows;
-      $('adminImportCount').textContent = String(validRows.length);
+      const deduped = dedupeRows(validRows);
+      state.rows = deduped.rows;
+      state.duplicateCodes = deduped.duplicateCodes;
+      $('adminImportCount').textContent = String(state.rows.length);
       setPublishBusy(false);
-      renderPreview(validRows);
+      renderPreview(state.rows);
 
-      setMessage(
-        validRows.length
-          ? `${validRows.length} righe pronte da pubblicare.`
-          : 'Nessuna riga valida trovata. Verifica che il file abbia almeno Codice articolo e Descrizione.',
-        validRows.length ? 'success' : 'error'
-      );
+      if (!state.rows.length) {
+        setMessage('Nessuna riga valida trovata. Verifica che il file abbia almeno Codice articolo e Descrizione.', 'error');
+        return;
+      }
+
+      const duplicateNote = state.duplicateCodes.length
+        ? ` Duplicati ignorati: ${state.duplicateCodes.slice(0, 6).join(', ')}${state.duplicateCodes.length > 6 ? '...' : ''}.`
+        : '';
+      setMessage(`${state.rows.length} righe pronte da pubblicare.${duplicateNote}`, state.duplicateCodes.length ? 'info' : 'success');
     } catch (error) {
       console.error('[AdminImport] file error', error);
       clearImport();
       setMessage('Errore nella lettura del file. Controlla formato e intestazioni.', 'error');
+    }
+  }
+
+  async function invokePublish(session, versionLabel, notifyAgents){
+    const headers = {
+      apikey: SUPABASE_ANON_KEY,
+      authorization: `Bearer ${session.access_token}`,
+      'content-type': 'application/json',
+      'x-skip-notify': notifyAgents ? 'false' : 'true',
+    };
+    if (versionLabel) headers['x-version-label'] = versionLabel;
+
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/publish_price_list`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ rows: state.rows }),
+    });
+
+    const rawText = await response.text();
+    let data = null;
+    try {
+      data = rawText ? JSON.parse(rawText) : null;
+    } catch (_) {
+      data = null;
+    }
+
+    if (!response.ok || !data?.ok) {
+      throw new Error(data?.error || rawText || `Errore pubblicazione ${response.status}`);
+    }
+
+    return data;
+  }
+
+  async function refreshProductsAfterImport(){
+    try {
+      if (typeof window.fetchProducts === 'function') await window.fetchProducts();
+      if (typeof window.renderView === 'function') window.renderView();
+      document.dispatchEvent(new Event('appReady'));
+    } catch (error) {
+      console.warn('[AdminImport] refresh products warn', error);
     }
   }
 
@@ -324,6 +389,11 @@
       }
 
       const client = ensureClient();
+      if (!client) {
+        setMessage('Supabase non pronto. Ricarica la pagina e riprova.', 'error');
+        return;
+      }
+
       const { data: { session }, error: sessionError } = await client.auth.getSession();
       if (sessionError) throw sessionError;
       if (!session?.access_token) {
@@ -333,21 +403,10 @@
 
       const versionLabel = String($('adminVersionLabel')?.value || '').trim();
       const notifyAgents = !!$('adminNotifyAgents')?.checked;
-      const headers = {
-        Authorization: `Bearer ${session.access_token}`,
-        'x-skip-notify': notifyAgents ? 'false' : 'true',
-      };
-      if (versionLabel) headers['x-version-label'] = versionLabel;
 
       setPublishBusy(true);
       setMessage('Pubblicazione listino in corso... attendi, non chiudere la pagina.');
-      const { data, error } = await client.functions.invoke('publish_price_list', {
-        body: { rows: state.rows },
-        headers,
-      });
-
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error || 'Pubblicazione non riuscita');
+      const data = await invokePublish(session, versionLabel, notifyAgents);
 
       saveLastImport({
         at: new Date().toISOString(),
@@ -355,10 +414,12 @@
         rows: state.rows.length,
         created: data.created,
         updated: data.updated,
+        unchanged: data.unchanged,
         removed: data.removed,
+        ignoredDuplicates: state.duplicateCodes.join(', '),
       });
-      setMessage(`Listino pubblicato: ${data.version}. Nuovi ${data.created}, aggiornati ${data.updated}, ritirati ${data.removed}.`, 'success');
-      setTimeout(() => window.location.reload(), 1200);
+      await refreshProductsAfterImport();
+      setMessage(`Listino pubblicato: ${data.version}. Nuovi ${data.created}, aggiornati ${data.updated}, invariati ${data.unchanged}, ritirati ${data.removed}.`, 'success');
     } catch (error) {
       console.error('[AdminImport] publish error', error);
       setMessage(error?.message || 'Errore durante la pubblicazione del listino.', 'error');
