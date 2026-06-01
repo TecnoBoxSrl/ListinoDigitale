@@ -10,6 +10,8 @@ const corsHeaders = {
   "access-control-max-age": "86400",
 };
 
+const PRODUCT_COLUMNS = "codice,descrizione,dimensione,categoria,sottocategoria,conai,conai_per_collo,prezzo,unita,disponibile,novita,pack,pallet,tags,updated_at";
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -131,6 +133,27 @@ function productPatch(row: Record<string, unknown>) {
   return patch;
 }
 
+function snapshotItem(priceListId: string, product: Record<string, unknown>) {
+  return {
+    price_list_id: priceListId,
+    codice: product.codice ?? null,
+    descrizione: product.descrizione ?? null,
+    dimensione: product.dimensione ?? null,
+    categoria: product.categoria ?? null,
+    sottocategoria: product.sottocategoria ?? null,
+    conai: product.conai ?? null,
+    conai_per_collo: product.conai_per_collo ?? null,
+    prezzo: product.prezzo ?? null,
+    unita: product.unita ?? null,
+    disponibile: product.disponibile ?? null,
+    novita: product.novita ?? null,
+    pack: product.pack ?? null,
+    pallet: product.pallet ?? null,
+    tags: product.tags ?? [],
+    updated_at: product.updated_at ?? null,
+  };
+}
+
 function buildVersionLabel(req: Request) {
   const fromHeader = req.headers.get("x-version-label")?.trim();
   if (fromHeader) return fromHeader;
@@ -198,7 +221,7 @@ Deno.serve(async (req) => {
     const incomingCodes = incoming.map((row) => row.codice);
     const { data: current, error: currentError } = await client
       .from("products")
-      .select("codice,prezzo,descrizione,dimensione,categoria,sottocategoria,conai,conai_per_collo,unita,disponibile,novita,pack,pallet,tags")
+      .select(PRODUCT_COLUMNS)
       .in("codice", incomingCodes);
     if (currentError) throw currentError;
 
@@ -266,14 +289,11 @@ Deno.serve(async (req) => {
       if (error) throw error;
     }
 
-    const { data: snapshot, error: snapshotError } = await client.from("products").select("*");
+    const { data: snapshot, error: snapshotError } = await client.from("products").select(PRODUCT_COLUMNS);
     if (snapshotError) throw snapshotError;
 
     if (snapshot?.length) {
-      const items = snapshot.map((product: any) => {
-        const { id: _id, ...rest } = product;
-        return { price_list_id: priceListId, ...rest };
-      });
+      const items = snapshot.map((product: any) => snapshotItem(priceListId, product));
       const { error } = await client.from("price_list_items").insert(items);
       if (error) throw error;
     }
