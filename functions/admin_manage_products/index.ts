@@ -415,12 +415,34 @@ async function history(client: ReturnType<typeof createClient>) {
   return jsonResponse({ ok: true, full_imports: fullImports, changes });
 }
 
+async function deleteAllHistory(client: ReturnType<typeof createClient>) {
+  const { error: adminItemsError } = await client.from("admin_change_items").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  if (adminItemsError) throw adminItemsError;
+
+  const { error: adminBatchesError } = await client.from("admin_change_batches").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  if (adminBatchesError) throw adminBatchesError;
+
+  const { error: changeLogError } = await client.from("change_log").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  if (changeLogError) throw changeLogError;
+
+  const { error: itemsError } = await client.from("price_list_items").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  if (itemsError) throw itemsError;
+
+  const { error: listsError } = await client.from("price_lists").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  if (listsError) throw listsError;
+
+  return jsonResponse({ ok: true, deleted: "all_history" });
+}
+
 async function deleteHistory(client: ReturnType<typeof createClient>, body: Record<string, unknown>) {
   const targetType = String(body.target_type || "");
   const id = String(body.id || "");
+
+  if (targetType === "all") return await deleteAllHistory(client);
   if (!id) return jsonResponse({ ok: false, error: "Storico da cancellare non indicato" }, 400);
 
   if (targetType === "admin_batch") {
+    await client.from("admin_change_items").delete().eq("batch_id", id);
     const { error } = await client.from("admin_change_batches").delete().eq("id", id);
     if (error) throw error;
     return jsonResponse({ ok: true, deleted: "admin_batch" });
