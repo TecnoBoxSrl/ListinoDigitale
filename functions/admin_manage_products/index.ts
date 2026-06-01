@@ -221,6 +221,76 @@ function productPatch(row: Record<string, unknown>) {
   }, {} as Record<string, unknown>);
 }
 
+function snapshotItem(priceListId: string, product: Record<string, unknown>) {
+  return {
+    price_list_id: priceListId,
+    codice: product.codice ?? null,
+    descrizione: product.descrizione ?? null,
+    dimensione: product.dimensione ?? null,
+    categoria: product.categoria ?? null,
+    sottocategoria: product.sottocategoria ?? null,
+    conai: product.conai ?? null,
+    conai_per_collo: product.conai_per_collo ?? null,
+    prezzo: product.prezzo ?? null,
+    prezzo_stampa: product.prezzo_stampa ?? null,
+    quantita_minima_stampa: product.quantita_minima_stampa ?? null,
+    unita: product.unita ?? null,
+    disponibile: product.disponibile ?? null,
+    novita: product.novita ?? null,
+    pack: product.pack ?? null,
+    pallet: product.pallet ?? null,
+    tags: product.tags ?? [],
+    updated_at: product.updated_at ?? null,
+  };
+}
+
+async function latestPriceListId(client: ReturnType<typeof createClient>) {
+  const { data, error } = await client
+    .from("price_lists")
+    .select("id")
+    .order("published_at", { ascending: false, nullsLast: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.id || null;
+}
+
+async function syncLatestPriceListItem(
+  client: ReturnType<typeof createClient>,
+  product: Record<string, unknown>,
+  oldCode?: string | null,
+) {
+  const priceListId = await latestPriceListId(client);
+  if (!priceListId || !product.codice) return;
+
+  if (oldCode && oldCode !== product.codice) {
+    await client.from("price_list_items").delete().eq("price_list_id", priceListId).eq("codice", oldCode);
+  }
+
+  if (product.disponibile === false) {
+    await client.from("price_list_items").delete().eq("price_list_id", priceListId).eq("codice", product.codice);
+    return;
+  }
+
+  const item = snapshotItem(priceListId, product);
+  const { data: existing, error: existingError } = await client
+    .from("price_list_items")
+    .select("id")
+    .eq("price_list_id", priceListId)
+    .eq("codice", product.codice)
+    .maybeSingle();
+  if (existingError) throw existingError;
+
+  if (existing?.id) {
+    const { error } = await client.from("price_list_items").update(item).eq("id", existing.id);
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await client.from("price_list_items").insert(item);
+  if (error) throw error;
+}
+
 async function insertBatch(
   client: ReturnType<typeof createClient>,
   userId: string,
@@ -306,6 +376,7 @@ async function saveProduct(client: ReturnType<typeof createClient>, userId: stri
 
     const { error } = await client.from("products").insert(product);
     if (error) throw error;
+    await syncLatestPriceListItem(client, product);
     const batchId = await insertBatch(client, userId, "manual_update", "Creazione manuale articolo", [{
       old_codice: null,
       new_codice: product.codice,
@@ -320,6 +391,7 @@ async function saveProduct(client: ReturnType<typeof createClient>, userId: stri
 
   const { error } = await client.from("products").update(productPatch(product)).eq("codice", originalCode);
   if (error) throw error;
+  await syncLatestPriceListItem(client, product, originalCode);
 
   const batchId = await insertBatch(client, userId, "manual_update", "Modifica manuale articolo", [{
     old_codice: originalCode,
@@ -356,6 +428,7 @@ async function partialImport(client: ReturnType<typeof createClient>, userId: st
     if (!existing) {
       const { error } = await client.from("products").insert(row);
       if (error) throw error;
+      await syncLatestPriceListItem(client, row);
       changes.push({ old_codice: null, new_codice: row.codice, change_type: "created", delta: row });
       continue;
     }
@@ -368,6 +441,7 @@ async function partialImport(client: ReturnType<typeof createClient>, userId: st
 
     const { error } = await client.from("products").update(productPatch(row)).eq("codice", row.codice);
     if (error) throw error;
+    await syncLatestPriceListItem(client, row);
     changes.push({ old_codice: row.codice, new_codice: row.codice, change_type: "updated", delta });
   }
 

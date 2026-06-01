@@ -264,6 +264,16 @@
     }
   }
 
+  async function refreshProductsAfterAdminChange(){
+    try {
+      if (typeof window.fetchProducts === 'function') await window.fetchProducts();
+      if (typeof window.renderView === 'function') window.renderView();
+      document.dispatchEvent(new Event('appReady'));
+    } catch (error) {
+      console.warn('[AdminManage] refresh products warn', error);
+    }
+  }
+
   function fillForm(product){
     $('adminProductForm')?.classList.remove('hidden');
     $('adminOriginalCode').value = product.codice || '';
@@ -343,6 +353,7 @@
       if (data.product?.codice) $('adminOriginalCode').value = data.product.codice;
       setMessage(data.action === 'unchanged' ? 'Nessuna modifica da salvare.' : 'Articolo salvato e tracciato.', 'success');
       await loadHistory();
+      await refreshProductsAfterAdminChange();
     } catch (error) {
       setMessage(error?.message || 'Errore salvataggio articolo.', 'error');
     } finally {
@@ -415,6 +426,7 @@
       });
       setMessage(`Aggiornamento completato: ${data.changed} modificati, ${data.unchanged} invariati.`, 'success');
       await loadHistory();
+      await refreshProductsAfterAdminChange();
     } catch (error) {
       setMessage(error?.message || 'Errore aggiornamento codici del file.', 'error');
     } finally {
