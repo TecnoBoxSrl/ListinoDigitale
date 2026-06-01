@@ -22,6 +22,23 @@ function requireEnv(name: string) {
   return value;
 }
 
+function describeError(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object") {
+    const obj = error as Record<string, unknown>;
+    const parts = [obj.message, obj.details, obj.hint, obj.code]
+      .map((part) => String(part || "").trim())
+      .filter(Boolean);
+    if (parts.length) return parts.join(" - ");
+    try {
+      return JSON.stringify(error);
+    } catch (_) {
+      return "Errore interno non leggibile";
+    }
+  }
+  return String(error || "Errore interno");
+}
+
 function getBearerToken(req: Request) {
   const auth = req.headers.get("authorization") || "";
   const match = auth.match(/^Bearer\s+(.+)$/i);
@@ -51,9 +68,27 @@ async function assertAdmin(client: ReturnType<typeof createClient>, req: Request
 }
 
 function parseItalianNumber(value: unknown) {
-  const raw = String(value ?? "").trim();
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  let raw = String(value ?? "").trim();
   if (!raw) return null;
-  const normalized = raw.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  raw = raw.replace(/[^0-9,.-]/g, "").replace(/\s/g, "");
+  if (!raw || raw === "-" || raw === "," || raw === ".") return null;
+
+  const lastComma = raw.lastIndexOf(",");
+  const lastDot = raw.lastIndexOf(".");
+  let normalized = raw;
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    normalized = lastComma > lastDot
+      ? raw.replace(/\./g, "").replace(",", ".")
+      : raw.replace(/,/g, "");
+  } else if (lastComma >= 0) {
+    normalized = raw.replace(/\./g, "").replace(",", ".");
+  } else if (lastDot >= 0) {
+    const [, decimals = ""] = raw.split(".");
+    normalized = decimals.length > 0 && decimals.length <= 4 ? raw : raw.replace(/\./g, "");
+  }
+
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -66,6 +101,8 @@ function parseBoolean(value: unknown, defaultValue = false) {
 
 function normalizeRow(row: Record<string, unknown>) {
   const now = new Date().toISOString();
+  const conai = parseItalianNumber(row.Conai ?? row.conai);
+  const conaiPerCollo = parseItalianNumber(row.ConaiPerCollo ?? row.conai_per_collo ?? row["CONAI/collo"]);
   return {
     codice: String(row.Codice ?? row.codice ?? "").trim(),
     descrizione: String(row.Descrizione ?? row.descrizione ?? "").trim(),
@@ -73,8 +110,8 @@ function normalizeRow(row: Record<string, unknown>) {
     categoria: String(row.Categoria ?? row.categoria ?? "").trim(),
     sottocategoria: String(row.Sottocategoria ?? row.sottocategoria ?? "").trim(),
     prezzo: parseItalianNumber(row.Prezzo ?? row.prezzo),
-    conai: parseItalianNumber(row.Conai ?? row.conai),
-    conai_per_collo: parseItalianNumber(row.ConaiPerCollo ?? row.conai_per_collo ?? row["CONAI/collo"]),
+    conai,
+    conai_per_collo: conaiPerCollo ?? conai ?? 0,
     unita: String(row.Unita ?? row.unita ?? "pz").trim() || "pz",
     disponibile: parseBoolean(row.Disponibile ?? row.disponibile, true),
     novita: parseBoolean(row.Novita ?? row.novita, false),
@@ -135,6 +172,13 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, error: "Nessuna riga valida da pubblicare" }, 400);
     }
 
+    const duplicateCodes = incoming
+      .map((row) => row.codice)
+      .filter((code, index, codes) => codes.indexOf(code) !== index);
+    if (duplicateCodes.length) {
+      return jsonResponse({ ok: false, error: `Codici duplicati nel file: ${[...new Set(duplicateCodes)].join(", ")}` }, 400);
+    }
+
     const version = buildVersionLabel(req);
     const { data: existingVersion, error: existingVersionError } = await client
       .from("price_lists")
@@ -150,18 +194,19 @@ Deno.serve(async (req) => {
       }, 409);
     }
 
+    const incomingCodes = incoming.map((row) => row.codice);
     const { data: current, error: currentError } = await client
       .from("products")
-      .select("codice,prezzo,descrizione,dimensione,conai,conai_per_collo,disponibile,novita,tags");
+      .select("codice,prezzo,descrizione,dimensione,categoria,sottocategoria,conai,conai_per_collo,unita,disponibile,novita,pack,pallet,tags")
+      .in("codice", incomingCodes);
     if (currentError) throw currentError;
 
     const currentByCode = new Map((current || []).map((product: any) => [product.codice, product]));
     const created: any[] = [];
     const updated: any[] = [];
-    const seen = new Set<string>();
+    let unchanged = 0;
 
     for (const row of incoming) {
-      seen.add(row.codice);
       const existing = currentByCode.get(row.codice);
       if (!existing) {
         created.push(row);
@@ -172,20 +217,24 @@ Deno.serve(async (req) => {
       if (Number(existing.prezzo) !== row.prezzo) delta.prezzo = { from: existing.prezzo, to: row.prezzo };
       if (existing.descrizione !== row.descrizione) delta.descrizione = { from: existing.descrizione, to: row.descrizione };
       if ((existing.dimensione || "") !== row.dimensione) delta.dimensione = { from: existing.dimensione, to: row.dimensione };
+      if ((existing.categoria || "") !== row.categoria) delta.categoria = { from: existing.categoria, to: row.categoria };
+      if ((existing.sottocategoria || "") !== row.sottocategoria) delta.sottocategoria = { from: existing.sottocategoria, to: row.sottocategoria };
       if (Number(existing.conai || 0) !== Number(row.conai || 0)) delta.conai = { from: existing.conai, to: row.conai };
       if (Number(existing.conai_per_collo || 0) !== Number(row.conai_per_collo || 0)) {
         delta.conai_per_collo = { from: existing.conai_per_collo, to: row.conai_per_collo };
       }
+      if ((existing.unita || "") !== row.unita) delta.unita = { from: existing.unita, to: row.unita };
       if (existing.disponibile !== row.disponibile) delta.disponibile = { from: existing.disponibile, to: row.disponibile };
       if (existing.novita !== row.novita) delta.novita = { from: existing.novita, to: row.novita };
+      if ((existing.pack || "") !== row.pack) delta.pack = { from: existing.pack, to: row.pack };
+      if ((existing.pallet || "") !== row.pallet) delta.pallet = { from: existing.pallet, to: row.pallet };
       if (JSON.stringify(existing.tags || []) !== JSON.stringify(row.tags || [])) {
         delta.tags = { from: existing.tags, to: row.tags };
       }
 
       if (Object.keys(delta).length) updated.push({ ...row, delta });
+      else unchanged += 1;
     }
-
-    const removed = (current || []).filter((product: any) => !seen.has(product.codice));
 
     const { data: priceList, error: priceListError } = await client
       .from("price_lists")
@@ -206,18 +255,9 @@ Deno.serve(async (req) => {
       if (error) throw error;
     }
 
-    for (const row of removed) {
-      const { error } = await client
-        .from("products")
-        .update({ disponibile: false, novita: false, updated_at: new Date().toISOString() })
-        .eq("codice", row.codice);
-      if (error) throw error;
-    }
-
     const changes = [
       ...created.map((row) => ({ price_list_id: priceListId, codice: row.codice, change_type: "created", delta: null })),
       ...updated.map((row) => ({ price_list_id: priceListId, codice: row.codice, change_type: "updated", delta: row.delta })),
-      ...removed.map((row: any) => ({ price_list_id: priceListId, codice: row.codice, change_type: "removed", delta: null })),
     ];
 
     if (changes.length) {
@@ -254,11 +294,13 @@ Deno.serve(async (req) => {
       price_list_id: priceListId,
       created: created.length,
       updated: updated.length,
-      removed: removed.length,
+      unchanged,
+      removed: 0,
       notification,
     });
   } catch (error) {
-    console.error("[publish_price_list]", error);
-    return jsonResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500);
+    const message = describeError(error);
+    console.error("[publish_price_list]", message, error);
+    return jsonResponse({ ok: false, error: message }, 500);
   }
 });
