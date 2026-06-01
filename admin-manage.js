@@ -194,7 +194,7 @@
       if (!window.confirm('Confermi davvero la cancellazione di tutto lo storico?')) return;
       setMessage('Cancellazione di tutto lo storico...');
       await invokeAdmin({ action: 'delete_history', target_type: 'all' });
-      setMessage('Tutto lo storico e stato cancellato.', 'success');
+      setMessage('Storico cancellato. Il listino corrente e stato mantenuto.', 'success');
       await loadHistory();
     } catch (error) {
       setMessage(error?.message || 'Errore cancellazione storico.', 'error');

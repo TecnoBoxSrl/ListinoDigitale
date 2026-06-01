@@ -458,22 +458,35 @@ async function history(client: ReturnType<typeof createClient>) {
 }
 
 async function deleteAllHistory(client: ReturnType<typeof createClient>) {
+  const { data: latestList, error: latestListError } = await client
+    .from("price_lists")
+    .select("id")
+    .order("published_at", { ascending: false, nullsLast: true })
+    .limit(1)
+    .maybeSingle();
+  if (latestListError) throw latestListError;
+
+  const latestPriceListId = latestList?.id || null;
+
   const { error: adminItemsError } = await client.from("admin_change_items").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   if (adminItemsError) throw adminItemsError;
 
   const { error: adminBatchesError } = await client.from("admin_change_batches").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   if (adminBatchesError) throw adminBatchesError;
 
-  const { error: changeLogError } = await client.from("change_log").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  const changeLogDelete = latestPriceListId
+    ? client.from("change_log").delete().neq("price_list_id", latestPriceListId)
+    : client.from("change_log").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  const { error: changeLogError } = await changeLogDelete;
   if (changeLogError) throw changeLogError;
 
-  const { error: itemsError } = await client.from("price_list_items").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-  if (itemsError) throw itemsError;
-
-  const { error: listsError } = await client.from("price_lists").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  const listsDelete = latestPriceListId
+    ? client.from("price_lists").delete().neq("id", latestPriceListId)
+    : client.from("price_lists").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  const { error: listsError } = await listsDelete;
   if (listsError) throw listsError;
 
-  return jsonResponse({ ok: true, deleted: "all_history" });
+  return jsonResponse({ ok: true, deleted: "all_history", kept_price_list_id: latestPriceListId });
 }
 
 async function deleteHistory(client: ReturnType<typeof createClient>, body: Record<string, unknown>) {
