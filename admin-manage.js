@@ -443,6 +443,13 @@
     state.rows = [];
     const fileInput = $('adminImportFile');
     if (fileInput) fileInput.value = '';
+    const fileName = $('adminSelectedFileName');
+    if (fileName) {
+      fileName.textContent = '';
+      fileName.classList.add('hidden');
+    }
+    const version = $('adminVersionLabel');
+    if (version) version.value = '';
     const count = $('adminImportCount');
     if (count) count.textContent = '0';
     const preview = $('adminImportPreview');

@@ -142,11 +142,23 @@
     setPanelVisible(profile?.role === 'admin');
   }
 
+  function setSelectedFileName(name){
+    const el = $('adminSelectedFileName');
+    if (!el) return;
+    el.textContent = name ? `File selezionato: ${name}` : '';
+    el.classList.toggle('hidden', !name);
+  }
+
   function clearImport(options = {}){
     state.rows = [];
     state.duplicateCodes = [];
     const fileInput = $('adminImportFile');
-    if (fileInput) fileInput.value = '';
+    if (fileInput && !options.keepFile) fileInput.value = '';
+    if (!options.keepFile) setSelectedFileName('');
+    if (options.clearVersion) {
+      const version = $('adminVersionLabel');
+      if (version) version.value = '';
+    }
     const count = $('adminImportCount');
     if (count) count.textContent = '0';
     setPublishBusy(false);
@@ -310,8 +322,9 @@
   async function handleFileChange(event){
     try {
       const file = event.target.files?.[0];
-      clearImport();
+      clearImport({ keepFile: true });
       if (!file) return;
+      setSelectedFileName(file.name);
       if (!window.XLSX) {
         setMessage('Libreria Excel non caricata. Ricarica la pagina e riprova.', 'error');
         return;
@@ -421,7 +434,7 @@
       });
       await refreshProductsAfterImport();
       setMessage(`Listino pubblicato: ${data.version}. Nuovi ${data.created}, aggiornati ${data.updated}, invariati ${data.unchanged}, ritirati ${data.removed}.`, 'success');
-      clearImport({ keepMessage: true });
+      clearImport({ keepMessage: true, clearVersion: true });
     } catch (error) {
       console.error('[AdminImport] publish error', error);
       setMessage(error?.message || 'Errore durante la pubblicazione del listino.', 'error');

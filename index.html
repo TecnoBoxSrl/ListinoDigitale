@@ -768,6 +768,7 @@
         <label for="adminImportFile" class="block text-xs font-medium uppercase tracking-wide text-slate-600">File listino</label>
         <input id="adminImportFile" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                class="w-full rounded-lg border bg-white px-3 py-2 text-sm">
+        <div id="adminSelectedFileName" class="hidden rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700"></div>
         <p class="text-[11px] text-slate-500">Pubblica completo sostituisce il listino. Aggiorna solo codici modifica o crea solo gli articoli del file.</p>
       </div>
       <div class="grid grid-cols-1 gap-2 sm:grid-cols-[auto_auto_auto] sm:items-center xl:pb-[1.35rem]">
@@ -938,8 +939,8 @@
 
   <!-- forza aggiornamento -->
 <script src="./script.js?v=quote-no-layout-measure-1" defer></script>
-<script src="./admin-import.js?v=clear-file-after-action-1" defer></script>
-  <script src="./admin-manage.js?v=clear-file-after-action-1" defer></script>
+<script src="./admin-import.js?v=file-reset-2" defer></script>
+  <script src="./admin-manage.js?v=file-reset-2" defer></script>
 <div id="floatingActions"
      class="fixed z-[9999]
             bottom-[max(1rem,env(safe-area-inset-bottom))]
