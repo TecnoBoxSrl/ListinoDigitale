@@ -106,7 +106,7 @@
         <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 class="text-sm font-semibold text-slate-900">Gestione admin</h3>
-            <p class="text-xs text-slate-600">Storico, modifica articoli e aggiornamento mirato.</p>
+            <p class="text-xs text-slate-600">Storico e modifica articoli.</p>
           </div>
           <div class="flex flex-wrap gap-2">
             <button id="btnAdminRefreshHistory" class="w-fit rounded-lg border bg-white px-3 py-2 text-xs font-medium text-slate-700">Aggiorna storico</button>
@@ -150,13 +150,6 @@
             </div>
           </form>
         </div>
-
-        <div class="rounded-lg border bg-white p-3">
-          <h4 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-600">Aggiorna solo i codici del file</h4>
-          <p class="mb-2 text-xs text-slate-600">Usa il file gia caricato sopra per correggere o aggiungere solo quei codici. Tutti gli altri articoli restano invariati.</p>
-          <button id="btnAdminPartialImport" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300" disabled>Aggiorna solo i codici del file</button>
-        </div>
-
         <p id="adminManageMsg" class="text-xs text-slate-600"></p>
       </div>
     `;
@@ -431,7 +424,7 @@
       setMessage(error?.message || 'Errore aggiornamento codici del file.', 'error');
     } finally {
       if (btn) {
-        btn.textContent = 'Aggiorna solo i codici del file';
+        btn.textContent = 'Aggiorna solo codici';
         btn.disabled = state.rows.length === 0;
       }
     }

@@ -768,15 +768,15 @@
         <label for="adminImportFile" class="block text-xs font-medium uppercase tracking-wide text-slate-600">File listino</label>
         <input id="adminImportFile" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                class="w-full rounded-lg border bg-white px-3 py-2 text-sm">
+        <p class="text-[11px] text-slate-500">Pubblica completo sostituisce il listino. Aggiorna solo codici modifica o crea solo gli articoli del file.</p>
       </div>
-      <div class="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+      <div class="grid gap-2 sm:flex sm:items-center">
         <label class="inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm text-slate-700">
           <input id="adminNotifyAgents" type="checkbox" class="h-4 w-4 accent-sky-600">
           Avvisa agenti
         </label>
-        <button id="btnPublishPriceList" class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300" disabled>
-  Pubblica listino completo
-</button>
+        <button id="btnPublishPriceList" class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300" disabled>Pubblica listino completo</button>
+        <button id="btnAdminPartialImport" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300" disabled>Aggiorna solo codici</button>
       </div>
     </div>
 
@@ -939,7 +939,7 @@
   <!-- forza aggiornamento -->
 <script src="./script.js?v=quote-no-layout-measure-1" defer></script>
 <script src="./admin-import.js?v=full-replace-1" defer></script>
-  <script src="./admin-manage.js?v=latest-snapshot-sync-1" defer></script>
+  <script src="./admin-manage.js?v=admin-layout-1" defer></script>
 <div id="floatingActions"
      class="fixed z-[9999]
             bottom-[max(1rem,env(safe-area-inset-bottom))]
