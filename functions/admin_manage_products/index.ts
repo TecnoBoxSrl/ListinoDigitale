@@ -423,7 +423,7 @@ async function history(client: ReturnType<typeof createClient>) {
       removed: changes.filter((change) => change.change_type === "removed").length,
       codes: changes.map((change) => change.codice),
     };
-  });
+  }).filter((list: any) => list.codes.length > 0);
 
   const { data: batches, error: batchesError } = await client
     .from("admin_change_batches")
@@ -474,10 +474,7 @@ async function deleteAllHistory(client: ReturnType<typeof createClient>) {
   const { error: adminBatchesError } = await client.from("admin_change_batches").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   if (adminBatchesError) throw adminBatchesError;
 
-  const changeLogDelete = latestPriceListId
-    ? client.from("change_log").delete().neq("price_list_id", latestPriceListId)
-    : client.from("change_log").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-  const { error: changeLogError } = await changeLogDelete;
+  const { error: changeLogError } = await client.from("change_log").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   if (changeLogError) throw changeLogError;
 
   const listsDelete = latestPriceListId
@@ -504,7 +501,19 @@ async function deleteHistory(client: ReturnType<typeof createClient>, body: Reco
   }
 
   if (targetType === "price_list") {
+    const { data: latestList, error: latestListError } = await client
+      .from("price_lists")
+      .select("id")
+      .order("published_at", { ascending: false, nullsLast: true })
+      .limit(1)
+      .maybeSingle();
+    if (latestListError) throw latestListError;
+
     await client.from("change_log").delete().eq("price_list_id", id);
+    if (latestList?.id === id) {
+      return jsonResponse({ ok: true, deleted: "price_list_history", kept_price_list_id: id });
+    }
+
     await client.from("price_list_items").delete().eq("price_list_id", id);
     const { error } = await client.from("price_lists").delete().eq("id", id);
     if (error) throw error;
