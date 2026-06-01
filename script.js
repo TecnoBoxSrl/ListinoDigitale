@@ -423,7 +423,17 @@ function forceReconnect(){
 
 
 
+let quotePanelResizeFrame = null;
+
 function resizeQuotePanel() {
+  if (quotePanelResizeFrame) return;
+  quotePanelResizeFrame = requestAnimationFrame(() => {
+    quotePanelResizeFrame = null;
+    applyQuotePanelSize();
+  });
+}
+
+function applyQuotePanelSize() {
   const panel = document.getElementById('quotePanel'); 
   const table = document.getElementById('quoteTable');
   if (!panel || !table) return;
@@ -1792,6 +1802,16 @@ function renderCards(){
 }
 
 /* ============ PREVENTIVI (lato destro) ============ */
+let quotePanelRenderFrame = null;
+
+function scheduleQuotePanelRender(){
+  if (quotePanelRenderFrame) return;
+  quotePanelRenderFrame = requestAnimationFrame(() => {
+    quotePanelRenderFrame = null;
+    renderQuotePanel();
+  });
+}
+
 function addToQuote(p, options = {}){
   const minPrintQty = Number(p.quantitaMinimaStampa || 0);
   const hasPrintOption = Number(p.prezzoStampa || 0) > 0 && minPrintQty > 0;
@@ -1815,14 +1835,14 @@ function addToQuote(p, options = {}){
     item.qty += 1;
   }
   state.selected.set(p.codice, item);
-  renderQuotePanel();
+  scheduleQuotePanelRender();
 }
 
 function removeFromQuote(code){
   state.selected.delete(code);
   const encodedSelector = CSS.escape(encodeURIComponent(code));
   document.querySelectorAll(`.stampa-checkbox[value="${encodedSelector}"]`).forEach(i => { i.checked = false; });
-  renderQuotePanel();
+  scheduleQuotePanelRender();
 }
 
 function lineCalc(it){
@@ -1862,6 +1882,7 @@ function renderQuotePanel(){
   body.innerHTML = '';
 
   let total = 0;
+  const rowsFragment = document.createDocumentFragment();
 
   for (const it of state.selected.values()){
     const { prezzoScont, totale } = lineCalc(it);
@@ -1896,8 +1917,9 @@ function renderQuotePanel(){
         <button class="text-rose-600 underline btnRemove" data-code="${codeAttr}">Rimuovi</button>
       </td>
     `;
-    body.appendChild(tr);
+    rowsFragment.appendChild(tr);
   }
+  body.appendChild(rowsFragment);
 
   const imponibile = roundCurrency(total);
   const { vat, gross } = computeVatBreakdown(imponibile);
