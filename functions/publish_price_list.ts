@@ -5,8 +5,9 @@ import Papa from "https://esm.sh/papaparse@5.4.1";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "authorization, content-type, x-version-label, x-skip-notify",
+  "access-control-allow-headers": "authorization, apikey, content-type, x-client-info, x-supabase-api-version, x-version-label, x-skip-notify",
   "access-control-allow-methods": "POST, OPTIONS",
+  "access-control-max-age": "86400",
 };
 
 function jsonResponse(body: unknown, status = 200) {
