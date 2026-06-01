@@ -142,9 +142,11 @@
     setPanelVisible(profile?.role === 'admin');
   }
 
-  function clearImport(){
+  function clearImport(options = {}){
     state.rows = [];
     state.duplicateCodes = [];
+    const fileInput = $('adminImportFile');
+    if (fileInput) fileInput.value = '';
     const count = $('adminImportCount');
     if (count) count.textContent = '0';
     setPublishBusy(false);
@@ -153,7 +155,7 @@
       preview.innerHTML = '';
       preview.classList.add('hidden');
     }
-    setMessage('');
+    if (!options.keepMessage) setMessage('');
   }
 
   function aliasSet(targetField){
@@ -419,6 +421,7 @@
       });
       await refreshProductsAfterImport();
       setMessage(`Listino pubblicato: ${data.version}. Nuovi ${data.created}, aggiornati ${data.updated}, invariati ${data.unchanged}, ritirati ${data.removed}.`, 'success');
+      clearImport({ keepMessage: true });
     } catch (error) {
       console.error('[AdminImport] publish error', error);
       setMessage(error?.message || 'Errore durante la pubblicazione del listino.', 'error');

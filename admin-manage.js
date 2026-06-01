@@ -420,6 +420,7 @@
       setMessage(`Aggiornamento completato: ${data.changed} modificati, ${data.unchanged} invariati.`, 'success');
       await loadHistory();
       await refreshProductsAfterAdminChange();
+      clearImportFileState();
     } catch (error) {
       setMessage(error?.message || 'Errore aggiornamento codici del file.', 'error');
     } finally {
@@ -436,6 +437,24 @@
       const el = $(id);
       if (el) el.value = '';
     });
+  }
+
+  function clearImportFileState(){
+    state.rows = [];
+    const fileInput = $('adminImportFile');
+    if (fileInput) fileInput.value = '';
+    const count = $('adminImportCount');
+    if (count) count.textContent = '0';
+    const preview = $('adminImportPreview');
+    if (preview) {
+      preview.innerHTML = '';
+      preview.classList.add('hidden');
+    }
+    const btn = $('btnAdminPartialImport');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Aggiorna solo codici';
+    }
   }
 
   function bindPanel(){
