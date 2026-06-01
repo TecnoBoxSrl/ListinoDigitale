@@ -84,9 +84,29 @@ async function assertAdmin(client: ReturnType<typeof createClient>, req: Request
 }
 
 function parseItalianNumber(value: unknown) {
-  const raw = String(value ?? "").trim();
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  let raw = String(value ?? "").trim();
   if (!raw) return null;
-  const normalized = raw.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  raw = raw.replace(/[^0-9,.-]/g, "").replace(/\s/g, "");
+  if (!raw || raw === "-" || raw === "," || raw === ".") return null;
+
+  const lastComma = raw.lastIndexOf(",");
+  const lastDot = raw.lastIndexOf(".");
+  let normalized = raw;
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    if (lastComma > lastDot) {
+      normalized = raw.replace(/\./g, "").replace(",", ".");
+    } else {
+      normalized = raw.replace(/,/g, "");
+    }
+  } else if (lastComma >= 0) {
+    normalized = raw.replace(/\./g, "").replace(",", ".");
+  } else if (lastDot >= 0) {
+    const [, decimals = ""] = raw.split(".");
+    normalized = decimals.length > 0 && decimals.length <= 4 ? raw : raw.replace(/\./g, "");
+  }
+
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -313,7 +333,7 @@ async function partialImport(client: ReturnType<typeof createClient>, userId: st
     client,
     userId,
     "partial_import",
-    String(body.label || "Import parziale articoli").trim(),
+    String(body.label || "Import articoli caricati").trim(),
     changes,
     unchangedCount,
   );
@@ -395,6 +415,28 @@ async function history(client: ReturnType<typeof createClient>) {
   return jsonResponse({ ok: true, full_imports: fullImports, changes });
 }
 
+async function deleteHistory(client: ReturnType<typeof createClient>, body: Record<string, unknown>) {
+  const targetType = String(body.target_type || "");
+  const id = String(body.id || "");
+  if (!id) return jsonResponse({ ok: false, error: "Storico da cancellare non indicato" }, 400);
+
+  if (targetType === "admin_batch") {
+    const { error } = await client.from("admin_change_batches").delete().eq("id", id);
+    if (error) throw error;
+    return jsonResponse({ ok: true, deleted: "admin_batch" });
+  }
+
+  if (targetType === "price_list") {
+    await client.from("change_log").delete().eq("price_list_id", id);
+    await client.from("price_list_items").delete().eq("price_list_id", id);
+    const { error } = await client.from("price_lists").delete().eq("id", id);
+    if (error) throw error;
+    return jsonResponse({ ok: true, deleted: "price_list" });
+  }
+
+  return jsonResponse({ ok: false, error: "Tipo storico non valido" }, 400);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse({ ok: false, error: "Metodo non consentito" }, 405);
@@ -414,6 +456,7 @@ Deno.serve(async (req) => {
     if (action === "save_product") return await saveProduct(client, admin.userId, body);
     if (action === "partial_import") return await partialImport(client, admin.userId, body);
     if (action === "history") return await history(client);
+    if (action === "delete_history") return await deleteHistory(client, body);
 
     return jsonResponse({ ok: false, error: "Azione non valida" }, 400);
   } catch (error) {
