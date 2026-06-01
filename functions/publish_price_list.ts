@@ -178,7 +178,7 @@ function snapshotItem(priceListId: string, product: Record<string, unknown>) {
   };
 }
 
-async function readRows(req: Request) {
+async function readPayload(req: Request) {
   const contentType = req.headers.get("content-type") || "";
 
   if (contentType.includes("text/csv")) {
@@ -187,12 +187,15 @@ async function readRows(req: Request) {
     if (parsed.errors?.length) {
       throw new Error(`CSV non valido: ${parsed.errors[0].message}`);
     }
-    return (parsed.data as Record<string, unknown>[]).filter((row) => row.Codice || row.Descrizione);
+    return {
+      rows: (parsed.data as Record<string, unknown>[]).filter((row) => row.Codice || row.Descrizione),
+      body: {},
+    };
   }
 
   const body = await req.json();
-  if (Array.isArray(body)) return body;
-  if (Array.isArray(body?.rows)) return body.rows;
+  if (Array.isArray(body)) return { rows: body, body: {} };
+  if (Array.isArray(body?.rows)) return { rows: body.rows, body };
   throw new Error("Body non valido: inviare un array di righe o { rows: [...] }");
 }
 
@@ -208,7 +211,9 @@ Deno.serve(async (req) => {
     const admin = await assertAdmin(client, req);
     if (!admin.ok) return jsonResponse({ ok: false, error: admin.error }, admin.status);
 
-    const rows = await readRows(req);
+    const payload = await readPayload(req);
+    const rows = payload.rows;
+    const missingPolicy = String((payload.body as Record<string, unknown>)?.missing_policy || "keep");
     const incoming = rows.map(normalizeRow).filter((row) => row.codice && row.descrizione);
     if (!incoming.length) {
       return jsonResponse({ ok: false, error: "Nessuna riga valida da pubblicare" }, 400);
@@ -234,6 +239,7 @@ Deno.serve(async (req) => {
     const currentByCode = new Map((current || []).map((product: any) => [product.codice, product]));
     const created: any[] = [];
     const updated: any[] = [];
+    const removed: any[] = [];
     let unchanged = 0;
 
     for (const row of incoming) {
@@ -282,9 +288,34 @@ Deno.serve(async (req) => {
       if (error) throw error;
     }
 
+    if (missingPolicy === "disable") {
+      const { data: availableRows, error: availableError } = await client
+        .from("products")
+        .select(PRODUCT_COLUMNS)
+        .eq("disponibile", true);
+      if (availableError) throw availableError;
+
+      const incomingCodeSet = new Set(incomingCodes);
+      for (const product of (availableRows || []).filter((item: any) => !incomingCodeSet.has(item.codice))) {
+        const { error } = await client
+          .from("products")
+          .update({ disponibile: false, novita: false, updated_at: new Date().toISOString() })
+          .eq("codice", product.codice);
+        if (error) throw error;
+        removed.push({
+          ...product,
+          delta: {
+            disponibile: { from: true, to: false },
+            novita: { from: product.novita ?? null, to: false },
+          },
+        });
+      }
+    }
+
     const changes = [
       ...created.map((row) => ({ price_list_id: priceListId, codice: row.codice, change_type: "created", delta: null })),
       ...updated.map((row) => ({ price_list_id: priceListId, codice: row.codice, change_type: "updated", delta: row.delta })),
+      ...removed.map((row) => ({ price_list_id: priceListId, codice: row.codice, change_type: "removed", delta: row.delta })),
     ];
 
     if (changes.length) {
@@ -320,7 +351,8 @@ Deno.serve(async (req) => {
       created: created.length,
       updated: updated.length,
       unchanged,
-      removed: 0,
+      removed: removed.length,
+      missing_policy: missingPolicy,
       notification,
     });
   } catch (error) {

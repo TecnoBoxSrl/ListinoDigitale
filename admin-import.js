@@ -58,7 +58,7 @@
     const btn = $('btnPublishPriceList');
     if (!btn) return;
     btn.disabled = isBusy || state.rows.length === 0;
-    btn.textContent = isBusy ? 'Pubblicazione...' : 'Pubblica';
+    btn.textContent = isBusy ? 'Pubblicazione...' : 'Pubblica listino completo';
   }
 
   function formatImportDate(value){
@@ -118,6 +118,31 @@
       renderLastImport(raw ? JSON.parse(raw) : null);
     } catch (_) {
       renderLastImport(null);
+    }
+  }
+
+  function ensureMissingPolicyControl(){
+    if ($('adminMissingPolicy')) return;
+    const notify = $('adminNotifyAgents');
+    const anchorLabel = notify?.closest?.('label');
+    const target = anchorLabel?.parentElement || $('adminImportPanel');
+    if (!target) return;
+
+    const wrapper = document.createElement('label');
+    wrapper.className = 'flex flex-col gap-1 text-xs text-slate-600';
+    wrapper.innerHTML = `
+      <span>Articoli non presenti nel file</span>
+      <select id="adminMissingPolicy" class="rounded-lg border px-3 py-2 text-sm text-slate-800">
+        <option value="keep" selected>Lascia invariati</option>
+        <option value="disable">Segna come non disponibili</option>
+      </select>
+      <span class="text-[11px] text-slate-500">Consigliato: lascia invariati. Evita ritiri per errore se il file e incompleto.</span>
+    `;
+
+    if (anchorLabel?.nextSibling) {
+      target.insertBefore(wrapper, anchorLabel.nextSibling);
+    } else {
+      target.appendChild(wrapper);
     }
   }
 
@@ -341,7 +366,7 @@
     }
   }
 
-  async function invokePublish(session, versionLabel, notifyAgents){
+  async function invokePublish(session, versionLabel, notifyAgents, missingPolicy){
     const headers = {
       apikey: SUPABASE_ANON_KEY,
       authorization: `Bearer ${session.access_token}`,
@@ -353,7 +378,7 @@
     const response = await fetch(`${SUPABASE_URL}/functions/v1/publish_price_list`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ rows: state.rows }),
+      body: JSON.stringify({ rows: state.rows, missing_policy: missingPolicy }),
     });
 
     const rawText = await response.text();
@@ -403,10 +428,11 @@
 
       const versionLabel = String($('adminVersionLabel')?.value || '').trim();
       const notifyAgents = !!$('adminNotifyAgents')?.checked;
+      const missingPolicy = String($('adminMissingPolicy')?.value || 'keep');
 
       setPublishBusy(true);
-      setMessage('Pubblicazione listino in corso... attendi, non chiudere la pagina.');
-      const data = await invokePublish(session, versionLabel, notifyAgents);
+      setMessage('Pubblicazione listino completo in corso... attendi, non chiudere la pagina.');
+      const data = await invokePublish(session, versionLabel, notifyAgents, missingPolicy);
 
       saveLastImport({
         at: new Date().toISOString(),
@@ -419,7 +445,7 @@
         ignoredDuplicates: state.duplicateCodes.join(', '),
       });
       await refreshProductsAfterImport();
-      setMessage(`Listino pubblicato: ${data.version}. Nuovi ${data.created}, aggiornati ${data.updated}, invariati ${data.unchanged}, ritirati ${data.removed}.`, 'success');
+      setMessage(`Listino pubblicato: ${data.version}. Nuovi ${data.created}, aggiornati ${data.updated}, invariati ${data.unchanged}, non disponibili ${data.removed}.`, 'success');
     } catch (error) {
       console.error('[AdminImport] publish error', error);
       setMessage(error?.message || 'Errore durante la pubblicazione del listino.', 'error');
@@ -429,6 +455,7 @@
   }
 
   function init(){
+    ensureMissingPolicyControl();
     $('adminImportFile')?.addEventListener('change', handleFileChange);
     $('btnPublishPriceList')?.addEventListener('click', () => { void publishRows(); });
     const today = new Date().toISOString().slice(0, 10);

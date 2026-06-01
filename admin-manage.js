@@ -1,4 +1,4 @@
-// Pannello admin: storico, modifica articoli e import articoli caricati.
+// Pannello admin: storico, modifica articoli e aggiornamento mirato.
 (function(){
   const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
@@ -106,7 +106,7 @@
         <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 class="text-sm font-semibold text-slate-900">Gestione admin</h3>
-            <p class="text-xs text-slate-600">Storico, modifica articoli e import dei codici caricati.</p>
+            <p class="text-xs text-slate-600">Storico, modifica articoli e aggiornamento mirato.</p>
           </div>
           <div class="flex flex-wrap gap-2">
             <button id="btnAdminRefreshHistory" class="w-fit rounded-lg border bg-white px-3 py-2 text-xs font-medium text-slate-700">Aggiorna storico</button>
@@ -152,9 +152,9 @@
         </div>
 
         <div class="rounded-lg border bg-white p-3">
-          <h4 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-600">Import articoli caricati</h4>
-          <p class="mb-2 text-xs text-slate-600">Carica sopra un file e usa questo pulsante: aggiorna o crea solo i codici presenti nel file, lasciando invariati tutti gli altri.</p>
-          <button id="btnAdminPartialImport" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300" disabled>Aggiorna articoli caricati</button>
+          <h4 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-600">Aggiorna solo i codici del file</h4>
+          <p class="mb-2 text-xs text-slate-600">Usa il file gia caricato sopra per correggere o aggiungere solo quei codici. Tutti gli altri articoli restano invariati.</p>
+          <button id="btnAdminPartialImport" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300" disabled>Aggiorna solo i codici del file</button>
         </div>
 
         <p id="adminManageMsg" class="text-xs text-slate-600"></p>
@@ -236,7 +236,7 @@
         <div class="rounded-md border border-slate-100 p-2">
           <div class="flex items-start justify-between gap-2">
             <div>
-              <div class="font-semibold text-slate-900">${item.action_type === 'partial_import' ? 'Import articoli caricati' : 'Modifica manuale'}</div>
+              <div class="font-semibold text-slate-900">${item.action_type === 'partial_import' ? 'Aggiornamento codici del file' : 'Modifica manuale'}</div>
               <div>${escapeHtml(formatDate(item.created_at))} - ${item.item_count || 0} codici modificati, ${item.unchanged_count || 0} invariati</div>
             </div>
             ${deleteButton('admin_batch', item.id)}
@@ -407,19 +407,19 @@
         btn.disabled = true;
         btn.textContent = 'Aggiornamento...';
       }
-      setMessage('Import in corso... aggiorno solo i codici caricati.');
+      setMessage('Aggiornamento mirato in corso... aggiorno solo i codici del file.');
       const data = await invokeAdmin({
         action: 'partial_import',
-        label: $('adminVersionLabel')?.value || 'Import articoli caricati',
+        label: $('adminVersionLabel')?.value || 'Aggiornamento codici del file',
         rows: state.rows,
       });
-      setMessage(`Import completato: ${data.changed} modificati, ${data.unchanged} invariati.`, 'success');
+      setMessage(`Aggiornamento completato: ${data.changed} modificati, ${data.unchanged} invariati.`, 'success');
       await loadHistory();
     } catch (error) {
-      setMessage(error?.message || 'Errore import.', 'error');
+      setMessage(error?.message || 'Errore aggiornamento codici del file.', 'error');
     } finally {
       if (btn) {
-        btn.textContent = 'Aggiorna articoli caricati';
+        btn.textContent = 'Aggiorna solo i codici del file';
         btn.disabled = state.rows.length === 0;
       }
     }
