@@ -160,6 +160,22 @@ function buildVersionLabel(req: Request) {
   return new Date().toISOString().slice(0, 10);
 }
 
+async function resolveVersionLabel(client: ReturnType<typeof createClient>, requestedVersion: string) {
+  const base = requestedVersion || new Date().toISOString().slice(0, 10);
+  const { data, error } = await client
+    .from("price_lists")
+    .select("version_label")
+    .or(`version_label.eq.${base},version_label.like.${base}-%`);
+  if (error) throw error;
+
+  const existing = new Set((data || []).map((row: any) => row.version_label));
+  if (!existing.has(base)) return base;
+
+  let counter = 2;
+  while (existing.has(`${base}-${counter}`)) counter += 1;
+  return `${base}-${counter}`;
+}
+
 async function readRows(req: Request) {
   const contentType = req.headers.get("content-type") || "";
 
@@ -203,20 +219,8 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, error: `Codici duplicati nel file: ${[...new Set(duplicateCodes)].join(", ")}` }, 400);
     }
 
-    const version = buildVersionLabel(req);
-    const { data: existingVersion, error: existingVersionError } = await client
-      .from("price_lists")
-      .select("id")
-      .eq("version_label", version)
-      .maybeSingle();
-
-    if (existingVersionError) throw existingVersionError;
-    if (existingVersion) {
-      return jsonResponse({
-        ok: false,
-        error: `La versione ${version} esiste gia. Usa x-version-label per pubblicare una nuova versione.`,
-      }, 409);
-    }
+    const requestedVersion = buildVersionLabel(req);
+    const version = await resolveVersionLabel(client, requestedVersion);
 
     const incomingCodes = incoming.map((row) => row.codice);
     const { data: current, error: currentError } = await client
@@ -312,6 +316,7 @@ Deno.serve(async (req) => {
     return jsonResponse({
       ok: true,
       version,
+      requested_version: requestedVersion,
       price_list_id: priceListId,
       created: created.length,
       updated: updated.length,
