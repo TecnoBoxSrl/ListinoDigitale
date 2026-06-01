@@ -86,14 +86,24 @@ function parseItalianNumber(value: unknown) {
       ? raw.replace(/\./g, "").replace(",", ".")
       : raw.replace(/,/g, "");
   } else if (lastComma >= 0) {
-    normalized = raw.replace(/\./g, "").replace(",", ".");
+    const parts = raw.split(",");
+    normalized = parts.length > 2
+      ? `${parts.slice(0, -1).join("")}.${parts.at(-1)}`
+      : raw.replace(",", ".");
   } else if (lastDot >= 0) {
-    const [, decimals = ""] = raw.split(".");
-    normalized = decimals.length > 0 && decimals.length <= 4 ? raw : raw.replace(/\./g, "");
+    const parts = raw.split(".");
+    normalized = parts.length > 2 ? parts.join("") : raw;
   }
 
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parsePositiveInteger(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = Number.parseInt(raw.replace(/[^0-9]/g, ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function parseBoolean(value: unknown, defaultValue = false) {
@@ -113,6 +123,10 @@ function normalizeRow(row: Record<string, unknown>) {
     categoria: String(row.Categoria ?? row.categoria ?? "").trim(),
     sottocategoria: String(row.Sottocategoria ?? row.sottocategoria ?? "").trim(),
     prezzo: parseItalianNumber(row.Prezzo ?? row.prezzo),
+    prezzo_stampa: parseItalianNumber(row.PrezzoStampa ?? row.prezzo_stampa ?? row["Prezzo stampato"]),
+    quantita_minima_stampa: parsePositiveInteger(
+      row.QuantitaMinimaStampa ?? row.quantita_minima_stampa ?? row["Qta minima stampa"] ?? row["Q.t? minima stampa"],
+    ),
     conai,
     conai_per_collo: conaiPerCollo ?? conai ?? 0,
     unita: String(row.Unita ?? row.unita ?? "pz").trim() || "pz",

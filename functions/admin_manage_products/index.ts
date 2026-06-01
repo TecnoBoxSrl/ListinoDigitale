@@ -103,10 +103,13 @@ function parseItalianNumber(value: unknown) {
       normalized = raw.replace(/,/g, "");
     }
   } else if (lastComma >= 0) {
-    normalized = raw.replace(/\./g, "").replace(",", ".");
+    const parts = raw.split(",");
+    normalized = parts.length > 2
+      ? `${parts.slice(0, -1).join("")}.${parts.at(-1)}`
+      : raw.replace(",", ".");
   } else if (lastDot >= 0) {
-    const [, decimals = ""] = raw.split(".");
-    normalized = decimals.length > 0 && decimals.length <= 4 ? raw : raw.replace(/\./g, "");
+    const parts = raw.split(".");
+    normalized = parts.length > 2 ? parts.join("") : raw;
   }
 
   const parsed = Number(normalized);
