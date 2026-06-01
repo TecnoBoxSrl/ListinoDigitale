@@ -1,7 +1,7 @@
 // Pannello admin: storico, modifica articoli e import articoli caricati.
 (function(){
   const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJIUzI1NiIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
 
   const state = { client: null, rows: [] };
   const $ = (id) => document.getElementById(id);
@@ -108,7 +108,10 @@
             <h3 class="text-sm font-semibold text-slate-900">Gestione admin</h3>
             <p class="text-xs text-slate-600">Storico, modifica articoli e import dei codici caricati.</p>
           </div>
-          <button id="btnAdminRefreshHistory" class="w-fit rounded-lg border bg-white px-3 py-2 text-xs font-medium text-slate-700">Aggiorna storico</button>
+          <div class="flex flex-wrap gap-2">
+            <button id="btnAdminRefreshHistory" class="w-fit rounded-lg border bg-white px-3 py-2 text-xs font-medium text-slate-700">Aggiorna storico</button>
+            <button id="btnAdminClearAllHistory" class="w-fit rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-medium text-red-700">Cancella tutto lo storico</button>
+          </div>
         </div>
 
         <div class="rounded-lg border bg-white p-3">
@@ -177,6 +180,19 @@
       setMessage('Cancellazione storico...');
       await invokeAdmin({ action: 'delete_history', target_type: targetType, id });
       setMessage('Storico cancellato.', 'success');
+      await loadHistory();
+    } catch (error) {
+      setMessage(error?.message || 'Errore cancellazione storico.', 'error');
+    }
+  }
+
+  async function deleteAllHistory(){
+    try {
+      if (!window.confirm('Cancellare tutto lo storico? Gli articoli e i prezzi attuali restano invariati.')) return;
+      if (!window.confirm('Confermi davvero la cancellazione di tutto lo storico?')) return;
+      setMessage('Cancellazione di tutto lo storico...');
+      await invokeAdmin({ action: 'delete_history', target_type: 'all' });
+      setMessage('Tutto lo storico e stato cancellato.', 'success');
       await loadHistory();
     } catch (error) {
       setMessage(error?.message || 'Errore cancellazione storico.', 'error');
@@ -413,6 +429,7 @@
 
   function bindPanel(){
     $('btnAdminRefreshHistory')?.addEventListener('click', () => { void loadHistory(); });
+    $('btnAdminClearAllHistory')?.addEventListener('click', () => { void deleteAllHistory(); });
     $('btnAdminSearchProduct')?.addEventListener('click', () => { void searchProduct(); });
     $('adminSearchProduct')?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
