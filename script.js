@@ -511,6 +511,7 @@ resizeQuotePanel();
 const state = {
   role: 'guest',
   items: [],
+  customCollections: [],
   view: 'listino',   // 'listino' | 'card'
   search: '',
   sort: 'alpha',     // 'alpha' | 'priceAsc' | 'priceDesc' | 'newest'
@@ -1222,6 +1223,7 @@ async function fetchProducts(){
     }
 
     state.items = items;
+    state.customCollections = await fetchCustomCollections(supabaseClient);
     buildCategories();
     if (info) info.textContent = `${items.length} articoli`;
     console.log('[Data] prodotti:', items.length);
@@ -1321,6 +1323,51 @@ async function fetchProductsFromCatalog(client) {
   }
 
   return items;
+}
+
+async function fetchCustomCollections(client) {
+  try {
+    const { data, error } = await client
+      .from('custom_collections')
+      .select(`
+        id,
+        name,
+        slug,
+        description,
+        sort,
+        active,
+        custom_collection_items(
+          id,
+          sort,
+          note,
+          products(id,codice)
+        )
+      `)
+      .eq('active', true)
+      .order('sort', { ascending: true })
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+
+    return (data || [])
+      .map(collection => {
+        const codes = (collection.custom_collection_items || [])
+          .map(item => String(item.products?.codice || '').trim())
+          .filter(Boolean);
+        return {
+          id: collection.id,
+          key: `collection:${collection.id}`,
+          name: collection.name,
+          description: collection.description || '',
+          count: codes.length,
+          productCodes: new Set(codes),
+        };
+      })
+      .filter(collection => collection.count > 0);
+  } catch (error) {
+    console.warn('[Data] raccolte personalizzate non disponibili', error);
+    return [];
+  }
 }
 
 async function fetchProductsFromLatestPriceList(client) {
@@ -1444,8 +1491,15 @@ function buildCategories(){
 
   // dedup + sort alfabetico (IT) + fallback "Altro"
   const set = new Set((state.items || []).map(p => (p.categoria || 'Altro').trim()));
+  const collections = state.customCollections || [];
+  const selectedCollection = collections.find(collection => collection.key === state.selectedCategory);
 
-  if (state.selectedCategory && state.selectedCategory !== 'Tutte' && !set.has(state.selectedCategory)) {
+  if (
+    state.selectedCategory
+    && state.selectedCategory !== 'Tutte'
+    && !set.has(state.selectedCategory)
+    && !selectedCollection
+  ) {
     state.selectedCategory = 'Tutte';
   }
 
@@ -1508,6 +1562,37 @@ function buildCategories(){
   });
   box.appendChild(allBtn);
 
+  if (collections.length) {
+    const collectionsTitle = document.createElement('div');
+    collectionsTitle.className = 'category-break w-full pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500';
+    collectionsTitle.textContent = 'Raccolte';
+    box.appendChild(collectionsTitle);
+
+    collections.forEach(collection => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = [
+        'inline-flex items-center justify-between gap-2 w-full text-left',
+        'rounded-xl border px-3 py-1.5 text-sm',
+        'transition',
+        (state.selectedCategory === collection.key)
+          ? 'bg-emerald-100 border-emerald-300 text-emerald-950'
+          : 'bg-white hover:bg-emerald-50'
+      ].join(' ');
+      const label = document.createElement('span');
+      label.textContent = collection.name;
+      const count = document.createElement('span');
+      count.className = 'rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600';
+      count.textContent = String(collection.count);
+      btn.appendChild(label);
+      btn.appendChild(count);
+      btn.addEventListener('click', () => {
+        handleCategorySelection(collection.key);
+      });
+      box.appendChild(btn);
+    });
+  }
+
   // separatore per andare a capo
   const br = document.createElement('div');
   br.className = 'category-break w-full h-0 my-2';
@@ -1564,7 +1649,14 @@ function applyFilters(arr){
   let out=[...arr];
 
 if (state.selectedCategory && state.selectedCategory !== 'Tutte') {
-  out = out.filter(p => (p.categoria || 'Altro') === state.selectedCategory);
+  if (String(state.selectedCategory).startsWith('collection:')) {
+    const collection = (state.customCollections || []).find(item => item.key === state.selectedCategory);
+    out = collection
+      ? out.filter(p => collection.productCodes.has(String(p.codice || '').trim()))
+      : [];
+  } else {
+    out = out.filter(p => (p.categoria || 'Altro') === state.selectedCategory);
+  }
 }
 
 /*

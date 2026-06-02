@@ -4,7 +4,7 @@
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
   const STORAGE_BUCKET = 'prodotti';
 
-  const state = { client: null, rows: [], currentProduct: null };
+  const state = { client: null, rows: [], currentProduct: null, collections: [], currentCollectionId: '' };
   const $ = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -172,6 +172,49 @@
         </div>
 
         <div class="rounded-lg border bg-white p-3">
+          <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h4 class="text-xs font-semibold uppercase tracking-wide text-slate-600">Raccolte personalizzate</h4>
+              <p class="text-xs text-slate-500">Gestisci i gruppi speciali visibili agli agenti nella barra categorie.</p>
+            </div>
+            <button id="btnAdminNewCollection" type="button" class="w-fit rounded-lg border bg-white px-3 py-2 text-xs font-medium text-slate-700">Nuova raccolta</button>
+          </div>
+          <div class="grid gap-3 lg:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)]">
+            <div id="adminCollectionsList" class="space-y-2 text-xs text-slate-700">Caricamento raccolte...</div>
+            <form id="adminCollectionForm" class="grid gap-2 rounded-lg border bg-slate-50 p-3">
+              <input id="adminCollectionId" type="hidden">
+              <label class="text-xs text-slate-600">Nome raccolta
+                <input id="adminCollectionName" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" placeholder="Es. Prodotti in stock">
+              </label>
+              <label class="text-xs text-slate-600">Descrizione
+                <input id="adminCollectionDescription" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" placeholder="Testo interno per ricordare lo scopo">
+              </label>
+              <div class="grid gap-2 sm:grid-cols-[120px_1fr]">
+                <label class="text-xs text-slate-600">Ordine
+                  <input id="adminCollectionSort" type="number" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" value="0">
+                </label>
+                <label class="mt-6 inline-flex items-center gap-2 text-xs text-slate-700">
+                  <input id="adminCollectionActive" type="checkbox" class="h-4 w-4 accent-emerald-600" checked> Visibile agli agenti
+                </label>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button id="btnAdminSaveCollection" type="submit" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white">Salva raccolta</button>
+                <button id="btnAdminDeleteCollection" type="button" class="hidden rounded-lg border border-red-200 bg-white px-4 py-2 text-sm text-red-700">Cancella raccolta</button>
+              </div>
+              <div id="adminCollectionItemsBox" class="hidden rounded-lg border bg-white p-3">
+                <h5 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Articoli nella raccolta</h5>
+                <div class="grid gap-2 sm:grid-cols-[minmax(120px,0.5fr)_minmax(0,1fr)_auto]">
+                  <input id="adminCollectionProductCode" class="rounded-lg border px-3 py-2 text-sm" placeholder="Codice articolo">
+                  <input id="adminCollectionItemNote" class="rounded-lg border px-3 py-2 text-sm" placeholder="Nota opzionale">
+                  <button id="btnAdminAddCollectionItem" type="button" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white">Aggiungi</button>
+                </div>
+                <div id="adminCollectionItemsList" class="mt-3 space-y-2 text-xs text-slate-700"></div>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="rounded-lg border bg-white p-3">
           <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Cerca e modifica articolo</h4>
           <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
             <input id="adminSearchProduct" type="search" class="rounded-lg border px-3 py-2 text-sm" placeholder="Cerca codice o descrizione">
@@ -231,6 +274,7 @@
     if (visible && !panel.dataset.loaded) {
       panel.dataset.loaded = 'true';
       loadHistory();
+      loadCollections();
     }
   }
 
@@ -319,6 +363,190 @@
     } catch (error) {
       const el = $('adminHistoryList');
       if (el) el.textContent = error?.message || 'Errore caricamento storico.';
+    }
+  }
+
+  function currentCollection(){
+    return state.collections.find((collection) => collection.id === state.currentCollectionId) || null;
+  }
+
+  function clearCollectionForm(){
+    state.currentCollectionId = '';
+    ['adminCollectionId','adminCollectionName','adminCollectionDescription','adminCollectionProductCode','adminCollectionItemNote'].forEach((id) => {
+      const el = $(id);
+      if (el) el.value = '';
+    });
+    const sort = $('adminCollectionSort');
+    if (sort) sort.value = '0';
+    const active = $('adminCollectionActive');
+    if (active) active.checked = true;
+    $('btnAdminDeleteCollection')?.classList.add('hidden');
+    $('adminCollectionItemsBox')?.classList.add('hidden');
+    const list = $('adminCollectionItemsList');
+    if (list) list.textContent = 'Salva la raccolta, poi aggiungi gli articoli.';
+    renderCollections();
+  }
+
+  function fillCollectionForm(collection){
+    state.currentCollectionId = collection?.id || '';
+    if ($('adminCollectionId')) $('adminCollectionId').value = collection?.id || '';
+    if ($('adminCollectionName')) $('adminCollectionName').value = collection?.name || '';
+    if ($('adminCollectionDescription')) $('adminCollectionDescription').value = collection?.description || '';
+    if ($('adminCollectionSort')) $('adminCollectionSort').value = String(collection?.sort ?? 0);
+    if ($('adminCollectionActive')) $('adminCollectionActive').checked = collection?.active !== false;
+    $('btnAdminDeleteCollection')?.classList.toggle('hidden', !collection?.id);
+    $('adminCollectionItemsBox')?.classList.toggle('hidden', !collection?.id);
+    renderCollections();
+    renderCollectionItems(collection);
+  }
+
+  function renderCollectionItems(collection = currentCollection()){
+    const el = $('adminCollectionItemsList');
+    if (!el) return;
+    const items = (collection?.custom_collection_items || [])
+      .slice()
+      .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
+
+    if (!collection?.id) {
+      el.textContent = 'Salva la raccolta, poi aggiungi gli articoli.';
+      return;
+    }
+    if (!items.length) {
+      el.textContent = 'Nessun articolo inserito in questa raccolta.';
+      return;
+    }
+
+    el.innerHTML = items.map((item) => {
+      const product = item.products || {};
+      return `
+        <div class="flex flex-col gap-2 rounded-md border border-slate-100 p-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div class="font-semibold text-slate-900">${escapeHtml(product.codice || '')} - ${escapeHtml(product.descrizione || '')}</div>
+            <div class="text-slate-500">${escapeHtml(product.categoria || '')}${item.note ? ` - ${escapeHtml(item.note)}` : ''}</div>
+          </div>
+          <button type="button" data-collection-item-id="${escapeHtml(item.id)}" class="w-fit rounded-md border px-2 py-1 text-[11px] text-red-700 hover:bg-red-50">Rimuovi</button>
+        </div>
+      `;
+    }).join('');
+
+    Array.from(el.querySelectorAll('[data-collection-item-id]')).forEach((button) => {
+      button.addEventListener('click', () => {
+        void removeCollectionItem(button.dataset.collectionItemId);
+      });
+    });
+  }
+
+  function renderCollections(data){
+    if (data?.collections) state.collections = data.collections;
+    const el = $('adminCollectionsList');
+    if (!el) return;
+    if (!state.collections.length) {
+      el.textContent = 'Nessuna raccolta creata.';
+      renderCollectionItems();
+      return;
+    }
+
+    el.innerHTML = state.collections.map((collection) => {
+      const count = (collection.custom_collection_items || []).length;
+      const selected = state.currentCollectionId === collection.id;
+      return `
+        <button type="button" data-collection-id="${escapeHtml(collection.id)}" class="block w-full rounded-lg border px-3 py-2 text-left ${selected ? 'border-emerald-300 bg-emerald-50' : 'bg-white hover:bg-slate-50'}">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-semibold text-slate-900">${escapeHtml(collection.name)}</span>
+            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">${count}</span>
+          </div>
+          <div class="mt-1 text-slate-500">${collection.active ? 'Visibile' : 'Nascosta'} - ordine ${escapeHtml(collection.sort ?? 0)}</div>
+        </button>
+      `;
+    }).join('');
+
+    Array.from(el.querySelectorAll('[data-collection-id]')).forEach((button) => {
+      button.addEventListener('click', () => {
+        const collection = state.collections.find((item) => item.id === button.dataset.collectionId);
+        fillCollectionForm(collection);
+      });
+    });
+
+    const selected = currentCollection();
+    if (state.currentCollectionId && !selected) clearCollectionForm();
+    else renderCollectionItems(selected);
+  }
+
+  async function loadCollections(){
+    try {
+      const el = $('adminCollectionsList');
+      if (el) el.textContent = 'Caricamento raccolte...';
+      renderCollections(await invokeAdmin({ action: 'collections' }));
+    } catch (error) {
+      const el = $('adminCollectionsList');
+      if (el) el.textContent = error?.message || 'Errore caricamento raccolte.';
+    }
+  }
+
+  async function saveCollection(event){
+    event?.preventDefault();
+    try {
+      const collection = {
+        id: $('adminCollectionId')?.value || '',
+        name: $('adminCollectionName')?.value || '',
+        description: $('adminCollectionDescription')?.value || '',
+        sort: $('adminCollectionSort')?.value || '0',
+        active: !!$('adminCollectionActive')?.checked,
+      };
+      const data = await invokeAdmin({ action: 'save_collection', collection });
+      renderCollections(data);
+      const saved = (data.collections || []).find((item) => item.name === collection.name) || (data.collections || [])[0];
+      if (saved) fillCollectionForm(saved);
+      setMessage('Raccolta salvata.', 'success');
+      await refreshProductsAfterAdminChange();
+    } catch (error) {
+      setMessage(error?.message || 'Errore salvataggio raccolta.', 'error');
+    }
+  }
+
+  async function deleteCollection(){
+    try {
+      const id = $('adminCollectionId')?.value || '';
+      if (!id) return;
+      if (!window.confirm('Cancellare questa raccolta? Gli articoli non vengono eliminati dal listino.')) return;
+      renderCollections(await invokeAdmin({ action: 'delete_collection', id }));
+      clearCollectionForm();
+      setMessage('Raccolta cancellata.', 'success');
+      await refreshProductsAfterAdminChange();
+    } catch (error) {
+      setMessage(error?.message || 'Errore cancellazione raccolta.', 'error');
+    }
+  }
+
+  async function addCollectionItem(){
+    try {
+      const collectionId = $('adminCollectionId')?.value || '';
+      const codice = $('adminCollectionProductCode')?.value || '';
+      const note = $('adminCollectionItemNote')?.value || '';
+      const data = await invokeAdmin({ action: 'add_collection_item', collection_id: collectionId, codice, note });
+      renderCollections(data);
+      const selected = (data.collections || []).find((item) => item.id === collectionId);
+      if (selected) fillCollectionForm(selected);
+      if ($('adminCollectionProductCode')) $('adminCollectionProductCode').value = '';
+      if ($('adminCollectionItemNote')) $('adminCollectionItemNote').value = '';
+      setMessage('Articolo aggiunto alla raccolta.', 'success');
+      await refreshProductsAfterAdminChange();
+    } catch (error) {
+      setMessage(error?.message || 'Errore aggiunta articolo alla raccolta.', 'error');
+    }
+  }
+
+  async function removeCollectionItem(itemId){
+    try {
+      const collectionId = state.currentCollectionId;
+      const data = await invokeAdmin({ action: 'remove_collection_item', item_id: itemId });
+      renderCollections(data);
+      const selected = (data.collections || []).find((item) => item.id === collectionId);
+      if (selected) fillCollectionForm(selected);
+      setMessage('Articolo rimosso dalla raccolta.', 'success');
+      await refreshProductsAfterAdminChange();
+    } catch (error) {
+      setMessage(error?.message || 'Errore rimozione articolo.', 'error');
     }
   }
 
@@ -659,6 +887,16 @@
   function bindPanel(){
     $('btnAdminRefreshHistory')?.addEventListener('click', () => { void loadHistory(); });
     $('btnAdminClearAllHistory')?.addEventListener('click', () => { void deleteAllHistory(); });
+    $('btnAdminNewCollection')?.addEventListener('click', clearCollectionForm);
+    $('adminCollectionForm')?.addEventListener('submit', saveCollection);
+    $('btnAdminDeleteCollection')?.addEventListener('click', () => { void deleteCollection(); });
+    $('btnAdminAddCollectionItem')?.addEventListener('click', () => { void addCollectionItem(); });
+    $('adminCollectionProductCode')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void addCollectionItem();
+      }
+    });
     $('btnAdminSearchProduct')?.addEventListener('click', () => { void searchProduct(); });
     $('adminSearchProduct')?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {

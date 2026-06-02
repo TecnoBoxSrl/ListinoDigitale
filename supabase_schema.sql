@@ -39,6 +39,63 @@ drop policy if exists "product images delete for admins" on storage.objects;
 create policy "product images delete for admins"
 on storage.objects for delete
 using ( bucket_id = 'prodotti' and public.is_admin(auth.uid()) );
+
+create table if not exists public.custom_collections (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  slug text unique not null,
+  description text,
+  sort int default 0,
+  active boolean default true,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.custom_collections enable row level security;
+
+insert into public.custom_collections (name, slug, description, sort, active)
+values
+  ('Prodotti in stock', 'prodotti-in-stock', 'Offerte disponibili fino ad esaurimento scorta', 10, true),
+  ('Nuovi prodotti', 'nuovi-prodotti', 'Articoli nuovi o da evidenziare agli agenti', 20, true)
+on conflict (slug) do nothing;
+
+create table if not exists public.custom_collection_items (
+  id uuid primary key default gen_random_uuid(),
+  collection_id uuid not null references public.custom_collections(id) on delete cascade,
+  product_id uuid not null references public.products(id) on delete cascade,
+  sort int default 0,
+  note text,
+  created_at timestamptz default now(),
+  unique(collection_id, product_id)
+);
+alter table public.custom_collection_items enable row level security;
+
+drop policy if exists "collections read for agents" on public.custom_collections;
+create policy "collections read for agents"
+on public.custom_collections for select
+using ( active = true and public.is_agent(auth.uid()) );
+
+drop policy if exists "collections write for admins" on public.custom_collections;
+create policy "collections write for admins"
+on public.custom_collections for all
+using ( public.is_admin(auth.uid()) )
+with check ( public.is_admin(auth.uid()) );
+
+drop policy if exists "collection items read for agents" on public.custom_collection_items;
+create policy "collection items read for agents"
+on public.custom_collection_items for select
+using (
+  public.is_agent(auth.uid())
+  and exists (
+    select 1 from public.custom_collections c
+    where c.id = collection_id and c.active = true
+  )
+);
+
+drop policy if exists "collection items write for admins" on public.custom_collection_items;
+create policy "collection items write for admins"
+on public.custom_collection_items for all
+using ( public.is_admin(auth.uid()) )
+with check ( public.is_admin(auth.uid()) );
 create policy "price_lists read" on public.price_lists for select using ( public.is_agent(auth.uid()) );
 create policy "price_list_items read" on public.price_list_items for select using ( public.is_agent(auth.uid()) );
 create policy "change_log read" on public.change_log for select using ( public.is_agent(auth.uid()) );
@@ -59,3 +116,6 @@ create index if not exists products_categoria_idx on public.products (categoria)
 create index if not exists price_lists_published_at_idx on public.price_lists (published_at desc);
 create index if not exists price_list_items_price_list_id_idx on public.price_list_items (price_list_id);
 create index if not exists change_log_price_list_id_idx on public.change_log (price_list_id);
+create index if not exists custom_collections_sort_idx on public.custom_collections (sort, name);
+create index if not exists custom_collection_items_collection_id_idx on public.custom_collection_items (collection_id);
+create index if not exists custom_collection_items_product_id_idx on public.custom_collection_items (product_id);

@@ -28,6 +28,8 @@ const PRODUCT_FIELDS = [
 ];
 const ADMIN_PRODUCT_SELECT =
   "id,codice,descrizione,dimensione,categoria,sottocategoria,prezzo,prezzo_stampa,quantita_minima_stampa,conai,conai_per_collo,unita,disponibile,novita,pack,pallet,tags,updated_at,product_media(id,kind,path,sort)";
+const ADMIN_COLLECTION_SELECT =
+  "id,name,slug,description,sort,active,created_at,updated_at,custom_collection_items(id,sort,note,product_id,products(id,codice,descrizione,categoria,prezzo,disponibile,novita))";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -132,6 +134,16 @@ function parseBoolean(value: unknown, defaultValue = false) {
   if (["si", "yes", "true", "1", "x"].includes(raw)) return true;
   if (["no", "false", "0"].includes(raw)) return false;
   return defaultValue;
+}
+
+function slugify(value: unknown) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || `raccolta-${Date.now()}`;
 }
 
 function normalizeTags(value: unknown) {
@@ -481,6 +493,87 @@ async function partialImport(client: ReturnType<typeof createClient>, userId: st
   });
 }
 
+async function listCollections(client: ReturnType<typeof createClient>) {
+  const { data, error } = await client
+    .from("custom_collections")
+    .select(ADMIN_COLLECTION_SELECT)
+    .order("sort", { ascending: true })
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return jsonResponse({ ok: true, collections: data || [] });
+}
+
+async function saveCollection(client: ReturnType<typeof createClient>, body: Record<string, unknown>) {
+  const raw = (body.collection || {}) as Record<string, unknown>;
+  const id = String(raw.id || body.id || "").trim();
+  const name = String(raw.name || "").trim();
+  if (!name) return jsonResponse({ ok: false, error: "Nome raccolta obbligatorio" }, 400);
+
+  const payload = {
+    name,
+    slug: slugify(raw.slug || name),
+    description: String(raw.description || "").trim(),
+    sort: Number.parseInt(String(raw.sort ?? 0), 10) || 0,
+    active: parseBoolean(raw.active, true),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (id) {
+    const { error } = await client.from("custom_collections").update(payload).eq("id", id);
+    if (error) throw error;
+  } else {
+    const { error } = await client.from("custom_collections").insert(payload);
+    if (error) throw error;
+  }
+
+  return await listCollections(client);
+}
+
+async function deleteCollection(client: ReturnType<typeof createClient>, body: Record<string, unknown>) {
+  const id = String(body.id || "").trim();
+  if (!id) return jsonResponse({ ok: false, error: "Raccolta non indicata" }, 400);
+  const { error } = await client.from("custom_collections").delete().eq("id", id);
+  if (error) throw error;
+  return await listCollections(client);
+}
+
+async function addCollectionItem(client: ReturnType<typeof createClient>, body: Record<string, unknown>) {
+  const collectionId = String(body.collection_id || body.collectionId || "").trim();
+  const codice = String(body.codice || body.code || "").trim();
+  if (!collectionId || !codice) {
+    return jsonResponse({ ok: false, error: "Indica raccolta e codice articolo" }, 400);
+  }
+
+  const { data: product, error: productError } = await client
+    .from("products")
+    .select("id,codice")
+    .eq("codice", codice)
+    .maybeSingle();
+  if (productError) throw productError;
+  if (!product?.id) return jsonResponse({ ok: false, error: `Articolo ${codice} non trovato` }, 404);
+
+  const sort = Number.parseInt(String(body.sort ?? 0), 10) || 0;
+  const note = String(body.note || "").trim();
+  const { error } = await client
+    .from("custom_collection_items")
+    .upsert({
+      collection_id: collectionId,
+      product_id: product.id,
+      sort,
+      note,
+    }, { onConflict: "collection_id,product_id" });
+  if (error) throw error;
+  return await listCollections(client);
+}
+
+async function removeCollectionItem(client: ReturnType<typeof createClient>, body: Record<string, unknown>) {
+  const itemId = String(body.item_id || body.itemId || "").trim();
+  if (!itemId) return jsonResponse({ ok: false, error: "Articolo raccolta non indicato" }, 400);
+  const { error } = await client.from("custom_collection_items").delete().eq("id", itemId);
+  if (error) throw error;
+  return await listCollections(client);
+}
+
 async function history(client: ReturnType<typeof createClient>) {
   const { data: lists, error: listsError } = await client
     .from("price_lists")
@@ -630,6 +723,11 @@ Deno.serve(async (req) => {
     if (action === "search") return jsonResponse({ ok: true, products: await searchProducts(client, String(body.query || "")) });
     if (action === "save_product") return await saveProduct(client, admin.userId, body);
     if (action === "partial_import") return await partialImport(client, admin.userId, body);
+    if (action === "collections") return await listCollections(client);
+    if (action === "save_collection") return await saveCollection(client, body);
+    if (action === "delete_collection") return await deleteCollection(client, body);
+    if (action === "add_collection_item") return await addCollectionItem(client, body);
+    if (action === "remove_collection_item") return await removeCollectionItem(client, body);
     if (action === "history") return await history(client);
     if (action === "delete_history") return await deleteHistory(client, body);
 
