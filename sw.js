@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'listino-v45';
+const CACHE_VERSION = 'listino-v46';
 const PRECACHE_URLS = [
   './',
   './index.html',

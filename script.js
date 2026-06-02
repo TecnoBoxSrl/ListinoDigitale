@@ -1703,47 +1703,40 @@ function applyCategoryFilterOnly(arr){
   return out;
 }
 
-function renderQuickFilters(){
-  const box = $('quickFiltersBox');
-  if (!box) return;
+function quickFiltersHtml(baseItems){
   const filters = state.quickFilters || [];
-  if (!filters.length) {
-    box.innerHTML = '';
-    return;
-  }
-
-  const base = applyCategoryFilterOnly(state.items || []);
+  if (!filters.length) return '';
   const visibleFilters = filters
-    .map(filter => ({ ...filter, count: base.filter(product => matchesQuickFilter(product, filter)).length }))
+    .map(filter => ({ ...filter, count: (baseItems || []).filter(product => matchesQuickFilter(product, filter)).length }))
     .filter(filter => filter.count > 0);
 
-  if (!visibleFilters.length) {
-    box.innerHTML = '';
-    return;
-  }
+  if (!visibleFilters.length) return '';
 
-  box.innerHTML = `
-    <div class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Filtri rapidi</div>
-    <div class="flex flex-wrap gap-2">
-      ${visibleFilters.map(filter => {
-        const active = state.activeQuickFilters.has(filter.id);
-        return `
-          <button type="button" data-quick-filter-id="${escapeHtml(filter.id)}" class="rounded-full border px-3 py-1.5 text-xs font-medium transition ${active ? 'border-sky-600 bg-sky-100 text-sky-900' : 'bg-white text-slate-700 hover:bg-slate-50'}">
-            ${escapeHtml(filter.label)} <span class="text-[10px] text-slate-500">${filter.count}</span>
-          </button>
-        `;
-      }).join('')}
+  return `
+    <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start">
+      <div class="pt-1 text-xs font-medium uppercase tracking-wide text-slate-600">Filtri rapidi</div>
+      <div class="flex flex-wrap gap-2">
+        ${visibleFilters.map(filter => {
+          const active = state.activeQuickFilters.has(filter.id);
+          return `
+            <button type="button" data-quick-filter-id="${escapeHtml(filter.id)}" class="rounded-full border px-3 py-1.5 text-xs font-medium transition ${active ? 'border-sky-600 bg-sky-100 text-sky-900' : 'bg-white text-slate-700 hover:bg-slate-50'}">
+              ${escapeHtml(filter.label)} <span class="text-[10px] text-slate-500">${filter.count}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
     </div>
   `;
+}
 
-  Array.from(box.querySelectorAll('[data-quick-filter-id]')).forEach((button) => {
+function bindQuickFilterButtons(root = document){
+  Array.from(root.querySelectorAll('[data-quick-filter-id]')).forEach((button) => {
     button.addEventListener('click', () => {
       const id = button.getAttribute('data-quick-filter-id');
       if (!id) return;
       if (state.activeQuickFilters.has(id)) state.activeQuickFilters.delete(id);
       else state.activeQuickFilters.add(id);
       renderView();
-      renderQuickFilters();
     });
   });
 }
@@ -1759,7 +1752,6 @@ function renderView(){
   listino.classList.remove('hidden');       // mostra il listino tabellare
 
   renderListino();
-  renderQuickFilters();
   renderQuotePanel(); // sincronizza il pannello preventivo
 }
 
@@ -1873,6 +1865,13 @@ function renderListino(){
     filterWrap.appendChild(filterInput);
 
     container.appendChild(filterWrap);
+    const quickWrap = document.createElement('div');
+    quickWrap.className = 'mb-3';
+    quickWrap.innerHTML = quickFiltersHtml(items);
+    if (quickWrap.innerHTML.trim()) {
+      container.appendChild(quickWrap);
+      bindQuickFilterButtons(quickWrap);
+    }
 
     // Tabella
     const table = document.createElement('table');
