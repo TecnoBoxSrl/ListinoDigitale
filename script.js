@@ -1846,8 +1846,8 @@ function computeVatBreakdown(baseAmount, rate = 0.22){
 }
 
 function shouldShowConaiInExport(){
-  const input = document.getElementById('quoteShowConaiExport');
-  return input ? input.checked !== false : true;
+  const input = document.getElementById('quoteHideConaiExport');
+  return input ? input.checked !== true : true;
 }
 
 function quoteDescription(item){
