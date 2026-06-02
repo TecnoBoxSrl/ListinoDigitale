@@ -4,7 +4,7 @@
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
   const STORAGE_BUCKET = 'prodotti';
 
-  const state = { client: null, rows: [], currentProduct: null, collections: [], currentCollectionId: '' };
+  const state = { client: null, rows: [], currentProduct: null, collections: [], currentCollectionId: '', pendingCollectionId: '' };
   const $ = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -208,6 +208,7 @@
                   <input id="adminCollectionItemNote" class="rounded-lg border px-3 py-2 text-sm" placeholder="Nota opzionale">
                   <button id="btnAdminAddCollectionItem" type="button" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white">Aggiungi</button>
                 </div>
+                <button id="btnAdminCreateCollectionProduct" type="button" class="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">Crea nuovo articolo per questa raccolta</button>
                 <div id="adminCollectionItemsList" class="mt-3 space-y-2 text-xs text-slate-700"></div>
               </div>
             </form>
@@ -224,6 +225,7 @@
 
           <form id="adminProductForm" class="mt-3 hidden grid gap-2 md:grid-cols-2">
             <input id="adminOriginalCode" type="hidden">
+            <div id="adminProductCollectionHint" class="hidden md:col-span-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"></div>
             ${input('adminProductCode', 'Codice')}
             ${input('adminProductDescription', 'Descrizione')}
             ${input('adminProductUnit', 'Unita')}
@@ -536,6 +538,28 @@
     }
   }
 
+  function createCollectionProduct(){
+    const collection = currentCollection();
+    if (!collection?.id) {
+      setMessage('Prima seleziona o salva una raccolta.', 'error');
+      return;
+    }
+    state.pendingCollectionId = collection.id;
+    const category = collection.name || '';
+    fillForm({
+      codice: '',
+      descrizione: '',
+      categoria: category,
+      unita: 'pz',
+      disponibile: true,
+      novita: collection.slug === 'nuovi-prodotti',
+    });
+    const productSection = $('adminProductForm');
+    productSection?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    $('adminProductCode')?.focus();
+    setMessage(`Compila il nuovo articolo: al salvataggio sara inserito in "${collection.name}".`);
+  }
+
   async function removeCollectionItem(itemId){
     try {
       const collectionId = state.currentCollectionId;
@@ -615,7 +639,21 @@
     $('adminProductDimension').value = product.dimensione || '';
     $('adminProductAvailable').checked = product.disponibile !== false;
     $('adminProductNew').checked = !!product.novita;
+    updateProductCollectionHint();
     void renderProductMedia(product);
+  }
+
+  function updateProductCollectionHint(){
+    const hint = $('adminProductCollectionHint');
+    if (!hint) return;
+    const collection = state.collections.find((item) => item.id === state.pendingCollectionId);
+    if (!collection) {
+      hint.classList.add('hidden');
+      hint.textContent = '';
+      return;
+    }
+    hint.classList.remove('hidden');
+    hint.textContent = `Questo articolo verra inserito nella raccolta "${collection.name}" dopo il salvataggio.`;
   }
 
   function readForm(){
@@ -761,7 +799,24 @@
       });
       if (data.product) fillForm(data.product);
       if (data.product?.codice) $('adminOriginalCode').value = data.product.codice;
-      setMessage(data.action === 'unchanged' ? 'Nessuna modifica da salvare.' : 'Articolo salvato e tracciato.', 'success');
+      let linkedCollectionName = '';
+      if (state.pendingCollectionId && data.product?.codice) {
+        const collectionId = state.pendingCollectionId;
+        const collection = state.collections.find((item) => item.id === collectionId);
+        const collectionData = await invokeAdmin({
+          action: 'add_collection_item',
+          collection_id: collectionId,
+          codice: data.product.codice,
+        });
+        renderCollections(collectionData);
+        const selected = (collectionData.collections || []).find((item) => item.id === collectionId);
+        if (selected) fillCollectionForm(selected);
+        linkedCollectionName = collection?.name || selected?.name || '';
+        state.pendingCollectionId = '';
+        updateProductCollectionHint();
+      }
+      const baseMessage = data.action === 'unchanged' ? 'Nessuna modifica da salvare.' : 'Articolo salvato e tracciato.';
+      setMessage(linkedCollectionName ? `${baseMessage} Inserito nella raccolta "${linkedCollectionName}".` : baseMessage, 'success');
       await loadHistory();
       await refreshProductsAfterAdminChange();
     } catch (error) {
@@ -850,6 +905,7 @@
 
   function clearForm(){
     state.currentProduct = null;
+    state.pendingCollectionId = '';
     $('adminProductForm')?.classList.add('hidden');
     ['adminOriginalCode','adminProductCode','adminProductDescription','adminProductUnit','adminProductPrice','adminProductConai','adminProductPrintPrice','adminProductPrintMinQty','adminProductCategory','adminProductDimension'].forEach((id) => {
       const el = $(id);
@@ -857,6 +913,7 @@
     });
     const mediaList = $('adminProductMediaList');
     if (mediaList) mediaList.innerHTML = '';
+    updateProductCollectionHint();
   }
 
   function clearImportFileState(){
@@ -891,6 +948,7 @@
     $('adminCollectionForm')?.addEventListener('submit', saveCollection);
     $('btnAdminDeleteCollection')?.addEventListener('click', () => { void deleteCollection(); });
     $('btnAdminAddCollectionItem')?.addEventListener('click', () => { void addCollectionItem(); });
+    $('btnAdminCreateCollectionProduct')?.addEventListener('click', createCollectionProduct);
     $('adminCollectionProductCode')?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
