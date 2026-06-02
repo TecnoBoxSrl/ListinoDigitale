@@ -47,6 +47,7 @@ create table if not exists public.custom_collections (
   description text,
   sort int default 0,
   active boolean default true,
+  highlighted boolean default false,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -110,6 +111,7 @@ alter table public.products add column if not exists prezzo_stampa numeric(12,4)
 alter table public.products add column if not exists quantita_minima_stampa integer;
 alter table public.products add column if not exists source text not null default 'listino'
   check (source in ('listino','manuale','manuale_raccolta'));
+alter table public.custom_collections add column if not exists highlighted boolean default false;
 alter table public.price_list_items add column if not exists prezzo_stampa numeric(12,4);
 alter table public.price_list_items add column if not exists quantita_minima_stampa integer;
 

@@ -30,7 +30,8 @@ const PRODUCT_FIELDS = [
 const ADMIN_PRODUCT_SELECT =
   "id,codice,descrizione,dimensione,categoria,sottocategoria,prezzo,prezzo_stampa,quantita_minima_stampa,conai,conai_per_collo,unita,disponibile,novita,pack,pallet,tags,source,updated_at,product_media(id,kind,path,sort)";
 const ADMIN_COLLECTION_SELECT =
-  "id,name,slug,description,sort,active,created_at,updated_at,custom_collection_items(id,sort,note,product_id,products(id,codice,descrizione,categoria,prezzo,disponibile,novita))";
+  "id,name,slug,description,sort,active,highlighted,created_at,updated_at,custom_collection_items(id,sort,note,product_id,products(id,codice,descrizione,categoria,prezzo,disponibile,novita))";
+const IMPORT_SCHEMA_ID = "adhoc_v1";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -376,8 +377,8 @@ async function getAdminProductByCode(client: ReturnType<typeof createClient>, co
 async function saveProduct(client: ReturnType<typeof createClient>, userId: string, body: Record<string, unknown>) {
   const product = normalizeProduct((body.product || {}) as Record<string, unknown>);
   const originalCode = String(body.original_codice || body.originalCode || product.codice || "").trim();
-  if (!product.codice || !product.descrizione) {
-    return jsonResponse({ ok: false, error: "Codice e descrizione sono obbligatori" }, 400);
+  if (!product.codice || !product.descrizione || !product.categoria) {
+    return jsonResponse({ ok: false, error: "Codice, descrizione e categoria sono obbligatori" }, 400);
   }
 
   const { data: existing, error: existingError } = await client
@@ -437,6 +438,9 @@ async function saveProduct(client: ReturnType<typeof createClient>, userId: stri
 }
 
 async function partialImport(client: ReturnType<typeof createClient>, userId: string, body: Record<string, unknown>) {
+  if (body.import_schema !== IMPORT_SCHEMA_ID) {
+    return jsonResponse({ ok: false, error: "Struttura file non valida: usa il listino Ad Hoc con colonne Codice articolo, Descrizione, 1^ Unita di misura, Prezzo, Conai, Descrizione." }, 400);
+  }
   const rawRows = Array.isArray(body.rows) ? body.rows as Record<string, unknown>[] : [];
   const rows = rawRows.map((rawRow) => {
     const row = normalizeProduct(rawRow);
@@ -444,6 +448,10 @@ async function partialImport(client: ReturnType<typeof createClient>, userId: st
     return row;
   }).filter((row) => row.codice && row.descrizione);
   if (!rows.length) return jsonResponse({ ok: false, error: "Nessuna riga valida da importare" }, 400);
+  const invalid = rows.find((row) => !row.unita || !row.categoria || row.prezzo === null || row.conai === null);
+  if (invalid) {
+    return jsonResponse({ ok: false, error: "Struttura file non valida: ogni riga deve avere Unita, Prezzo, Conai e Categoria." }, 400);
+  }
 
   const duplicateCodes = rows
     .map((row) => row.codice)
@@ -525,6 +533,7 @@ async function saveCollection(client: ReturnType<typeof createClient>, body: Rec
     description: String(raw.description || "").trim(),
     sort: Number.parseInt(String(raw.sort ?? 0), 10) || 0,
     active: parseBoolean(raw.active, true),
+    highlighted: parseBoolean(raw.highlighted, false),
     updated_at: new Date().toISOString(),
   };
 

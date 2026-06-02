@@ -3,6 +3,8 @@
   const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
   const STORAGE_BUCKET = 'prodotti';
+  const REQUIRED_SCHEMA = ['codice articolo', 'descrizione', '1 unita di misura', 'prezzo', 'conai', 'descrizione'];
+  const IMPORT_SCHEMA_ID = 'adhoc_v1';
 
   const state = { client: null, rows: [], currentProduct: null, collections: [], currentCollectionId: '', pendingCollectionId: '' };
   const $ = (id) => document.getElementById(id);
@@ -51,6 +53,23 @@
     const n = Number(value);
     if (!Number.isFinite(n)) return String(value).replace('.', ',');
     return n.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+  }
+
+  function parseDecimal(value){
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    const cleaned = raw.replace(/[^0-9,.-]/g, '').replace(/\s/g, '');
+    if (!cleaned) return null;
+    const lastComma = cleaned.lastIndexOf(',');
+    const lastDot = cleaned.lastIndexOf('.');
+    let normalized = cleaned;
+    if (lastComma >= 0 && lastDot >= 0) {
+      normalized = lastComma > lastDot ? cleaned.replace(/\./g, '').replace(',', '.') : cleaned.replace(/,/g, '');
+    } else if (lastComma >= 0) {
+      normalized = cleaned.replace(',', '.');
+    }
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   function mediaThumbPath(path){
@@ -193,9 +212,14 @@
                 <label class="text-xs text-slate-600">Ordine
                   <input id="adminCollectionSort" type="number" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" value="0">
                 </label>
-                <label class="mt-6 inline-flex items-center gap-2 text-xs text-slate-700">
-                  <input id="adminCollectionActive" type="checkbox" class="h-4 w-4 accent-emerald-600" checked> Visibile agli agenti
-                </label>
+                <div class="mt-6 grid gap-2">
+                  <label class="inline-flex items-center gap-2 text-xs text-slate-700">
+                    <input id="adminCollectionActive" type="checkbox" class="h-4 w-4 accent-emerald-600" checked> Visibile agli agenti
+                  </label>
+                  <label class="inline-flex items-center gap-2 text-xs text-slate-700">
+                    <input id="adminCollectionHighlighted" type="checkbox" class="h-4 w-4 accent-emerald-600"> Evidenziata in alto
+                  </label>
+                </div>
               </div>
               <div class="flex flex-wrap gap-2">
                 <button id="btnAdminSaveCollection" type="submit" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white">Salva raccolta</button>
@@ -382,6 +406,8 @@
     if (sort) sort.value = '0';
     const active = $('adminCollectionActive');
     if (active) active.checked = true;
+    const highlighted = $('adminCollectionHighlighted');
+    if (highlighted) highlighted.checked = false;
     $('btnAdminDeleteCollection')?.classList.add('hidden');
     $('adminCollectionItemsBox')?.classList.add('hidden');
     const list = $('adminCollectionItemsList');
@@ -396,6 +422,7 @@
     if ($('adminCollectionDescription')) $('adminCollectionDescription').value = collection?.description || '';
     if ($('adminCollectionSort')) $('adminCollectionSort').value = String(collection?.sort ?? 0);
     if ($('adminCollectionActive')) $('adminCollectionActive').checked = collection?.active !== false;
+    if ($('adminCollectionHighlighted')) $('adminCollectionHighlighted').checked = !!collection?.highlighted;
     $('btnAdminDeleteCollection')?.classList.toggle('hidden', !collection?.id);
     $('adminCollectionItemsBox')?.classList.toggle('hidden', !collection?.id);
     renderCollections();
@@ -457,7 +484,7 @@
             <span class="font-semibold text-slate-900">${escapeHtml(collection.name)}</span>
             <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">${count}</span>
           </div>
-          <div class="mt-1 text-slate-500">${collection.active ? 'Visibile' : 'Nascosta'} - ordine ${escapeHtml(collection.sort ?? 0)}</div>
+          <div class="mt-1 text-slate-500">${collection.active ? 'Visibile' : 'Nascosta'}${collection.highlighted ? ' - evidenziata' : ''} - ordine ${escapeHtml(collection.sort ?? 0)}</div>
         </button>
       `;
     }).join('');
@@ -494,6 +521,7 @@
         description: $('adminCollectionDescription')?.value || '',
         sort: $('adminCollectionSort')?.value || '0',
         active: !!$('adminCollectionActive')?.checked,
+        highlighted: !!$('adminCollectionHighlighted')?.checked,
       };
       const data = await invokeAdmin({ action: 'save_collection', collection });
       renderCollections(data);
@@ -834,24 +862,17 @@
     }
   }
 
-  function headerScore(row){
-    const cells = (row || []).map(normalize).filter(Boolean);
-    let score = 0;
-    if (cells.includes('codice articolo') || cells.includes('codice')) score += 5;
-    if (cells.includes('descrizione')) score += 5;
-    if (cells.includes('prezzo')) score += 2;
-    return score;
-  }
-
   function readExcelRows(sheet){
     const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false, blankrows: false });
-    const best = matrix.slice(0, 30)
-      .map((row, index) => ({ index, score: headerScore(row) }))
-      .sort((a, b) => b.score - a.score)[0];
-    const start = best?.score >= 10 ? best.index + 1 : 0;
-    return matrix.slice(start)
+    const headerIndex = matrix.findIndex((row) => {
+      const cells = (row || []).slice(0, REQUIRED_SCHEMA.length).map(normalize);
+      return REQUIRED_SCHEMA.every((expected, index) => cells[index] === expected);
+    });
+    if (headerIndex < 0) {
+      throw new Error('Struttura file non valida. Il listino deve avere queste colonne, in questo ordine: Codice articolo, Descrizione, 1^ Unita di misura, Prezzo, Conai, Descrizione.');
+    }
+    const rows = matrix.slice(headerIndex + 1)
       .filter((row) => String(row?.[0] || '').trim() && String(row?.[1] || '').trim())
-      .filter((row) => !normalize(row[0]).includes('codice'))
       .map((row) => ({
         Codice: row[0] ?? '',
         Descrizione: row[1] ?? '',
@@ -859,7 +880,11 @@
         Prezzo: row[3] ?? '',
         Conai: row[4] ?? '',
         Categoria: row[5] ?? '',
+        import_schema: IMPORT_SCHEMA_ID,
       }));
+    const invalid = rows.find((row) => !String(row.Unita || '').trim() || !String(row.Categoria || '').trim() || parseDecimal(row.Prezzo) === null || parseDecimal(row.Conai) === null);
+    if (invalid) throw new Error('Struttura file valida, ma alcune righe non hanno Unita, Prezzo, Conai o Categoria.');
+    return rows;
   }
 
   async function readPartialFile(file){
@@ -872,9 +897,16 @@
   }
 
   async function handleFileChange(event){
-    state.rows = await readPartialFile(event.target.files?.[0]);
-    const btn = $('btnAdminPartialImport');
-    if (btn) btn.disabled = state.rows.length === 0;
+    try {
+      state.rows = await readPartialFile(event.target.files?.[0]);
+      setMessage(state.rows.length ? `${state.rows.length} righe pronte per aggiornamento codici.` : '');
+    } catch (error) {
+      state.rows = [];
+      setMessage(error?.message || 'Struttura file non valida.', 'error');
+    } finally {
+      const btn = $('btnAdminPartialImport');
+      if (btn) btn.disabled = state.rows.length === 0;
+    }
   }
 
   async function partialImport(){
@@ -893,6 +925,7 @@
         action: 'partial_import',
         label: $('adminVersionLabel')?.value || 'Aggiornamento codici del file',
         rows: state.rows,
+        import_schema: IMPORT_SCHEMA_ID,
       });
       setMessage(`Aggiornamento completato: ${data.changed} modificati, ${data.unchanged} invariati.`, 'success');
       await loadHistory();

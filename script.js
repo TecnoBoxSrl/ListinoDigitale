@@ -1180,6 +1180,7 @@ async function fetchProducts(){
           prezzo_stampa, quantita_minima_stampa,
           product_media(id, kind, path, sort)
         `)
+        .neq('disponibile', false)
         .order('descrizione', { ascending: true })
         .range(from, to);      // 👈 pagina
 
@@ -1264,6 +1265,7 @@ async function fetchProductsFromCatalog(client) {
   let { data, error } = await client
     .from('products')
     .select(fullSelect)
+    .neq('disponibile', false)
     .order('descrizione', { ascending: true });
 
   if (error) {
@@ -1289,6 +1291,7 @@ async function fetchProductsFromCatalog(client) {
           updated_at,
           product_media(id,kind,path,sort)
         `)
+        .neq('disponibile', false)
         .order('descrizione', { ascending: true }));
     }
     if (error) throw error;
@@ -1336,6 +1339,7 @@ async function fetchCustomCollections(client) {
         description,
         sort,
         active,
+        highlighted,
         custom_collection_items(
           id,
           sort,
@@ -1359,6 +1363,7 @@ async function fetchCustomCollections(client) {
           key: `collection:${collection.id}`,
           name: collection.name,
           description: collection.description || '',
+          highlighted: !!collection.highlighted,
           count: codes.length,
           productCodes: new Set(codes),
         };
@@ -1489,9 +1494,11 @@ function buildCategories(){
   const box = document.getElementById('categoryList');
   if (!box) return;
 
-  // dedup + sort alfabetico (IT) + fallback "Altro"
-  const set = new Set((state.items || []).map(p => (p.categoria || 'Altro').trim()));
+  // dedup + sort alfabetico (IT)
+  const set = new Set((state.items || []).map(p => String(p.categoria || '').trim()).filter(Boolean));
   const collections = state.customCollections || [];
+  const highlightedCollections = collections.filter(collection => collection.highlighted);
+  const normalCollections = collections.filter(collection => !collection.highlighted);
   const selectedCollection = collections.find(collection => collection.key === state.selectedCategory);
 
   if (
@@ -1504,6 +1511,13 @@ function buildCategories(){
   }
 
   const allCats = Array.from(set).sort((a,b)=> a.localeCompare(b,'it'));
+  const categoryEntries = allCats.map(cat => ({ type: 'category', key: cat, label: cat }));
+  const collectionEntries = normalCollections.map(collection => ({
+    type: 'collection',
+    key: collection.key,
+    label: collection.name,
+    count: collection.count,
+  }));
   const isDesktop = isDesktopLayout();
   const normalizedSearch = normalize(state.categorySearch || '');
   const hasSearch = !!normalizedSearch;
@@ -1520,14 +1534,15 @@ function buildCategories(){
     }
   };
 
-  let filteredForAvailability = [...allCats];
+  let filteredForAvailability = [...categoryEntries, ...collectionEntries]
+    .sort((a, b) => a.label.localeCompare(b.label, 'it'));
 
   if (!isDesktop && hasSearch) {
-    filteredForAvailability = filteredForAvailability.filter(cat => normalize(cat).includes(normalizedSearch));
+    filteredForAvailability = filteredForAvailability.filter(entry => normalize(entry.label).includes(normalizedSearch));
   }
 
   const availableLetters = filteredForAvailability.length
-    ? new Set(filteredForAvailability.map(deriveCategoryLetter))
+    ? new Set(filteredForAvailability.map(entry => deriveCategoryLetter(entry.label)))
     : new Set();
 
   if (!isDesktop && state.categoryLetter && !availableLetters.has(state.categoryLetter)) {
@@ -1539,7 +1554,7 @@ function buildCategories(){
   let cats = [...filteredForAvailability];
 
   if (!isDesktop && state.categoryLetter) {
-    cats = cats.filter(cat => deriveCategoryLetter(cat) === state.categoryLetter);
+    cats = cats.filter(entry => deriveCategoryLetter(entry.label) === state.categoryLetter);
   }
 
   // container
@@ -1562,13 +1577,13 @@ function buildCategories(){
   });
   box.appendChild(allBtn);
 
-  if (collections.length) {
+  if (highlightedCollections.length) {
     const collectionsTitle = document.createElement('div');
     collectionsTitle.className = 'category-break w-full pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500';
-    collectionsTitle.textContent = 'Raccolte';
+    collectionsTitle.textContent = 'Evidenziate';
     box.appendChild(collectionsTitle);
 
-    collections.forEach(collection => {
+    highlightedCollections.forEach(collection => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = [
@@ -1608,7 +1623,8 @@ function buildCategories(){
   }
 
   // --- Altre categorie: chip su righe successive, no duplicati ---
-  cats.forEach(cat => {
+  cats.forEach(entry => {
+    const cat = entry.label;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = cat;
@@ -1616,12 +1632,12 @@ function buildCategories(){
       'inline-flex items-center justify-center w-full text-left',
       'rounded-xl border px-3 py-1.5 text-sm',
       'transition',
-      (state.selectedCategory === cat)
+      (state.selectedCategory === entry.key)
         ? 'bg-slate-200 border-slate-300 text-slate-900'
         : 'bg-white hover:bg-slate-50'
     ].join(' ');
     btn.addEventListener('click', () => {
-      handleCategorySelection(cat);
+      handleCategorySelection(entry.key);
     });
     box.appendChild(btn);
   });

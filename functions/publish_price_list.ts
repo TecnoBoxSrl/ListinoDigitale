@@ -11,6 +11,7 @@ const corsHeaders = {
 };
 
 const PRODUCT_COLUMNS = "codice,descrizione,dimensione,categoria,sottocategoria,conai,conai_per_collo,prezzo,prezzo_stampa,quantita_minima_stampa,unita,disponibile,novita,pack,pallet,tags,source,updated_at";
+const IMPORT_SCHEMA_ID = "adhoc_v1";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -141,6 +142,24 @@ function normalizeRow(row: Record<string, unknown>) {
     source: "listino",
     updated_at: now,
   };
+}
+
+function assertImportSchema(body: Record<string, unknown>, incoming: Array<Record<string, unknown>>) {
+  if (body.import_schema !== IMPORT_SCHEMA_ID) {
+    throw new Error("Struttura file non valida: carica il listino Ad Hoc con colonne Codice articolo, Descrizione, 1^ Unita di misura, Prezzo, Conai, Descrizione.");
+  }
+
+  const invalid = incoming.find((row) => (
+    !row.codice
+    || !row.descrizione
+    || !row.unita
+    || !row.categoria
+    || row.prezzo === null
+    || row.conai === null
+  ));
+  if (invalid) {
+    throw new Error("Struttura file non valida: ogni riga deve avere Codice articolo, Descrizione, Unita, Prezzo, Conai e Categoria.");
+  }
 }
 
 function productPatch(row: Record<string, unknown>) {
@@ -281,6 +300,7 @@ Deno.serve(async (req) => {
     const payload = await readPayload(req);
     const rows = payload.rows;
     const incoming = rows.map(normalizeRow).filter((row) => row.codice && row.descrizione);
+    assertImportSchema(payload.body as Record<string, unknown>, incoming);
     if (!incoming.length) {
       return jsonResponse({ ok: false, error: "Nessuna riga valida da pubblicare" }, 400);
     }

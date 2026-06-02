@@ -19,6 +19,8 @@
     Conai: ['conai', 'conai articolo', 'conai/collo', 'conai collo'],
     ConaiPerCollo: ['conai per collo', 'conai_per_collo', 'conai/collo'],
   };
+  const REQUIRED_SCHEMA = ['codice articolo', 'descrizione', '1 unita di misura', 'prezzo', 'conai', 'descrizione'];
+  const IMPORT_SCHEMA_ID = 'adhoc_v1';
 
   const state = { rows: [], duplicateCodes: [], client: null };
   const $ = (id) => document.getElementById(id);
@@ -182,6 +184,23 @@
     return '';
   }
 
+  function parseItalianNumber(value){
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    const cleaned = raw.replace(/[^0-9,.-]/g, '').replace(/\s/g, '');
+    if (!cleaned) return null;
+    const lastComma = cleaned.lastIndexOf(',');
+    const lastDot = cleaned.lastIndexOf('.');
+    let normalized = cleaned;
+    if (lastComma >= 0 && lastDot >= 0) {
+      normalized = lastComma > lastDot ? cleaned.replace(/\./g, '').replace(',', '.') : cleaned.replace(/,/g, '');
+    } else if (lastComma >= 0) {
+      normalized = cleaned.replace(',', '.');
+    }
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
   function normalizeRow(row){
     const normalized = {};
     Object.keys(FIELD_ALIASES).forEach((field) => {
@@ -260,23 +279,33 @@
 
   function rowsFromSheet(sheet){
     const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false, blankrows: false });
-    const candidates = matrix.slice(0, 30).map((row, index) => ({ index, score: headerScore(row) }));
-    const best = candidates.sort((a, b) => b.score - a.score)[0];
-
-    if (!best || best.score < 10) {
-      return positionalAdhocRows(matrix);
+    const headerIndex = matrix.findIndex((row) => {
+      const cells = (row || []).slice(0, REQUIRED_SCHEMA.length).map(normalize);
+      return REQUIRED_SCHEMA.every((expected, index) => cells[index] === expected);
+    });
+    if (headerIndex < 0) {
+      throw new Error('Struttura file non valida. Il listino deve avere queste colonne, in questo ordine: Codice articolo, Descrizione, 1^ Unita di misura, Prezzo, Conai, Descrizione.');
     }
 
-    const headers = makeHeaders(matrix[best.index]);
-    const namedRows = matrix.slice(best.index + 1)
+    const rows = matrix.slice(headerIndex + 1)
       .filter(row => (row || []).some(cell => String(cell || '').trim()))
-      .map((row) => headers.reduce((record, header, index) => {
-        record[header] = row[index] ?? '';
-        return record;
-      }, {}));
+      .map((row) => ({
+        Codice: String(row[0] ?? '').trim(),
+        Descrizione: String(row[1] ?? '').trim(),
+        Unita: String(row[2] ?? '').trim(),
+        Prezzo: row[3] ?? '',
+        Conai: row[4] ?? '',
+        Categoria: String(row[5] ?? '').trim(),
+        import_schema: IMPORT_SCHEMA_ID,
+      }))
+      .filter(row => row.Codice && row.Descrizione);
 
-    const validNamedRows = namedRows.map(normalizeRow).filter(row => row.Codice && row.Descrizione);
-    return validNamedRows.length ? namedRows : positionalAdhocRows(matrix.slice(best.index + 1));
+    const invalid = rows.find(row => !row.Unita || !row.Categoria || parseItalianNumber(row.Prezzo) === null || parseItalianNumber(row.Conai) === null);
+    if (invalid) {
+      throw new Error('Struttura file valida, ma alcune righe non hanno Unita, Prezzo, Conai o Categoria. Correggi il file e riprova.');
+    }
+
+    return rows;
   }
 
   async function readRows(file){
@@ -331,8 +360,7 @@
       }
 
       setMessage('Lettura file in corso...');
-      const rawRows = await readRows(file);
-      const validRows = rawRows.map(normalizeRow).filter(row => row.Codice && row.Descrizione);
+      const validRows = await readRows(file);
       const deduped = dedupeRows(validRows);
       state.rows = deduped.rows;
       state.duplicateCodes = deduped.duplicateCodes;
@@ -341,7 +369,7 @@
       renderPreview(state.rows);
 
       if (!state.rows.length) {
-        setMessage('Nessuna riga valida trovata. Verifica che il file abbia almeno Codice articolo e Descrizione.', 'error');
+        setMessage('Nessuna riga valida trovata. Verifica la struttura del file listino.', 'error');
         return;
       }
 
@@ -352,7 +380,7 @@
     } catch (error) {
       console.error('[AdminImport] file error', error);
       clearImport();
-      setMessage('Errore nella lettura del file. Controlla formato e intestazioni.', 'error');
+      setMessage(error?.message || 'Errore nella lettura del file. Controlla formato e intestazioni.', 'error');
     }
   }
 
@@ -368,7 +396,7 @@
     const response = await fetch(`${SUPABASE_URL}/functions/v1/publish_price_list`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ rows: state.rows }),
+      body: JSON.stringify({ rows: state.rows, import_schema: IMPORT_SCHEMA_ID }),
     });
 
     const rawText = await response.text();
