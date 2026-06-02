@@ -657,7 +657,7 @@
   }
 
   function readForm(){
-    return {
+    const product = {
       codice: $('adminProductCode')?.value || '',
       descrizione: $('adminProductDescription')?.value || '',
       unita: $('adminProductUnit')?.value || '',
@@ -670,6 +670,11 @@
       disponibile: !!$('adminProductAvailable')?.checked,
       novita: !!$('adminProductNew')?.checked,
     };
+    const originalCode = $('adminOriginalCode')?.value || '';
+    if (!originalCode) {
+      product.source = state.pendingCollectionId ? 'manuale_raccolta' : 'manuale';
+    }
+    return product;
   }
 
   async function uploadProductImages(event){

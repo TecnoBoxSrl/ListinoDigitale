@@ -10,7 +10,7 @@ const corsHeaders = {
   "access-control-max-age": "86400",
 };
 
-const PRODUCT_COLUMNS = "codice,descrizione,dimensione,categoria,sottocategoria,conai,conai_per_collo,prezzo,prezzo_stampa,quantita_minima_stampa,unita,disponibile,novita,pack,pallet,tags,updated_at";
+const PRODUCT_COLUMNS = "codice,descrizione,dimensione,categoria,sottocategoria,conai,conai_per_collo,prezzo,prezzo_stampa,quantita_minima_stampa,unita,disponibile,novita,pack,pallet,tags,source,updated_at";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -138,6 +138,7 @@ function normalizeRow(row: Record<string, unknown>) {
       .split(",")
       .map((tag) => tag.trim())
       .filter(Boolean),
+    source: "listino",
     updated_at: now,
   };
 }
@@ -335,7 +336,11 @@ Deno.serve(async (req) => {
     }
 
     const incomingCodeSet = new Set(incomingCodes);
-    for (const product of (current || []).filter((item: any) => !incomingCodeSet.has(item.codice) && item.disponibile !== false)) {
+    for (const product of (current || []).filter((item: any) => (
+      !incomingCodeSet.has(item.codice)
+      && item.disponibile !== false
+      && item.source !== "manuale_raccolta"
+    ))) {
       const { error } = await client
         .from("products")
         .update({ disponibile: false, novita: false, updated_at: new Date().toISOString() })

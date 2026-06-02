@@ -25,9 +25,10 @@ const PRODUCT_FIELDS = [
   "pack",
   "pallet",
   "tags",
+  "source",
 ];
 const ADMIN_PRODUCT_SELECT =
-  "id,codice,descrizione,dimensione,categoria,sottocategoria,prezzo,prezzo_stampa,quantita_minima_stampa,conai,conai_per_collo,unita,disponibile,novita,pack,pallet,tags,updated_at,product_media(id,kind,path,sort)";
+  "id,codice,descrizione,dimensione,categoria,sottocategoria,prezzo,prezzo_stampa,quantita_minima_stampa,conai,conai_per_collo,unita,disponibile,novita,pack,pallet,tags,source,updated_at,product_media(id,kind,path,sort)";
 const ADMIN_COLLECTION_SELECT =
   "id,name,slug,description,sort,active,created_at,updated_at,custom_collection_items(id,sort,note,product_id,products(id,codice,descrizione,categoria,prezzo,disponibile,novita))";
 
@@ -185,6 +186,10 @@ function normalizeProduct(row: Record<string, unknown>) {
     product.quantita_minima_stampa = parsePositiveInteger(
       row.QuantitaMinimaStampa ?? row.quantita_minima_stampa ?? row["Qta minima stampa"] ?? row["Q.t? minima stampa"],
     );
+  }
+  const source = String(row.source ?? row.Source ?? "").trim();
+  if (["listino", "manuale", "manuale_raccolta"].includes(source)) {
+    product.source = source;
   }
   validatePrintRule(product);
   return product;
@@ -401,6 +406,7 @@ async function saveProduct(client: ReturnType<typeof createClient>, userId: stri
     if (conflictError) throw conflictError;
     if (conflict) return jsonResponse({ ok: false, error: `Il codice ${product.codice} e gia utilizzato` }, 409);
 
+    if (!product.source) product.source = "manuale";
     const { error } = await client.from("products").insert(product);
     if (error) throw error;
     await syncLatestPriceListItem(client, product);
@@ -432,7 +438,11 @@ async function saveProduct(client: ReturnType<typeof createClient>, userId: stri
 
 async function partialImport(client: ReturnType<typeof createClient>, userId: string, body: Record<string, unknown>) {
   const rawRows = Array.isArray(body.rows) ? body.rows as Record<string, unknown>[] : [];
-  const rows = rawRows.map(normalizeProduct).filter((row) => row.codice && row.descrizione);
+  const rows = rawRows.map((rawRow) => {
+    const row = normalizeProduct(rawRow);
+    row.source = "listino";
+    return row;
+  }).filter((row) => row.codice && row.descrizione);
   if (!rows.length) return jsonResponse({ ok: false, error: "Nessuna riga valida da importare" }, 400);
 
   const duplicateCodes = rows

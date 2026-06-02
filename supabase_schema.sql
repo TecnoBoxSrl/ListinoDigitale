@@ -108,6 +108,8 @@ alter table public.price_list_items add column if not exists conai numeric(12,4)
 alter table public.price_list_items add column if not exists conai_per_collo numeric(12,4);
 alter table public.products add column if not exists prezzo_stampa numeric(12,4);
 alter table public.products add column if not exists quantita_minima_stampa integer;
+alter table public.products add column if not exists source text not null default 'listino'
+  check (source in ('listino','manuale','manuale_raccolta'));
 alter table public.price_list_items add column if not exists prezzo_stampa numeric(12,4);
 alter table public.price_list_items add column if not exists quantita_minima_stampa integer;
 
