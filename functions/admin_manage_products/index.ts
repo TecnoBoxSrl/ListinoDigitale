@@ -26,6 +26,8 @@ const PRODUCT_FIELDS = [
   "pallet",
   "tags",
 ];
+const ADMIN_PRODUCT_SELECT =
+  "id,codice,descrizione,dimensione,categoria,sottocategoria,prezzo,prezzo_stampa,quantita_minima_stampa,conai,conai_per_collo,unita,disponibile,novita,pack,pallet,tags,updated_at,product_media(id,kind,path,sort)";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -336,12 +338,22 @@ async function searchProducts(client: ReturnType<typeof createClient>, query: st
 
   const { data, error } = await client
     .from("products")
-    .select("id,codice,descrizione,dimensione,categoria,sottocategoria,prezzo,prezzo_stampa,quantita_minima_stampa,conai,conai_per_collo,unita,disponibile,novita,pack,pallet,tags,updated_at")
+    .select(ADMIN_PRODUCT_SELECT)
     .or(`codice.ilike.%${q}%,descrizione.ilike.%${q}%`)
     .order("codice", { ascending: true })
     .limit(20);
   if (error) throw error;
   return data || [];
+}
+
+async function getAdminProductByCode(client: ReturnType<typeof createClient>, codice: string) {
+  const { data, error } = await client
+    .from("products")
+    .select(ADMIN_PRODUCT_SELECT)
+    .eq("codice", codice)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
 async function saveProduct(client: ReturnType<typeof createClient>, userId: string, body: Record<string, unknown>) {
@@ -386,11 +398,11 @@ async function saveProduct(client: ReturnType<typeof createClient>, userId: stri
       change_type: "created",
       delta: product,
     }]);
-    return jsonResponse({ ok: true, action: "created", batch_id: batchId, product });
+    return jsonResponse({ ok: true, action: "created", batch_id: batchId, product: await getAdminProductByCode(client, product.codice) });
   }
 
   const delta = buildDelta(existing, product);
-  if (!Object.keys(delta).length) return jsonResponse({ ok: true, action: "unchanged", product });
+  if (!Object.keys(delta).length) return jsonResponse({ ok: true, action: "unchanged", product: await getAdminProductByCode(client, product.codice) });
 
   const { error } = await client.from("products").update(productPatch(product)).eq("codice", originalCode);
   if (error) throw error;
@@ -403,7 +415,7 @@ async function saveProduct(client: ReturnType<typeof createClient>, userId: stri
     delta,
   }]);
 
-  return jsonResponse({ ok: true, action: "updated", batch_id: batchId, product, delta });
+  return jsonResponse({ ok: true, action: "updated", batch_id: batchId, product: await getAdminProductByCode(client, product.codice), delta });
 }
 
 async function partialImport(client: ReturnType<typeof createClient>, userId: string, body: Record<string, unknown>) {

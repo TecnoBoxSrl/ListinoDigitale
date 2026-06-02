@@ -161,6 +161,67 @@ function toNumberOrNull(value){
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function imageThumbPath(path){
+  return String(path || '').replace('/large.', '/thumb.');
+}
+
+function imageLargePath(path){
+  return String(path || '').replace('/thumb.', '/large.');
+}
+
+async function signStoragePaths(client, paths, expiresIn = 600){
+  const uniquePaths = [...new Set((paths || []).filter(Boolean))];
+  const signedByPath = new Map();
+  if (!client) return signedByPath;
+  for (let i = 0; i < uniquePaths.length; i += 100) {
+    const chunk = uniquePaths.slice(i, i + 100);
+    const { data, error } = await client.storage.from(STORAGE_BUCKET).createSignedUrls(chunk, expiresIn);
+    if (error) {
+      console.warn('[Storage] signedURLs warn:', error.message);
+      continue;
+    }
+    (data || []).forEach((row, index) => {
+      if (row?.signedUrl) signedByPath.set(chunk[index], row.signedUrl);
+    });
+  }
+  return signedByPath;
+}
+
+async function buildImageDataForProducts(client, rows){
+  const firstThumbPaths = [];
+  const mediaByProduct = new Map();
+
+  for (const p of rows || []) {
+    const mediaImgs = (p.product_media || [])
+      .filter(m => m.kind === 'image' && m.path)
+      .sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0))
+      .map((m) => ({
+        id: m.id,
+        path: imageLargePath(m.path),
+        thumbPath: imageThumbPath(m.path),
+        sort: m.sort ?? 0,
+      }));
+    if (mediaImgs[0]?.thumbPath) firstThumbPaths.push(mediaImgs[0].thumbPath);
+    mediaByProduct.set(p.id, mediaImgs);
+  }
+
+  return {
+    mediaByProduct,
+    signedThumbs: await signStoragePaths(client, firstThumbPaths, 600),
+  };
+}
+
+async function signedImageUrl(path){
+  const client = ensureSupabaseClient();
+  if (!client || !path) return '';
+  const { data, error } = await client.storage.from(STORAGE_BUCKET).createSignedUrl(path, 600);
+  if (error) {
+    console.warn('[Storage] signedURL warn:', error.message);
+    return '';
+  }
+  return data?.signedUrl || '';
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -470,6 +531,11 @@ const state = {
     name: '',
     code: '',
   },
+  imageGallery: {
+    items: [],
+    index: 0,
+    title: '',
+  },
 };
 
 let categoryLayoutBound = false;
@@ -712,6 +778,8 @@ function bindUI(){
   const imgModal=$('imgModal'), imgBackdrop=$('imgBackdrop'), imgClose=$('imgClose');
   imgBackdrop?.addEventListener('click', ()=>toggleModal('imgModal', false));
   imgClose?.addEventListener('click', ()=>toggleModal('imgModal', false));
+  $('imgPrev')?.addEventListener('click', () => { void showGalleryImage(state.imageGallery.index - 1); });
+  $('imgNext')?.addEventListener('click', () => { void showGalleryImage(state.imageGallery.index + 1); });
   // L'handling globale del tasto ESC si occupa di chiudere il modale
 
   // Preventivi (azioni pannello)
@@ -753,6 +821,79 @@ function toggleModal(id, show=true){
   if (!el) return;
   el.classList.toggle('hidden', !show);
   document.body.classList.toggle('modal-open', show);
+}
+
+async function showGalleryImage(index){
+  const gallery = state.imageGallery;
+  if (!gallery.items.length) return;
+  const safeIndex = Math.max(0, Math.min(index, gallery.items.length - 1));
+  gallery.index = safeIndex;
+  const current = gallery.items[safeIndex];
+  const img = $('imgPreview');
+  const counter = $('imgCounter');
+  const prev = $('imgPrev');
+  const next = $('imgNext');
+
+  if (img) {
+    img.src = current.largeUrl || current.thumbUrl || '';
+    img.alt = gallery.title;
+  }
+  if (!current.largeUrl && current.path) {
+    const signed = await signedImageUrl(current.path);
+    current.largeUrl = signed;
+    if (img && gallery.index === safeIndex && signed) img.src = signed;
+  }
+  if (counter) counter.textContent = `${safeIndex + 1} / ${gallery.items.length}`;
+  if (prev) prev.disabled = gallery.items.length <= 1 || safeIndex === 0;
+  if (next) next.disabled = gallery.items.length <= 1 || safeIndex === gallery.items.length - 1;
+
+  const thumbs = $('imgThumbs');
+  if (thumbs) {
+    Array.from(thumbs.querySelectorAll('[data-index]')).forEach((button) => {
+      const selected = Number(button.getAttribute('data-index')) === safeIndex;
+      button.classList.toggle('ring-2', selected);
+      button.classList.toggle('ring-sky-500', selected);
+    });
+  }
+}
+
+async function openImageGallery(product){
+  const images = (product?.images || []).filter((image) => image.path || image.thumbPath);
+  const fallback = product?.img ? [{ path: '', thumbPath: '', thumbUrl: product.img, largeUrl: product.img }] : [];
+  if (images.length > 1) {
+    const signedThumbs = await signStoragePaths(ensureSupabaseClient(), images.map((image) => image.thumbPath), 600);
+    images.forEach((image, index) => {
+      image.thumbUrl = signedThumbs.get(image.thumbPath) || (index === 0 ? product.img : '');
+    });
+  }
+  const galleryItems = (images.length ? images : fallback).map((image) => ({
+    ...image,
+    thumbUrl: image.thumbUrl || product.img || '',
+    largeUrl: image.largeUrl || '',
+  }));
+  if (!galleryItems.length) return;
+
+  state.imageGallery = {
+    items: galleryItems,
+    index: 0,
+    title: product?.descrizione || '',
+  };
+
+  const title = $('imgTitle');
+  const thumbs = $('imgThumbs');
+  if (title) title.textContent = state.imageGallery.title;
+  if (thumbs) {
+    thumbs.innerHTML = galleryItems.map((image, index) => `
+      <button type="button" class="img-thumb-button" data-index="${index}" aria-label="Immagine ${index + 1}">
+        ${image.thumbUrl ? `<img src="${image.thumbUrl}" alt="">` : `<span class="text-xs text-slate-500">${index + 1}</span>`}
+      </button>
+    `).join('');
+    Array.from(thumbs.querySelectorAll('[data-index]')).forEach((button) => {
+      button.addEventListener('click', () => { void showGalleryImage(Number(button.getAttribute('data-index'))); });
+    });
+  }
+  toggleModal('imgModal', true);
+  void showGalleryImage(0);
 }
 
 /* ============ AUTH ============ */
@@ -1050,22 +1191,14 @@ async function fetchProducts(){
     }
 
     // Mappa righe → items della webapp
+    const imageData = await buildImageDataForProducts(supabaseClient, rows);
     const items = [];
     for (const p of rows) {
-      const mediaImgs = (p.product_media || [])
-        .filter(m => m.kind === 'image')
-        .sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
-
-      let imgUrl = '';
-      if (mediaImgs[0]) {
-        const { data: signed, error: sErr } = await supabaseClient
-          .storage.from(STORAGE_BUCKET)
-          .createSignedUrl(mediaImgs[0].path, 600);
-        if (sErr) console.warn('[Storage] signedURL warn:', sErr.message);
-        imgUrl = signed?.signedUrl || '';
-      }
+      const images = imageData.mediaByProduct.get(p.id) || [];
+      const imgUrl = images[0]?.thumbPath ? imageData.signedThumbs.get(images[0].thumbPath) || '' : '';
 
       items.push({
+        id: p.id,
         codice: p.codice,
         descrizione: p.descrizione,
         dimensione: p.dimensione,
@@ -1084,6 +1217,7 @@ async function fetchProducts(){
         updated_at: p.updated_at,
         conaiPerCollo: p.conai_per_collo || 0,
         img: imgUrl,
+        images,
       });
     }
 
@@ -1158,21 +1292,13 @@ async function fetchProductsFromCatalog(client) {
     if (error) throw error;
   }
 
+  const imageData = await buildImageDataForProducts(client, data || []);
   for (const p of (data || [])) {
-    const mediaImgs = (p.product_media || [])
-      .filter(m => m.kind === 'image')
-      .sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
-
-    let imgUrl = '';
-    if (mediaImgs[0]) {
-      const { data: signed, error: sErr } = await client
-        .storage.from(STORAGE_BUCKET)
-        .createSignedUrl(mediaImgs[0].path, 600);
-      if (sErr) console.warn('[Storage] signedURL warn:', sErr.message);
-      imgUrl = signed?.signedUrl || '';
-    }
+    const images = imageData.mediaByProduct.get(p.id) || [];
+    const imgUrl = images[0]?.thumbPath ? imageData.signedThumbs.get(images[0].thumbPath) || '' : '';
 
     items.push({
+      id: p.id,
       codice: p.codice,
       descrizione: p.descrizione,
       dimensione: p.dimensione ?? '',
@@ -1190,6 +1316,7 @@ async function fetchProductsFromCatalog(client) {
       tags: p.tags || [],
       updated_at: p.updated_at,
       img: imgUrl,
+      images,
     });
   }
 
@@ -1602,7 +1729,7 @@ function renderListino(){
         <td class="border px-2 py-1 text-right col-price">${fmtEUR(p.prezzo)}</td>
         <td class="border px-2 py-1 text-right col-conai">${fmtEUR(p.conai)}</td>
         <td class="border px-2 py-1 text-center col-img">
-          ${p.img?`<button class="text-sky-600 underline btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">📷</button>`:'—'}
+          ${p.img?`<button class="text-sky-600 underline btnImg" data-code="${codeAttr}" title="Vedi immagini">Foto</button>`:'—'}
         </td>`;
       tb.appendChild(tr);
     }
@@ -1709,12 +1836,9 @@ function renderListino(){
     // ======== LISTENER: immagini ========
     table.querySelectorAll('.btnImg').forEach(btn=>{
       btn.addEventListener('click', (e)=>{
-        const src=e.currentTarget.getAttribute('data-src');
-        const title=decodeURIComponent(e.currentTarget.getAttribute('data-title')||'');
-        const img=$('imgPreview'), ttl=$('imgTitle');
-        if (img){ img.src=src; img.alt=title; }
-        if (ttl){ ttl.textContent=title; }
-        toggleModal('imgModal', true);
+        const code = decodeURIComponent(e.currentTarget.getAttribute('data-code') || '');
+        const product = state.items.find(x => String(x.codice || '') === code);
+        void openImageGallery(product);
       });
     });
   }
@@ -1752,7 +1876,7 @@ function renderCards(){
         <p class="text-xs text-slate-500">${codiceSafe}</p>
         <div class="flex items-center justify-between">
           <div class="text-lg font-semibold">${fmtEUR(p.prezzo)}</div>
-          ${p.img?`<button class="rounded-xl border px-3 py-1.5 text-sm hover:bg-slate-50 btnImg" data-src="${p.img}" data-title="${encodeURIComponent(p.descrizione||'')}">Vedi</button>`:''}
+          ${p.img?`<button class="rounded-xl border px-3 py-1.5 text-sm hover:bg-slate-50 btnImg" data-code="${codeAttr}">Vedi</button>`:''}
         </div>
       </div>`;
     grid.appendChild(card);
@@ -1770,12 +1894,9 @@ function renderCards(){
   });
   grid.querySelectorAll('.btnImg').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
-      const src=e.currentTarget.getAttribute('data-src');
-      const title=decodeURIComponent(e.currentTarget.getAttribute('data-title')||'');
-      const img=$('imgPreview'), ttl=$('imgTitle');
-      if (img){ img.src=src; img.alt=title; }
-      if (ttl){ ttl.textContent=title; }
-      toggleModal('imgModal', true);
+      const code = decodeURIComponent(e.currentTarget.getAttribute('data-code') || '');
+      const product = state.items.find(x => String(x.codice || '') === code);
+      void openImageGallery(product);
     });
   });
 }
@@ -2626,6 +2747,13 @@ function printQuote(){
 const quoteDrawer = createQuoteDrawer();
 
 async function handleGlobalEscape(e){
+  const imgModal = $('imgModal');
+  const imageModalOpen = !!(imgModal && !imgModal.classList.contains('hidden'));
+  if (imageModalOpen && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    e.preventDefault();
+    await showGalleryImage(state.imageGallery.index + (e.key === 'ArrowRight' ? 1 : -1));
+    return;
+  }
   if (e.key !== 'Escape') return;
   const appShell = $('appShell');
   const authGate = $('authGate');
@@ -2636,9 +2764,9 @@ async function handleGlobalEscape(e){
 
   e.preventDefault();
 
-  const imgModal = $('imgModal');
-  if (imgModal && !imgModal.classList.contains('hidden')) {
+  if (imageModalOpen) {
     toggleModal('imgModal', false);
+    return;
   }
 
   if (quoteDrawer?.isOpen?.()) {

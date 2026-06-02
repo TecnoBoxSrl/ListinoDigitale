@@ -14,6 +14,31 @@ create policy "products read for agents" on public.products for select using ( p
 create policy "products write for admins" on public.products for all using ( public.is_admin(auth.uid()) ) with check ( public.is_admin(auth.uid()) );
 create policy "media read for agents" on public.product_media for select using ( public.is_agent(auth.uid()) );
 create policy "media write for admins" on public.product_media for all using ( public.is_admin(auth.uid()) ) with check ( public.is_admin(auth.uid()) );
+
+insert into storage.buckets (id, name, public)
+values ('prodotti', 'prodotti', false)
+on conflict (id) do nothing;
+
+drop policy if exists "product images read for agents" on storage.objects;
+create policy "product images read for agents"
+on storage.objects for select
+using ( bucket_id = 'prodotti' and public.is_agent(auth.uid()) );
+
+drop policy if exists "product images insert for admins" on storage.objects;
+create policy "product images insert for admins"
+on storage.objects for insert
+with check ( bucket_id = 'prodotti' and public.is_admin(auth.uid()) );
+
+drop policy if exists "product images update for admins" on storage.objects;
+create policy "product images update for admins"
+on storage.objects for update
+using ( bucket_id = 'prodotti' and public.is_admin(auth.uid()) )
+with check ( bucket_id = 'prodotti' and public.is_admin(auth.uid()) );
+
+drop policy if exists "product images delete for admins" on storage.objects;
+create policy "product images delete for admins"
+on storage.objects for delete
+using ( bucket_id = 'prodotti' and public.is_admin(auth.uid()) );
 create policy "price_lists read" on public.price_lists for select using ( public.is_agent(auth.uid()) );
 create policy "price_list_items read" on public.price_list_items for select using ( public.is_agent(auth.uid()) );
 create policy "change_log read" on public.change_log for select using ( public.is_agent(auth.uid()) );

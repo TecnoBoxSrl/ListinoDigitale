@@ -2,8 +2,9 @@
 (function(){
   const SUPABASE_URL = 'https://wajzudbaezbyterpjdxg.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indhanp1ZGJhZXpieXRlcnBqZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxODA4MTUsImV4cCI6MjA3Mjc1NjgxNX0.MxaAqdUrppG2lObO_L5-SgDu8D7eze7mBf6S9rR_Q2w';
+  const STORAGE_BUCKET = 'prodotti';
 
-  const state = { client: null, rows: [] };
+  const state = { client: null, rows: [], currentProduct: null };
   const $ = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -50,6 +51,57 @@
     const n = Number(value);
     if (!Number.isFinite(n)) return String(value).replace('.', ',');
     return n.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+  }
+
+  function mediaThumbPath(path){
+    return String(path || '').replace('/large.', '/thumb.');
+  }
+
+  function mediaLargePath(path){
+    return String(path || '').replace('/thumb.', '/large.');
+  }
+
+  async function imageBlobFromFile(file, maxSide, quality){
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close?.();
+    return await new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), 'image/webp', quality);
+    });
+  }
+
+  function safeMediaName(value){
+    return String(value || 'prodotto')
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .replace(/[^a-zA-Z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80) || 'prodotto';
+  }
+
+  async function signedMediaThumbs(media){
+    const client = ensureClient();
+    const paths = [...new Set((media || []).map((item) => mediaThumbPath(item.path)).filter(Boolean))];
+    const signedByPath = new Map();
+    for (let i = 0; i < paths.length; i += 100) {
+      const chunk = paths.slice(i, i + 100);
+      const { data, error } = await client.storage.from(STORAGE_BUCKET).createSignedUrls(chunk, 600);
+      if (error) {
+        console.warn('[AdminMedia] signed warn', error.message);
+        continue;
+      }
+      (data || []).forEach((row, index) => {
+        if (row?.signedUrl) signedByPath.set(chunk[index], row.signedUrl);
+      });
+    }
+    return signedByPath;
   }
 
   async function invokeAdmin(body){
@@ -147,6 +199,19 @@
             <div class="md:col-span-2 flex flex-wrap gap-2">
               <button id="btnAdminSaveProduct" type="submit" class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300">Salva articolo</button>
               <button id="btnAdminClearProduct" type="button" class="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700">Pulisci</button>
+            </div>
+            <div class="md:col-span-2 rounded-lg border bg-slate-50 p-3">
+              <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h5 class="text-xs font-semibold uppercase tracking-wide text-slate-600">Immagini articolo</h5>
+                  <p id="adminMediaHint" class="text-[11px] text-slate-500">Salva o seleziona un articolo, poi carica una o piu immagini.</p>
+                </div>
+                <label class="w-fit rounded-lg border bg-white px-3 py-2 text-xs font-medium text-slate-700">
+                  Carica immagini
+                  <input id="adminProductImages" type="file" accept="image/*" multiple class="hidden">
+                </label>
+              </div>
+              <div id="adminProductMediaList" class="mt-3 flex flex-wrap gap-2 text-xs text-slate-600"></div>
             </div>
           </form>
         </div>
@@ -267,7 +332,48 @@
     }
   }
 
+  async function renderProductMedia(product = state.currentProduct){
+    const list = $('adminProductMediaList');
+    const hint = $('adminMediaHint');
+    if (!list) return;
+    const media = (product?.product_media || [])
+      .filter((item) => item.kind === 'image' && item.path)
+      .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
+
+    if (hint) {
+      hint.textContent = product?.id
+        ? 'Carica una o piu immagini: il sistema crea miniatura e immagine grande.'
+        : 'Salva o seleziona un articolo, poi carica una o piu immagini.';
+    }
+    if (!product?.id) {
+      list.innerHTML = '<span>Articolo non ancora salvato.</span>';
+      return;
+    }
+    if (!media.length) {
+      list.innerHTML = '<span>Nessuna immagine caricata.</span>';
+      return;
+    }
+
+    const signed = await signedMediaThumbs(media);
+    list.innerHTML = media.map((item, index) => {
+      const thumb = signed.get(mediaThumbPath(item.path)) || '';
+      return `
+        <div class="relative h-20 w-20 overflow-hidden rounded-lg border bg-white">
+          ${thumb ? `<img src="${thumb}" alt="" class="h-full w-full object-cover">` : `<div class="grid h-full place-content-center text-[11px]">${index + 1}</div>`}
+          <button type="button" data-media-id="${escapeHtml(item.id)}" data-media-path="${escapeHtml(item.path)}" class="absolute right-1 top-1 rounded bg-white/90 px-1 text-[10px] text-red-700">X</button>
+        </div>
+      `;
+    }).join('');
+
+    Array.from(list.querySelectorAll('[data-media-id]')).forEach((button) => {
+      button.addEventListener('click', () => {
+        void deleteProductImage(button.getAttribute('data-media-id'), button.getAttribute('data-media-path'));
+      });
+    });
+  }
+
   function fillForm(product){
+    state.currentProduct = product || null;
     $('adminProductForm')?.classList.remove('hidden');
     $('adminOriginalCode').value = product.codice || '';
     $('adminProductCode').value = product.codice || '';
@@ -281,6 +387,7 @@
     $('adminProductDimension').value = product.dimensione || '';
     $('adminProductAvailable').checked = product.disponibile !== false;
     $('adminProductNew').checked = !!product.novita;
+    void renderProductMedia(product);
   }
 
   function readForm(){
@@ -297,6 +404,88 @@
       disponibile: !!$('adminProductAvailable')?.checked,
       novita: !!$('adminProductNew')?.checked,
     };
+  }
+
+  async function uploadProductImages(event){
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length) return;
+    const client = ensureClient();
+    const product = state.currentProduct;
+    if (!client || !product?.id) {
+      setMessage('Prima salva o seleziona un articolo, poi carica le immagini.', 'error');
+      return;
+    }
+
+    try {
+      setMessage('Caricamento immagini in corso...');
+      const currentMedia = (product.product_media || []).filter((item) => item.kind === 'image');
+      let nextSort = currentMedia.reduce((max, item) => Math.max(max, Number(item.sort) || 0), 0) + 1;
+      const inserted = [];
+      const baseName = safeMediaName(product.codice || product.id);
+
+      for (const file of files) {
+        if (!file.type?.startsWith('image/')) continue;
+        const stamp = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+        const folder = `products/${baseName}/${stamp}`;
+        const largePath = `${folder}/large.webp`;
+        const thumbPath = `${folder}/thumb.webp`;
+        const [largeBlob, thumbBlob] = await Promise.all([
+          imageBlobFromFile(file, 1200, 0.8),
+          imageBlobFromFile(file, 320, 0.72),
+        ]);
+
+        const largeUpload = await client.storage.from(STORAGE_BUCKET).upload(largePath, largeBlob, {
+          contentType: 'image/webp',
+          upsert: true,
+        });
+        if (largeUpload.error) throw largeUpload.error;
+
+        const thumbUpload = await client.storage.from(STORAGE_BUCKET).upload(thumbPath, thumbBlob, {
+          contentType: 'image/webp',
+          upsert: true,
+        });
+        if (thumbUpload.error) throw thumbUpload.error;
+
+        const { data, error } = await client
+          .from('product_media')
+          .insert({ product_id: product.id, kind: 'image', path: largePath, sort: nextSort++ })
+          .select('id,kind,path,sort')
+          .single();
+        if (error) throw error;
+        inserted.push(data);
+      }
+
+      state.currentProduct.product_media = [...currentMedia, ...inserted];
+      await renderProductMedia();
+      await refreshProductsAfterAdminChange();
+      setMessage(inserted.length ? `Immagini caricate: ${inserted.length}.` : 'Nessuna immagine valida caricata.', inserted.length ? 'success' : 'error');
+    } catch (error) {
+      setMessage(error?.message || 'Errore caricamento immagini.', 'error');
+    }
+  }
+
+  async function deleteProductImage(id, path){
+    const client = ensureClient();
+    if (!client || !id) return;
+    try {
+      if (!window.confirm('Cancellare questa immagine articolo?')) return;
+      setMessage('Cancellazione immagine...');
+      const largePath = mediaLargePath(path);
+      const thumbPath = mediaThumbPath(path);
+      const { error: storageError } = await client.storage.from(STORAGE_BUCKET).remove([largePath, thumbPath]);
+      if (storageError) console.warn('[AdminMedia] storage remove warn', storageError.message);
+      const { error } = await client.from('product_media').delete().eq('id', id);
+      if (error) throw error;
+      if (state.currentProduct?.product_media) {
+        state.currentProduct.product_media = state.currentProduct.product_media.filter((item) => item.id !== id);
+      }
+      await renderProductMedia();
+      await refreshProductsAfterAdminChange();
+      setMessage('Immagine cancellata.', 'success');
+    } catch (error) {
+      setMessage(error?.message || 'Errore cancellazione immagine.', 'error');
+    }
   }
 
   async function searchProduct(){
@@ -432,11 +621,14 @@
   }
 
   function clearForm(){
+    state.currentProduct = null;
     $('adminProductForm')?.classList.add('hidden');
     ['adminOriginalCode','adminProductCode','adminProductDescription','adminProductUnit','adminProductPrice','adminProductConai','adminProductPrintPrice','adminProductPrintMinQty','adminProductCategory','adminProductDimension'].forEach((id) => {
       const el = $(id);
       if (el) el.value = '';
     });
+    const mediaList = $('adminProductMediaList');
+    if (mediaList) mediaList.innerHTML = '';
   }
 
   function clearImportFileState(){
@@ -476,6 +668,7 @@
     });
     $('adminProductForm')?.addEventListener('submit', saveProduct);
     $('btnAdminClearProduct')?.addEventListener('click', clearForm);
+    $('adminProductImages')?.addEventListener('change', (event) => { void uploadProductImages(event); });
     $('btnAdminPartialImport')?.addEventListener('click', () => { void partialImport(); });
     $('adminImportFile')?.addEventListener('change', (event) => { void handleFileChange(event); });
   }
