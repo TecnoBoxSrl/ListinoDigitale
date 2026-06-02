@@ -1500,6 +1500,7 @@ function buildCategories(){
   const highlightedCollections = collections.filter(collection => collection.highlighted);
   const normalCollections = collections.filter(collection => !collection.highlighted);
   const selectedCollection = collections.find(collection => collection.key === state.selectedCategory);
+  const collectionLabels = new Set(collections.map(collection => normalize(collection.name)));
 
   if (
     state.selectedCategory
@@ -1510,7 +1511,9 @@ function buildCategories(){
     state.selectedCategory = 'Tutte';
   }
 
-  const allCats = Array.from(set).sort((a,b)=> a.localeCompare(b,'it'));
+  const allCats = Array.from(set)
+    .filter(cat => !collectionLabels.has(normalize(cat)))
+    .sort((a,b)=> a.localeCompare(b,'it'));
   const categoryEntries = allCats.map(cat => ({ type: 'category', key: cat, label: cat }));
   const collectionEntries = normalCollections.map(collection => ({
     type: 'collection',

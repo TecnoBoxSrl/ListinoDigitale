@@ -573,11 +573,10 @@
       return;
     }
     state.pendingCollectionId = collection.id;
-    const category = collection.name || '';
     fillForm({
       codice: '',
       descrizione: '',
-      categoria: category,
+      categoria: '',
       unita: 'pz',
       disponibile: true,
       novita: collection.slug === 'nuovi-prodotti',
