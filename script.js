@@ -1573,16 +1573,16 @@ function buildCategories(){
       btn.type = 'button';
       btn.className = [
         'inline-flex items-center justify-between gap-2 w-full text-left',
-        'rounded-xl border px-3 py-1.5 text-sm',
+        'custom-collection-chip rounded-xl border px-3 py-2 text-sm font-semibold',
         'transition',
         (state.selectedCategory === collection.key)
-          ? 'bg-emerald-100 border-emerald-300 text-emerald-950'
-          : 'bg-white hover:bg-emerald-50'
+          ? 'is-active'
+          : ''
       ].join(' ');
       const label = document.createElement('span');
       label.textContent = collection.name;
       const count = document.createElement('span');
-      count.className = 'rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600';
+      count.className = 'custom-collection-count rounded-full px-2 py-0.5 text-[11px] font-semibold';
       count.textContent = String(collection.count);
       btn.appendChild(label);
       btn.appendChild(count);

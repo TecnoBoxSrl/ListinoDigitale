@@ -82,6 +82,31 @@
       justify-content: flex-start;
     }
 
+    .custom-collection-chip {
+      position: relative;
+      background: linear-gradient(90deg, #ecfdf5 0%, #ffffff 76%);
+      border-color: #6ee7b7;
+      color: #064e3b;
+      box-shadow: inset 4px 0 0 #10b981;
+    }
+
+    .custom-collection-chip:hover {
+      background: #d1fae5;
+      border-color: #34d399;
+    }
+
+    .custom-collection-chip.is-active {
+      background: #bbf7d0;
+      border-color: #10b981;
+      box-shadow: inset 4px 0 0 #047857, 0 0 0 2px rgba(16,185,129,.16);
+    }
+
+    .custom-collection-count {
+      background: rgba(255,255,255,.78);
+      border: 1px solid rgba(16,185,129,.25);
+      color: #047857;
+    }
+
     .category-list .category-break {
       width: 100%;
       height: 0;
@@ -981,7 +1006,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- forza aggiornamento -->
-<script src="./script.js?v=custom-collections-1" defer></script>
+<script src="./script.js?v=custom-collections-2" defer></script>
 <script src="./admin-import.js?v=file-reset-2" defer></script>
   <script src="./admin-manage.js?v=custom-collections-1" defer></script>
 <div id="floatingActions"
