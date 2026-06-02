@@ -512,6 +512,8 @@ const state = {
   role: 'guest',
   items: [],
   customCollections: [],
+  quickFilters: [],
+  activeQuickFilters: new Set(),
   view: 'listino',   // 'listino' | 'card'
   search: '',
   sort: 'alpha',     // 'alpha' | 'priceAsc' | 'priceDesc' | 'newest'
@@ -1020,6 +1022,7 @@ async function afterLogin(userId){
     state.selectedCategory = 'Tutte';
     state.categorySearch = '';
     state.categoryLetter = '';
+    state.activeQuickFilters.clear();
     updateCategoryLetterButtons(DEFAULT_AVAILABLE_CATEGORY_LETTERS);
     const categorySearchInput = document.getElementById('categorySearchInput');
     if (categorySearchInput) categorySearchInput.value = '';
@@ -1131,6 +1134,7 @@ async function afterLogout(){
   state.selectedCategory = 'Tutte';
   state.categorySearch = '';
   state.categoryLetter = '';
+  state.activeQuickFilters.clear();
   state.agent.name = '';
   state.agent.code = '';
   state.quoteMeta.name = '';
@@ -1225,7 +1229,12 @@ async function fetchProducts(){
 
     state.items = items;
     state.customCollections = await fetchCustomCollections(supabaseClient);
+    state.quickFilters = await fetchQuickFilters(supabaseClient);
+    for (const id of Array.from(state.activeQuickFilters)) {
+      if (!state.quickFilters.some(filter => filter.id === id)) state.activeQuickFilters.delete(id);
+    }
     buildCategories();
+    renderQuickFilters();
     if (info) info.textContent = `${items.length} articoli`;
     console.log('[Data] prodotti:', items.length);
   } catch (e) {
@@ -1371,6 +1380,28 @@ async function fetchCustomCollections(client) {
       .filter(collection => collection.count > 0);
   } catch (error) {
     console.warn('[Data] raccolte personalizzate non disponibili', error);
+    return [];
+  }
+}
+
+async function fetchQuickFilters(client) {
+  try {
+    const { data, error } = await client
+      .from('quick_filters')
+      .select('id,label,terms,sort,active')
+      .eq('active', true)
+      .order('sort', { ascending: true })
+      .order('label', { ascending: true });
+    if (error) throw error;
+    return (data || [])
+      .map(filter => ({
+        id: filter.id,
+        label: filter.label,
+        terms: Array.isArray(filter.terms) ? filter.terms.map(term => normalize(term)).filter(Boolean) : [],
+      }))
+      .filter(filter => filter.label && filter.terms.length);
+  } catch (error) {
+    console.warn('[Data] filtri rapidi non disponibili', error);
     return [];
   }
 }
@@ -1648,6 +1679,75 @@ function buildCategories(){
   applyCategoryOrientation();
 }
 
+function productSearchText(product){
+  return normalize(`${product.codice || ''} ${product.descrizione || ''} ${product.dimensione || ''} ${(product.tags || []).join(' ')}`);
+}
+
+function matchesQuickFilter(product, filter){
+  const text = productSearchText(product);
+  return (filter?.terms || []).some(term => text.includes(term));
+}
+
+function applyCategoryFilterOnly(arr){
+  let out = [...arr];
+  if (state.selectedCategory && state.selectedCategory !== 'Tutte') {
+    if (String(state.selectedCategory).startsWith('collection:')) {
+      const collection = (state.customCollections || []).find(item => item.key === state.selectedCategory);
+      out = collection
+        ? out.filter(p => collection.productCodes.has(String(p.codice || '').trim()))
+        : [];
+    } else {
+      out = out.filter(p => (p.categoria || '') === state.selectedCategory);
+    }
+  }
+  return out;
+}
+
+function renderQuickFilters(){
+  const box = $('quickFiltersBox');
+  if (!box) return;
+  const filters = state.quickFilters || [];
+  if (!filters.length) {
+    box.innerHTML = '';
+    return;
+  }
+
+  const base = applyCategoryFilterOnly(state.items || []);
+  const visibleFilters = filters
+    .map(filter => ({ ...filter, count: base.filter(product => matchesQuickFilter(product, filter)).length }))
+    .filter(filter => filter.count > 0);
+
+  if (!visibleFilters.length) {
+    box.innerHTML = '';
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Filtri rapidi</div>
+    <div class="flex flex-wrap gap-2">
+      ${visibleFilters.map(filter => {
+        const active = state.activeQuickFilters.has(filter.id);
+        return `
+          <button type="button" data-quick-filter-id="${escapeHtml(filter.id)}" class="rounded-full border px-3 py-1.5 text-xs font-medium transition ${active ? 'border-sky-600 bg-sky-100 text-sky-900' : 'bg-white text-slate-700 hover:bg-slate-50'}">
+            ${escapeHtml(filter.label)} <span class="text-[10px] text-slate-500">${filter.count}</span>
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  Array.from(box.querySelectorAll('[data-quick-filter-id]')).forEach((button) => {
+    button.addEventListener('click', () => {
+      const id = button.getAttribute('data-quick-filter-id');
+      if (!id) return;
+      if (state.activeQuickFilters.has(id)) state.activeQuickFilters.delete(id);
+      else state.activeQuickFilters.add(id);
+      renderView();
+      renderQuickFilters();
+    });
+  });
+}
+
 /* ============ RENDER SWITCH ============ */
 function renderView(){
   const listino = $('listinoContainer');
@@ -1659,6 +1759,7 @@ function renderView(){
   listino.classList.remove('hidden');       // mostra il listino tabellare
 
   renderListino();
+  renderQuickFilters();
   renderQuotePanel(); // sincronizza il pannello preventivo
 }
 
@@ -1690,6 +1791,10 @@ if (state.selectedCategory && state.selectedCategory !== 'Tutte') {
   if (state.search){
     const q=state.search;
     out = out.filter(p => normalize((p.codice||'')+' '+(p.descrizione||'')+' '+(p.tags||[]).join(' ')).includes(q));
+  }
+  if (state.activeQuickFilters?.size) {
+    const activeFilters = (state.quickFilters || []).filter(filter => state.activeQuickFilters.has(filter.id));
+    out = out.filter(product => activeFilters.some(filter => matchesQuickFilter(product, filter)));
   }
   if (state.onlyAvailable) out = out.filter(p=>p.disponibile);
   if (state.onlyNew) out = out.filter(p=>p.novita);

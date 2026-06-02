@@ -70,6 +70,26 @@ create table if not exists public.custom_collection_items (
 );
 alter table public.custom_collection_items enable row level security;
 
+create table if not exists public.quick_filters (
+  id uuid primary key default gen_random_uuid(),
+  label text not null,
+  terms text[] not null default '{}',
+  sort int default 0,
+  active boolean default true,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.quick_filters enable row level security;
+
+insert into public.quick_filters (label, terms, sort, active)
+values
+  ('Bicchieri', array['bicchiere','bicchieri','cup'], 10, true),
+  ('Coperchi', array['coperchio','coperchi','lid'], 20, true),
+  ('Cannucce', array['cannuccia','cannucce'], 30, true),
+  ('Posate', array['forchetta','coltello','cucchiaio','posate','tris'], 40, true),
+  ('Piatti', array['piatto','piatti'], 50, true)
+on conflict do nothing;
+
 drop policy if exists "collections read for agents" on public.custom_collections;
 create policy "collections read for agents"
 on public.custom_collections for select
@@ -95,6 +115,17 @@ using (
 drop policy if exists "collection items write for admins" on public.custom_collection_items;
 create policy "collection items write for admins"
 on public.custom_collection_items for all
+using ( public.is_admin(auth.uid()) )
+with check ( public.is_admin(auth.uid()) );
+
+drop policy if exists "quick filters read for agents" on public.quick_filters;
+create policy "quick filters read for agents"
+on public.quick_filters for select
+using ( active = true and public.is_agent(auth.uid()) );
+
+drop policy if exists "quick filters write for admins" on public.quick_filters;
+create policy "quick filters write for admins"
+on public.quick_filters for all
 using ( public.is_admin(auth.uid()) )
 with check ( public.is_admin(auth.uid()) );
 create policy "price_lists read" on public.price_lists for select using ( public.is_agent(auth.uid()) );
@@ -123,3 +154,4 @@ create index if not exists change_log_price_list_id_idx on public.change_log (pr
 create index if not exists custom_collections_sort_idx on public.custom_collections (sort, name);
 create index if not exists custom_collection_items_collection_id_idx on public.custom_collection_items (collection_id);
 create index if not exists custom_collection_items_product_id_idx on public.custom_collection_items (product_id);
+create index if not exists quick_filters_sort_idx on public.quick_filters (sort, label);

@@ -31,6 +31,7 @@ const ADMIN_PRODUCT_SELECT =
   "id,codice,descrizione,dimensione,categoria,sottocategoria,prezzo,prezzo_stampa,quantita_minima_stampa,conai,conai_per_collo,unita,disponibile,novita,pack,pallet,tags,source,updated_at,product_media(id,kind,path,sort)";
 const ADMIN_COLLECTION_SELECT =
   "id,name,slug,description,sort,active,highlighted,created_at,updated_at,custom_collection_items(id,sort,note,product_id,products(id,codice,descrizione,categoria,prezzo,disponibile,novita))";
+const QUICK_FILTER_SELECT = "id,label,terms,sort,active,created_at,updated_at";
 const IMPORT_SCHEMA_ID = "adhoc_v1";
 
 function jsonResponse(body: unknown, status = 200) {
@@ -593,6 +594,59 @@ async function removeCollectionItem(client: ReturnType<typeof createClient>, bod
   return await listCollections(client);
 }
 
+async function listQuickFilters(client: ReturnType<typeof createClient>) {
+  const { data, error } = await client
+    .from("quick_filters")
+    .select(QUICK_FILTER_SELECT)
+    .order("sort", { ascending: true })
+    .order("label", { ascending: true });
+  if (error) throw error;
+  return jsonResponse({ ok: true, filters: data || [] });
+}
+
+function normalizeQuickTerms(value: unknown) {
+  if (Array.isArray(value)) return value.map((term) => String(term).trim()).filter(Boolean);
+  return String(value ?? "")
+    .split(",")
+    .map((term) => term.trim())
+    .filter(Boolean);
+}
+
+async function saveQuickFilter(client: ReturnType<typeof createClient>, body: Record<string, unknown>) {
+  const raw = (body.filter || {}) as Record<string, unknown>;
+  const id = String(raw.id || body.id || "").trim();
+  const label = String(raw.label || "").trim();
+  const terms = normalizeQuickTerms(raw.terms);
+  if (!label) return jsonResponse({ ok: false, error: "Nome filtro obbligatorio" }, 400);
+  if (!terms.length) return jsonResponse({ ok: false, error: "Inserisci almeno una parola da cercare" }, 400);
+
+  const payload = {
+    label,
+    terms,
+    sort: Number.parseInt(String(raw.sort ?? 0), 10) || 0,
+    active: parseBoolean(raw.active, true),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (id) {
+    const { error } = await client.from("quick_filters").update(payload).eq("id", id);
+    if (error) throw error;
+  } else {
+    const { error } = await client.from("quick_filters").insert(payload);
+    if (error) throw error;
+  }
+
+  return await listQuickFilters(client);
+}
+
+async function deleteQuickFilter(client: ReturnType<typeof createClient>, body: Record<string, unknown>) {
+  const id = String(body.id || "").trim();
+  if (!id) return jsonResponse({ ok: false, error: "Filtro non indicato" }, 400);
+  const { error } = await client.from("quick_filters").delete().eq("id", id);
+  if (error) throw error;
+  return await listQuickFilters(client);
+}
+
 async function history(client: ReturnType<typeof createClient>) {
   const { data: lists, error: listsError } = await client
     .from("price_lists")
@@ -747,6 +801,9 @@ Deno.serve(async (req) => {
     if (action === "delete_collection") return await deleteCollection(client, body);
     if (action === "add_collection_item") return await addCollectionItem(client, body);
     if (action === "remove_collection_item") return await removeCollectionItem(client, body);
+    if (action === "quick_filters") return await listQuickFilters(client);
+    if (action === "save_quick_filter") return await saveQuickFilter(client, body);
+    if (action === "delete_quick_filter") return await deleteQuickFilter(client, body);
     if (action === "history") return await history(client);
     if (action === "delete_history") return await deleteHistory(client, body);
 

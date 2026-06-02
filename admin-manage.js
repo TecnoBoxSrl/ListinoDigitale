@@ -6,7 +6,7 @@
   const REQUIRED_SCHEMA = ['codice articolo', 'descrizione', '1 unita di misura', 'prezzo', 'conai', 'descrizione'];
   const IMPORT_SCHEMA_ID = 'adhoc_v1';
 
-  const state = { client: null, rows: [], currentProduct: null, collections: [], currentCollectionId: '', pendingCollectionId: '' };
+  const state = { client: null, rows: [], currentProduct: null, collections: [], currentCollectionId: '', pendingCollectionId: '', quickFilters: [], currentQuickFilterId: '' };
   const $ = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -240,6 +240,40 @@
         </div>
 
         <div class="rounded-lg border bg-white p-3">
+          <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h4 class="text-xs font-semibold uppercase tracking-wide text-slate-600">Filtri rapidi</h4>
+              <p class="text-xs text-slate-500">Crea pulsanti di ricerca veloce per gli agenti, validi su tutto il listino.</p>
+            </div>
+            <button id="btnAdminNewQuickFilter" type="button" class="w-fit rounded-lg border bg-white px-3 py-2 text-xs font-medium text-slate-700">Nuovo filtro</button>
+          </div>
+          <div class="grid gap-3 lg:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)]">
+            <div id="adminQuickFiltersList" class="space-y-2 text-xs text-slate-700">Caricamento filtri...</div>
+            <form id="adminQuickFilterForm" class="grid gap-2 rounded-lg border bg-slate-50 p-3">
+              <input id="adminQuickFilterId" type="hidden">
+              <label class="text-xs text-slate-600">Nome filtro
+                <input id="adminQuickFilterLabel" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" placeholder="Es. Posate">
+              </label>
+              <label class="text-xs text-slate-600">Parole cercate
+                <input id="adminQuickFilterTerms" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" placeholder="forchetta, coltello, cucchiaio, tris">
+              </label>
+              <div class="grid gap-2 sm:grid-cols-[120px_1fr]">
+                <label class="text-xs text-slate-600">Ordine
+                  <input id="adminQuickFilterSort" type="number" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" value="0">
+                </label>
+                <label class="mt-6 inline-flex items-center gap-2 text-xs text-slate-700">
+                  <input id="adminQuickFilterActive" type="checkbox" class="h-4 w-4 accent-sky-600" checked> Visibile agli agenti
+                </label>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button id="btnAdminSaveQuickFilter" type="submit" class="rounded-lg bg-sky-700 px-4 py-2 text-sm font-medium text-white">Salva filtro</button>
+                <button id="btnAdminDeleteQuickFilter" type="button" class="hidden rounded-lg border border-red-200 bg-white px-4 py-2 text-sm text-red-700">Cancella filtro</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="rounded-lg border bg-white p-3">
           <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Cerca e modifica articolo</h4>
           <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
             <input id="adminSearchProduct" type="search" class="rounded-lg border px-3 py-2 text-sm" placeholder="Cerca codice o descrizione">
@@ -301,6 +335,7 @@
       panel.dataset.loaded = 'true';
       loadHistory();
       loadCollections();
+      loadQuickFilters();
     }
   }
 
@@ -598,6 +633,105 @@
       await refreshProductsAfterAdminChange();
     } catch (error) {
       setMessage(error?.message || 'Errore rimozione articolo.', 'error');
+    }
+  }
+
+  function clearQuickFilterForm(){
+    state.currentQuickFilterId = '';
+    ['adminQuickFilterId','adminQuickFilterLabel','adminQuickFilterTerms'].forEach((id) => {
+      const el = $(id);
+      if (el) el.value = '';
+    });
+    if ($('adminQuickFilterSort')) $('adminQuickFilterSort').value = '0';
+    if ($('adminQuickFilterActive')) $('adminQuickFilterActive').checked = true;
+    $('btnAdminDeleteQuickFilter')?.classList.add('hidden');
+    renderQuickFiltersAdmin();
+  }
+
+  function fillQuickFilterForm(filter){
+    state.currentQuickFilterId = filter?.id || '';
+    if ($('adminQuickFilterId')) $('adminQuickFilterId').value = filter?.id || '';
+    if ($('adminQuickFilterLabel')) $('adminQuickFilterLabel').value = filter?.label || '';
+    if ($('adminQuickFilterTerms')) $('adminQuickFilterTerms').value = (filter?.terms || []).join(', ');
+    if ($('adminQuickFilterSort')) $('adminQuickFilterSort').value = String(filter?.sort ?? 0);
+    if ($('adminQuickFilterActive')) $('adminQuickFilterActive').checked = filter?.active !== false;
+    $('btnAdminDeleteQuickFilter')?.classList.toggle('hidden', !filter?.id);
+    renderQuickFiltersAdmin();
+  }
+
+  function renderQuickFiltersAdmin(data){
+    if (data?.filters) state.quickFilters = data.filters;
+    const el = $('adminQuickFiltersList');
+    if (!el) return;
+    if (!state.quickFilters.length) {
+      el.textContent = 'Nessun filtro rapido creato.';
+      return;
+    }
+
+    el.innerHTML = state.quickFilters.map((filter) => {
+      const selected = state.currentQuickFilterId === filter.id;
+      return `
+        <button type="button" data-quick-admin-id="${escapeHtml(filter.id)}" class="block w-full rounded-lg border px-3 py-2 text-left ${selected ? 'border-sky-300 bg-sky-50' : 'bg-white hover:bg-slate-50'}">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-semibold text-slate-900">${escapeHtml(filter.label)}</span>
+            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">${escapeHtml((filter.terms || []).length)}</span>
+          </div>
+          <div class="mt-1 text-slate-500">${filter.active ? 'Visibile' : 'Nascosto'} - ${escapeHtml((filter.terms || []).join(', '))}</div>
+        </button>
+      `;
+    }).join('');
+
+    Array.from(el.querySelectorAll('[data-quick-admin-id]')).forEach((button) => {
+      button.addEventListener('click', () => {
+        const filter = state.quickFilters.find((item) => item.id === button.dataset.quickAdminId);
+        fillQuickFilterForm(filter);
+      });
+    });
+  }
+
+  async function loadQuickFilters(){
+    try {
+      const el = $('adminQuickFiltersList');
+      if (el) el.textContent = 'Caricamento filtri...';
+      renderQuickFiltersAdmin(await invokeAdmin({ action: 'quick_filters' }));
+    } catch (error) {
+      const el = $('adminQuickFiltersList');
+      if (el) el.textContent = error?.message || 'Errore caricamento filtri.';
+    }
+  }
+
+  async function saveQuickFilter(event){
+    event?.preventDefault();
+    try {
+      const filter = {
+        id: $('adminQuickFilterId')?.value || '',
+        label: $('adminQuickFilterLabel')?.value || '',
+        terms: $('adminQuickFilterTerms')?.value || '',
+        sort: $('adminQuickFilterSort')?.value || '0',
+        active: !!$('adminQuickFilterActive')?.checked,
+      };
+      const data = await invokeAdmin({ action: 'save_quick_filter', filter });
+      renderQuickFiltersAdmin(data);
+      const saved = (data.filters || []).find((item) => item.label === filter.label) || (data.filters || [])[0];
+      if (saved) fillQuickFilterForm(saved);
+      setMessage('Filtro rapido salvato.', 'success');
+      await refreshProductsAfterAdminChange();
+    } catch (error) {
+      setMessage(error?.message || 'Errore salvataggio filtro rapido.', 'error');
+    }
+  }
+
+  async function deleteQuickFilter(){
+    try {
+      const id = $('adminQuickFilterId')?.value || '';
+      if (!id) return;
+      if (!window.confirm('Cancellare questo filtro rapido?')) return;
+      renderQuickFiltersAdmin(await invokeAdmin({ action: 'delete_quick_filter', id }));
+      clearQuickFilterForm();
+      setMessage('Filtro rapido cancellato.', 'success');
+      await refreshProductsAfterAdminChange();
+    } catch (error) {
+      setMessage(error?.message || 'Errore cancellazione filtro rapido.', 'error');
     }
   }
 
@@ -986,6 +1120,9 @@
     $('btnAdminDeleteCollection')?.addEventListener('click', () => { void deleteCollection(); });
     $('btnAdminAddCollectionItem')?.addEventListener('click', () => { void addCollectionItem(); });
     $('btnAdminCreateCollectionProduct')?.addEventListener('click', createCollectionProduct);
+    $('btnAdminNewQuickFilter')?.addEventListener('click', clearQuickFilterForm);
+    $('adminQuickFilterForm')?.addEventListener('submit', saveQuickFilter);
+    $('btnAdminDeleteQuickFilter')?.addEventListener('click', () => { void deleteQuickFilter(); });
     $('adminCollectionProductCode')?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
